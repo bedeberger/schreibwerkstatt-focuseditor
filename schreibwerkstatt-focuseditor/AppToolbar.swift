@@ -4,8 +4,8 @@
 //
 //  Eigene, markengerechte Toolbar-Leiste im Content — bewusst NICHT die native
 //  Fenster-Toolbar (die wirkte wie ein Menü). Eine schlanke Papier-Leiste mit
-//  feiner Trennlinie sitzt direkt unter den Ampel-Buttons; das Fenster ist
-//  randlos (`fullSizeContentView`), darum die Aussparung links für die Ampeln.
+//  feiner Trennlinie sitzt am oberen Rand des Inhalts, direkt unter der
+//  (transparenten, titellosen) Fenster-Titelleiste mit den Ampel-Buttons.
 //
 //  Inhalt: Buch-Picker (links), Öffnen (⌘O), Sync-Status und ein Überlauf-Menü
 //  (Darstellung + Abmelden) rechts. Die Leiste bleibt immer sichtbar (auch im
@@ -20,7 +20,7 @@ struct AppToolbar: View {
     @EnvironmentObject private var sync: SyncEngine
     @EnvironmentObject private var library: LibraryStore
     @EnvironmentObject private var appearance: AppearanceController
-    @EnvironmentObject private var windowChrome: WindowChromeController
+    @EnvironmentObject private var focus: FocusController
     @EnvironmentObject private var writingStats: WritingStatsStore
 
     /// Steuert den beschwörbaren Seiten-Picker (⌘O) im Host.
@@ -99,14 +99,38 @@ struct AppToolbar: View {
     }
 
     /// Überlauf: selten gebrauchte Aktionen gebündelt — hält die Leiste ruhig.
+    /// Die hier gebündelten Aktionen sind sonst nur über die Menüleiste
+    /// erreichbar — die im nativen Vollbild aber ausgeblendet ist. Darum sitzen
+    /// die im Schreibmodus wichtigen Einstiege (Einstellungen, Darstellung,
+    /// Fokus, manueller Sync) zusätzlich in dieser immer sichtbaren Leiste.
     private var overflowMenu: some View {
         Menu {
+            // Natives Einstellungen-Fenster (⌘,). `SettingsLink` öffnet die
+            // `Settings`-Scene direkt — ohne Selector-Gefrickel.
+            SettingsLink {
+                Label(t("toolbar.settings"), systemImage: "gearshape")
+            }
+
+            Divider()
+
             Picker(t("toolbar.appearance"), selection: $appearance.mode) {
                 ForEach(AppearanceMode.allCases) { mode in
                     Text(mode.label).tag(mode)
                 }
             }
             .pickerStyle(.inline)
+
+            Picker(t("menu.focus"), selection: $focus.granularity) {
+                ForEach(FocusGranularity.allCases) { g in
+                    Text(g.label).tag(g)
+                }
+            }
+            .pickerStyle(.inline)
+
+            Divider()
+
+            // Manueller Sync — sitzt bewusst neben der Sync-Status-Anzeige.
+            Button(t("menu.syncNow")) { sync.syncManually() }
 
             Divider()
 

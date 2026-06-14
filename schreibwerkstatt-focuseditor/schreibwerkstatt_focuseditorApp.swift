@@ -115,9 +115,9 @@ struct schreibwerkstatt_focuseditorApp: App {
                 .pickerStyle(.inline)
             }
 
-            // Vollbild ein/aus (ablenkungsfrei). Eigener Menüpunkt, weil im
-            // Vollbild Toolbar UND Ampel-Buttons ausgeblendet sind → ohne
-            // sichtbaren Einstieg bliebe nur die auto-versteckte Menüleiste.
+            // Vollbild ein/aus. Eigener Menüpunkt als zuverlässiger Einstieg:
+            // im Vollbild sind die Ampel-Buttons ausgeblendet; die Toolbar bleibt
+            // zwar sichtbar, hat aber keinen eigenen Vollbild-Knopf.
             // Label folgt dem Zustand, damit der Rückweg klar benannt ist.
             CommandGroup(after: .toolbar) {
                 Button(windowChrome.isNativeFullscreen
