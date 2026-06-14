@@ -15,6 +15,16 @@
 		7E0000000000000000000014 /* SyncModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E0000000000000000000024 /* SyncModels.swift */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		7E000000000000000000000B /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 61EA81342FDE904700FBD31B /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 61EA813B2FDE904700FBD31B;
+			remoteInfo = "schreibwerkstatt-focuseditor";
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
 		61EA813C2FDE904700FBD31B /* schreibwerkstatt-focuseditor.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "schreibwerkstatt-focuseditor.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		7E0000000000000000000002 /* schreibwerkstatt-focuseditorTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "schreibwerkstatt-focuseditorTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -57,12 +67,25 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		6184ADAD2FDEB109002D1DF7 /* Recovered References */ = {
+			isa = PBXGroup;
+			children = (
+				7E0000000000000000000020 /* APIClient.swift */,
+				7E0000000000000000000021 /* AuthError.swift */,
+				7E0000000000000000000022 /* ServerConfig.swift */,
+				7E0000000000000000000023 /* DeviceToken.swift */,
+				7E0000000000000000000024 /* SyncModels.swift */,
+			);
+			name = "Recovered References";
+			sourceTree = "<group>";
+		};
 		61EA81332FDE904700FBD31B = {
 			isa = PBXGroup;
 			children = (
 				61EA813E2FDE904700FBD31B /* schreibwerkstatt-focuseditor */,
 				7E0000000000000000000003 /* schreibwerkstatt-focuseditorTests */,
 				61EA813D2FDE904700FBD31B /* Products */,
+				6184ADAD2FDEB109002D1DF7 /* Recovered References */,
 			);
 			sourceTree = "<group>";
 		};
@@ -205,6 +228,14 @@
 		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXTargetDependency section */
+		7E000000000000000000000A /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 61EA813B2FDE904700FBD31B /* schreibwerkstatt-focuseditor */;
+			targetProxy = 7E000000000000000000000B /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin XCBuildConfiguration section */
 		61EA81452FDE904800FBD31B /* Debug */ = {
 			isa = XCBuildConfiguration;
@@ -329,6 +360,8 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
@@ -338,6 +371,7 @@
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "Schreibwerkstatt Fokus";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.books";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -361,6 +395,8 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
@@ -370,6 +406,7 @@
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "Schreibwerkstatt Fokus";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.books";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -455,24 +492,6 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
-
-/* Begin PBXContainerItemProxy section */
-		7E000000000000000000000B /* PBXContainerItemProxy */ = {
-			isa = PBXContainerItemProxy;
-			containerPortal = 61EA81342FDE904700FBD31B /* Project object */;
-			proxyType = 1;
-			remoteGlobalIDString = 61EA813B2FDE904700FBD31B;
-			remoteInfo = "schreibwerkstatt-focuseditor";
-		};
-/* End PBXContainerItemProxy section */
-
-/* Begin PBXTargetDependency section */
-		7E000000000000000000000A /* PBXTargetDependency */ = {
-			isa = PBXTargetDependency;
-			target = 61EA813B2FDE904700FBD31B /* schreibwerkstatt-focuseditor */;
-			targetProxy = 7E000000000000000000000B /* PBXContainerItemProxy */;
-		};
-/* End PBXTargetDependency section */
 
 /* Begin XCRemoteSwiftPackageReference section */
 		61DB000000000000000000A1 /* XCRemoteSwiftPackageReference "GRDB" */ = {

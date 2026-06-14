@@ -43,6 +43,8 @@ final class KioskFullscreen: ObservableObject {
         self.window = window
         guard let window else { return }
 
+        applyBaseChrome(window)
+
         // Nativer Vollbild (grüner Button / View ▸ Vollbild) soll sofort den
         // ablenkungsfreien Modus auslösen: Ampel-Buttons weg, Toolbar aus.
         let center = NotificationCenter.default
@@ -56,6 +58,16 @@ final class KioskFullscreen: ObservableObject {
                 MainActor.assumeIsolated { self?.nativeFullscreenChanged(false) }
             },
         ]
+    }
+
+    /// Basis-Chrome des normalen Fensters: randloser Inhalt bis ganz nach oben,
+    /// transparente/leere Titelleiste — die eigene `AppToolbar` sitzt direkt
+    /// unter den Ampel-Buttons. Idempotent (wird vom WindowAccessor mehrfach
+    /// gereicht); die Ampel-Buttons bleiben sichtbar.
+    private func applyBaseChrome(_ window: NSWindow) {
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.styleMask.insert(.fullSizeContentView)
     }
 
     private func teardownFullscreenObservers() {

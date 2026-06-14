@@ -24,10 +24,12 @@
 //    • languagetoolCheck { text, language?, pageId?, bookId? }
 //                                              → { matches: [...] } | { disabled: true }
 //    • dictionaryAdd { word, lang?, bookId? }  → { ok }   (Wort ins User-Wörterbuch)
+//    • focusGranularity {}                     → { granularity }  (lokale Fokus-Stufe, Boot-Pull)
 //
 //  Events (Swift → JS, via `__focusBridge._receive(event, payload)`):
 //    • serverUpdate { pageId, html, baseUpdatedAt }  (offene Seite serverseitig aktualisiert)
 //    • openPage     { pageId, html?, baseUpdatedAt? } (nativer Picker öffnet Seite)
+//    • focusGranularity { granularity }              (Fokus-Stufe live umgeschaltet)
 //
 //  Erweiterung: Braucht der Editor eine neue Root-Methode, wird sie ZUERST hier
 //  und in der JS-Facade (focusHost-Vertrag) ergänzt und in CLAUDE.md dokumentiert.
@@ -58,6 +60,14 @@ final class EditorBridge: NSObject, WKScriptMessageHandlerWithReply, EditorCoord
     /// WebView für den Swift→JS-Kanal (`callAsyncJavaScript`). Schwach: die
     /// View besitzt die Bridge (Handler-Registrierung), nicht umgekehrt.
     private weak var webView: WKWebView?
+
+    /// Lokal gewählte Fokus-Granularität (CSS-Klasse `focus-mode--<value>`).
+    /// Vom `FocusController` gesetzt; Default aus UserDefaults, damit der
+    /// Boot-Pull schon vor `FocusController.bind(_:)` den richtigen Wert liefert.
+    var focusGranularity: String = {
+        let raw = UserDefaults.standard.string(forKey: FocusGranularity.storageKey) ?? ""
+        return (FocusGranularity(rawValue: raw) ?? .paragraph).rawValue
+    }()
 
     /// Aktuell im Editor geöffnete Seite (vom JS via `editorState` gemeldet).
     private(set) var openPageId: String?
@@ -104,11 +114,18 @@ final class EditorBridge: NSObject, WKScriptMessageHandlerWithReply, EditorCoord
         switch op {
         case "load":
             let pageId = try requireString(params, "pageId")
-            guard let page = try await store.page(id: pageId) else {
-                // Unbekannte Seite ist kein Fehler — Editor startet leer.
-                return nil
+            // Local-first: gespiegelte Seite mit Inhalt direkt liefern.
+            if let page = try await store.page(id: pageId), !page.html.isEmpty {
+                return Self.encode(page)
             }
-            return Self.encode(page)
+            // Lokaler Spiegel fehlt oder ist leer — der Sync-Pull hat die Seite
+            // noch nicht (oder ohne Body) erfasst. Online direkt vom Server
+            // nachladen + spiegeln, damit bestehende Seiten beim Öffnen sofort
+            // Inhalt zeigen. Offline/unbekannt → leer (kein Fehler).
+            if let page = await fetchAndMirror(pageId: pageId) {
+                return Self.encode(page)
+            }
+            return nil
 
         case "save":
             let pageId = try requireString(params, "pageId")
@@ -144,6 +161,10 @@ final class EditorBridge: NSObject, WKScriptMessageHandlerWithReply, EditorCoord
             }
             return nil
 
+        case "focusGranularity":
+            // Boot-Pull: der Editor liest die lokale Fokus-Stufe beim Mounten.
+            return ["granularity": focusGranularity]
+
         case "spellcheckConfig":
             return await spellcheckConfig()
 
@@ -164,6 +185,38 @@ final class EditorBridge: NSObject, WKScriptMessageHandlerWithReply, EditorCoord
         default:
             throw BridgeError.unknownOp(op)
         }
+    }
+
+    // MARK: Server-Nachladen (offline-first-Lücke)
+
+    /// Lädt eine Seite direkt vom Server (`GET /content/pages/:id`, liefert
+    /// immer den vollen HTML-Body) und spiegelt sie in den LocalStore. Fallback
+    /// für `load`, wenn der Sync-Pull die Seite noch nicht (oder ohne Body)
+    /// erfasst hat — der Picker listet alle Server-Seiten (Tree), der Inhalt
+    /// kommt aber sonst nur aus dem Spiegel. Ohne API/offline → der lokale
+    /// (ggf. leere) Stand; der nächste Pull holt die Seite regulär nach.
+    ///
+    /// Setzt KEINE Sync-Basis (`serverBaseISO` führt die SyncEngine) — reines
+    /// Anzeige-Nachladen; der Pull-Tick erfasst die Basis ohnehin. Verwirft NIE
+    /// eine lokal anhängige Änderung (Datenverlust-Schutz): liegt für die Seite
+    /// ein Outbox-Eintrag vor, bleibt der lokale Stand unangetastet.
+    private func fetchAndMirror(pageId: String) async -> StoredPage? {
+        guard let api else { return nil }
+        if let pending = try? await store.pendingOutbox(),
+           pending.contains(where: { $0.pageId == pageId }) {
+            return try? await store.page(id: pageId)
+        }
+        guard let resp = try? await api.send("/content/pages/\(pageId)",
+                                             method: .GET,
+                                             decode: PushResponse.self),
+              let html = resp.html else {
+            return try? await store.page(id: pageId)
+        }
+        let ms = ISOTime.millis(resp.updated_at) ?? 0
+        try? await store.applyServerPage(id: pageId, html: html,
+                                         pageName: resp.name, bookId: nil, chapterId: nil,
+                                         serverUpdatedAtMillis: ms)
+        return try? await store.page(id: pageId)
     }
 
     // MARK: LanguageTool-Proxy

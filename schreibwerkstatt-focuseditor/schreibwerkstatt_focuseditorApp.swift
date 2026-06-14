@@ -54,5 +54,15 @@ struct schreibwerkstatt_focuseditorApp: App {
                 .pickerStyle(.inline)
             }
         }
+
+        // Natives Einstellungen-Fenster (⌘,). Environment-Objects fließen NICHT
+        // automatisch aus der WindowGroup hierher → explizit weiterreichen.
+        Settings {
+            SettingsView()
+                .environmentObject(core)
+                .environmentObject(core.auth)
+                .environmentObject(core.library)
+                .environmentObject(appearance)
+        }
     }
 }

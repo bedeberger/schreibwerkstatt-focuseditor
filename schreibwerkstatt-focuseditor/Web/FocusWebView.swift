@@ -5,11 +5,11 @@
 //  SwiftUI-Host für die WKWebView, die den Focus-Editor trägt.
 //
 //  HARTE REGEL (CLAUDE.md): Die WebView lädt IMMER lokal — nie eine Server-URL.
-//   • Liegt ein gebündeltes Editor-Build unter Resources/web/index.html, wird
-//     dieses per `loadFileURL` geladen (Produktionspfad, sobald der Build-Step
-//     existiert).
+//   • Liegt im OTA-Cache (web-cache/, von EditorBundleStore gezogen) ein
+//     bootfähiges Bundle (index.html), wird es über das eigene Scheme
+//     (swk-app://) via AppSchemeHandler geladen — eine Origin, ES-Module laden.
 //   • Sonst Fallback auf die In-Source-Dev-Harness (`loadHTMLString`), damit die
-//     Shell + Bridge schon vor dem Editor-Bundle lauffähig und testbar sind.
+//     Shell + Bridge schon vor dem ersten Bundle-Download lauffähig und testbar sind.
 //
 //  Die Bridge-Facade wird at-document-start in beide Fälle injiziert.
 //
@@ -53,7 +53,7 @@ struct FocusWebView: NSViewRepresentable {
         }
 
         let webView = WKWebView(frame: .zero, configuration: config)
-        webView.setValue(false, forKey: "drawsBackground") // Brand-Hintergrund durchscheinen lassen
+        Self.makeTransparent(webView)
         webView.navigationDelegate = context.coordinator
         #if DEBUG
         if webView.responds(to: Selector(("setInspectable:"))) {
@@ -70,6 +70,18 @@ struct FocusWebView: NSViewRepresentable {
 
     func updateNSView(_ nsView: WKWebView, context: Context) {
         // Statisches lokales Bundle — kein dynamisches Reload nötig.
+    }
+
+    /// Schaltet den opaken WKWebView-Hintergrund aus, damit die Brand-Fläche
+    /// (BrandColor.bg) durchscheint. Es gibt KEINE öffentliche API dafür — die
+    /// `drawsBackground`-Property ist privat und nur über KVC erreichbar. Der
+    /// Zugriff ist gegen ein künftig fehlendes Setter-Selektor abgesichert
+    /// (degradiert dann still zu opakem Weiss, statt zu crashen). Bewusst
+    /// akzeptiert: Distribution läuft über Sparkle/Notarization, nicht den
+    /// App Store (CLAUDE.md Roadmap 5).
+    private static func makeTransparent(_ webView: WKWebView) {
+        guard webView.responds(to: Selector(("setDrawsBackground:"))) else { return }
+        webView.setValue(false, forKey: "drawsBackground")
     }
 
     /// Liegt im Cache ein bootfähiges Bundle (index.html)?

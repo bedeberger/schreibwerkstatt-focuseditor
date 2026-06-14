@@ -52,20 +52,33 @@ private struct EditorHostView: View {
     /// Sichtbarkeit des beschwörbaren Seiten-Pickers (⌘O).
     @State private var pickerOpen = false
 
+    /// Toolbar nur im normalen Fenster — im ablenkungsfreien/nativen Vollbild
+    /// pures Schreiben ohne Chrome (CLAUDE.md, „ablenkungsfreies Schreiben").
+    private var showToolbar: Bool {
+        !(fullscreen.isActive || fullscreen.isNativeFullscreen)
+    }
+
     var body: some View {
-        ZStack {
+        Group {
             switch editorBundle.state {
             case .ready:
-                // App-weiter, geteilter Store — dieselbe Instanz, die die SyncEngine bedient.
-                FocusWebView(bridge: core.bridge, webRoot: editorBundle.webRoot)
-                    .background(BrandColor.bg)
-                    .frame(minWidth: 640, minHeight: 480)
-                    .ignoresSafeArea()
+                VStack(spacing: 0) {
+                    if showToolbar {
+                        AppToolbar(pickerOpen: $pickerOpen)
+                    }
+                    ZStack {
+                        // App-weiter, geteilter Store — dieselbe Instanz, die die SyncEngine bedient.
+                        FocusWebView(bridge: core.bridge, webRoot: editorBundle.webRoot)
+                            .background(BrandColor.bg)
+                            .frame(minWidth: 640, minHeight: 480)
 
-                if pickerOpen {
-                    PagePickerOverlay(isOpen: $pickerOpen)
-                        .transition(.opacity)
+                        if pickerOpen {
+                            PagePickerOverlay(isOpen: $pickerOpen)
+                                .transition(.opacity)
+                        }
+                    }
                 }
+                .ignoresSafeArea()
             case .failed(let message):
                 BundleUnavailableView(message: message) {
                     Task { await editorBundle.refresh(silent: false) }
@@ -76,28 +89,8 @@ private struct EditorHostView: View {
         }
         .animation(.easeOut(duration: 0.12), value: pickerOpen)
         .task { await editorBundle.ensureReady() }
-        // Im nativen Vollbild Toolbar komplett aus — pures, ablenkungsfreies
-        // Schreiben (kein Einblenden beim Hovern an den oberen Rand).
-        .toolbar(fullscreen.isNativeFullscreen ? .hidden : .automatic, for: .windowToolbar)
-        .toolbar {
-            ToolbarItem(placement: .navigation) {
-                BookPicker()
-            }
-            ToolbarItem(placement: .automatic) {
-                Button { pickerOpen.toggle() } label: {
-                    Image(systemName: "doc.text.magnifyingglass")
-                }
-                .keyboardShortcut("o", modifiers: .command)
-                .help("Seite öffnen (⌘O)")
-            }
-            ToolbarItem(placement: .automatic) {
-                SyncStatusLabel(status: sync.status, conflicts: sync.conflicts.count)
-            }
-            ToolbarItem(placement: .automatic) {
-                Button("Abmelden") { auth.signOut() }
-                    .font(BrandFont.sans(12))
-            }
-        }
+        // Native Fenster-Toolbar bleibt aus — wir nutzen die eigene AppToolbar.
+        .toolbar(.hidden, for: .windowToolbar)
         .task { await library.loadBooks() }
     }
 }
@@ -142,35 +135,6 @@ private struct BundleUnavailableView: View {
             .padding(40)
         }
         .frame(minWidth: 640, minHeight: 480)
-    }
-}
-
-/// Schlanke Sync-Anzeige in der Toolbar (Status + offene Konflikte).
-private struct SyncStatusLabel: View {
-    let status: SyncEngine.Status
-    let conflicts: Int
-
-    var body: some View {
-        HStack(spacing: 6) {
-            if conflicts > 0 {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.orange)
-                Text("\(conflicts) Konflikt\(conflicts == 1 ? "" : "e")")
-            } else {
-                switch status {
-                case .syncing:
-                    ProgressView().controlSize(.small)
-                    Text("Synchronisiere …")
-                case .offline:
-                    Image(systemName: "wifi.slash").foregroundStyle(BrandColor.muted)
-                    Text("Offline")
-                case .idle:
-                    Image(systemName: "checkmark.circle").foregroundStyle(BrandColor.muted)
-                }
-            }
-        }
-        .font(BrandFont.sans(11))
-        .foregroundStyle(BrandColor.muted)
     }
 }
 

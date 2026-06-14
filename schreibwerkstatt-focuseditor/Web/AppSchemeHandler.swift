@@ -2,8 +2,9 @@
 //  AppSchemeHandler.swift
 //  schreibwerkstatt-focuseditor
 //
-//  Custom-URL-Scheme-Handler, der das gebündelte Editor-Build aus Resources/web/
-//  unter EINER echten Origin (swk-app://local/…) ausliefert.
+//  Custom-URL-Scheme-Handler, der das gecachte OTA-Editor-Bundle aus dem
+//  web-cache/-Verzeichnis (Application Support) unter EINER echten Origin
+//  (swk-app://local/…) ausliefert.
 //
 //  WARUM (statt loadFileURL): Unter `file://` bekommt JEDE Datei eine eigene,
 //  opake Origin. WKWebView wertet damit jeden ES-Modul-`import` als
@@ -12,7 +13,7 @@
 //  Origin (swk-app://local) — der Modulgraph lädt nativ.
 //
 //  HARTE REGEL (CLAUDE.md): Liefert ausschließlich lokale Bundle-Dateien aus
-//  dem App-Paket. Kein Netzwerk, kein Pfad ausserhalb der web/-Wurzel.
+//  dem Cache-Verzeichnis (webRoot). Kein Netzwerk, kein Pfad ausserhalb der Wurzel.
 //
 
 import Foundation
@@ -29,7 +30,7 @@ enum AppScheme {
 }
 
 final class AppSchemeHandler: NSObject, WKURLSchemeHandler {
-    /// Wurzelverzeichnis des gebündelten Builds im App-Paket (…/Resources/web).
+    /// Wurzelverzeichnis des gecachten OTA-Bundles (Application Support/…/web-cache).
     private let webRoot: URL
 
     init(webRoot: URL) {
@@ -69,7 +70,7 @@ final class AppSchemeHandler: NSObject, WKURLSchemeHandler {
         // Synchrone Auslieferung — nichts abzubrechen.
     }
 
-    /// Mappt eine swk-app://local/<pfad>-URL auf eine Datei unter web/ und
+    /// Mappt eine swk-app://local/<pfad>-URL auf eine Datei unter webRoot und
     /// verhindert Pfad-Ausbruch ausserhalb der Wurzel (Path-Traversal-Schutz).
     private func resolve(_ url: URL?) -> URL? {
         guard let url, url.scheme == AppScheme.scheme else { return nil }
@@ -79,7 +80,7 @@ final class AppSchemeHandler: NSObject, WKURLSchemeHandler {
 
         let candidate = webRoot.appendingPathComponent(path).standardizedFileURL
 
-        // Muss innerhalb der web/-Wurzel liegen.
+        // Muss innerhalb der webRoot-Wurzel liegen.
         guard candidate.path == webRoot.path
             || candidate.path.hasPrefix(webRoot.path + "/") else { return nil }
 

@@ -112,31 +112,10 @@ final class APIClient {
     /// Fehler (für konditionale Anfragen via `If-None-Match`). 401 schlägt wie
     /// üblich auf `onUnauthorized` durch.
     func getRaw(_ path: String, ifNoneMatch etag: String? = nil) async throws -> RawResponse {
-        guard let baseURL = ServerConfig.baseURL,
-              let url = URL(string: path, relativeTo: baseURL) else {
-            throw AuthError.invalidServerURL
-        }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = Method.GET.rawValue
-        if let token = tokenProvider() {
-            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        }
-        if let etag {
-            request.setValue(etag, forHTTPHeaderField: "If-None-Match")
-        }
-
-        let data: Data
-        let response: URLResponse
-        do {
-            (data, response) = try await session.data(for: request)
-        } catch {
-            throw AuthError.network(error)
-        }
-
-        guard let http = response as? HTTPURLResponse else {
-            throw AuthError.server(status: -1, code: nil, body: nil)
-        }
+        // Roh-GET: kein `Accept: application/json` (Ziel ist ein ZIP), aber
+        // optionaler `If-None-Match`.
+        let request = try buildRequest(path, method: .GET, acceptJSON: false, ifNoneMatch: etag)
+        let (http, data) = try await perform(request)
 
         let responseETag = http.value(forHTTPHeaderField: "ETag")
         switch http.statusCode {
@@ -148,8 +127,7 @@ final class APIClient {
             onUnauthorized?()
             throw AuthError.unauthorized
         default:
-            let code = (try? decoder.decode(ServerErrorBody.self, from: data))?.error_code
-            throw AuthError.server(status: http.statusCode, code: code, body: data)
+            throw serverError(http, data)
         }
     }
 
@@ -160,35 +138,8 @@ final class APIClient {
         body: Encodable?,
         overrideToken: String?
     ) async throws -> Data {
-        guard let baseURL = ServerConfig.baseURL,
-              let url = URL(string: path, relativeTo: baseURL) else {
-            throw AuthError.invalidServerURL
-        }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = method.rawValue
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-
-        if let token = overrideToken ?? tokenProvider() {
-            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        }
-
-        if let body {
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.httpBody = try JSONEncoder().encode(AnyEncodable(body))
-        }
-
-        let data: Data
-        let response: URLResponse
-        do {
-            (data, response) = try await session.data(for: request)
-        } catch {
-            throw AuthError.network(error)
-        }
-
-        guard let http = response as? HTTPURLResponse else {
-            throw AuthError.server(status: -1, code: nil, body: nil)
-        }
+        let request = try buildRequest(path, method: method, body: body, overrideToken: overrideToken)
+        let (http, data) = try await perform(request)
 
         switch http.statusCode {
         case 200...299:
@@ -197,9 +148,68 @@ final class APIClient {
             onUnauthorized?()
             throw AuthError.unauthorized
         default:
-            let code = (try? decoder.decode(ServerErrorBody.self, from: data))?.error_code
-            throw AuthError.server(status: http.statusCode, code: code, body: data)
+            throw serverError(http, data)
         }
+    }
+
+    // MARK: - Gemeinsame Request-Bausteine
+
+    /// Baut einen `URLRequest` gegen `ServerConfig.baseURL` + `path`: setzt
+    /// Bearer-Token (override > Keychain), optional `Accept`/`Content-Type` und
+    /// `If-None-Match`. EINE Stelle für Header/Auth — kein Drift zwischen den
+    /// Aufruf-Varianten.
+    private func buildRequest(
+        _ path: String,
+        method: Method,
+        body: Encodable? = nil,
+        overrideToken: String? = nil,
+        acceptJSON: Bool = true,
+        ifNoneMatch: String? = nil
+    ) throws -> URLRequest {
+        guard let baseURL = ServerConfig.baseURL,
+              let url = URL(string: path, relativeTo: baseURL) else {
+            throw AuthError.invalidServerURL
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = method.rawValue
+        if acceptJSON {
+            request.setValue("application/json", forHTTPHeaderField: "Accept")
+        }
+        if let token = overrideToken ?? tokenProvider() {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        if let body {
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try encoder.encode(AnyEncodable(body))
+        }
+        if let ifNoneMatch {
+            request.setValue(ifNoneMatch, forHTTPHeaderField: "If-None-Match")
+        }
+        return request
+    }
+
+    /// Führt den Request aus und liefert `HTTPURLResponse` + Body. Mappt
+    /// Transport-Fehler auf `AuthError.network`, eine Nicht-HTTP-Antwort auf
+    /// `AuthError.server(status: -1, …)`. Statuscode-Deutung bleibt beim Aufrufer.
+    private func perform(_ request: URLRequest) async throws -> (HTTPURLResponse, Data) {
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session.data(for: request)
+        } catch {
+            throw AuthError.network(error)
+        }
+        guard let http = response as? HTTPURLResponse else {
+            throw AuthError.server(status: -1, code: nil, body: nil)
+        }
+        return (http, data)
+    }
+
+    /// Einheitlicher Server-Fehler aus Status + Body (dekodiert `error_code`).
+    private func serverError(_ http: HTTPURLResponse, _ data: Data) -> AuthError {
+        let code = (try? decoder.decode(ServerErrorBody.self, from: data))?.error_code
+        return AuthError.server(status: http.statusCode, code: code, body: data)
     }
 }
 
