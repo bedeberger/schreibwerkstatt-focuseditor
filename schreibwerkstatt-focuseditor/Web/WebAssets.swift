@@ -67,8 +67,11 @@ enum WebAssets {
         editorTypography: () => call('editorTypography', {}),
 
         // Lebende Schreibstatistik (Wörter/Zeichen) der offenen Seite an Swift
-        // melden (Live-Stats + Schreibziel). Feuert debounced bei Eingabe.
-        reportStats: (words, chars) => call('reportStats', { words, chars }),
+        // melden (Live-Stats + Schreibziel + Tages-Delta). Die pageId hängt mit,
+        // damit Swift den „heute geschrieben"-Delta korrekt PRO Seite führt
+        // (Tagesbaseline pro Seite). Feuert debounced bei Eingabe.
+        reportStats: (words, chars, pageId) =>
+          call('reportStats', { words, chars, pageId: pageId == null ? null : String(pageId) }),
 
         // Swift→JS Event-Bus. Der Editor-Host abonniert z. B. 'serverUpdate'
         // (saubere offene Seite wurde serverseitig aktualisiert → still neu laden).
@@ -363,7 +366,7 @@ enum WebAssets {
                   const trimmed = text.trim();
                   const words = trimmed ? trimmed.split(/\\s+/).length : 0;
                   const chars = text.replace(/\\u00a0/g, ' ').length;
-                  try { fb.reportStats(words, chars); } catch (_) {}
+                  try { fb.reportStats(words, chars, currentPageId); } catch (_) {}
                 }
                 window.__countStats = countAndReport;
                 // Debounced bei Eingabe (input bubblet vom Content nach oben).

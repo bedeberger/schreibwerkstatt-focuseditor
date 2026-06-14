@@ -52,14 +52,19 @@ Bridge-Nachrichten **JS → Swift** (`WKScriptMessageHandlerWithReply`, je `{ op
 - `log { level?, message }` → JS-Diagnose ins Swift-Log
 - `editorState { pageId, dirty }` → meldet offene Seite + Dirty-Flag (steuert Open-Page-Reload/-Schutz im Sync)
 - `spellcheckConfig {}` → `{ enabled, debounceMs }` (aus `GET /config`, in der Bridge gecacht)
-- `languagetoolCheck { text, language?, pageId?, bookId? }` → `{ matches: [...] }` | `{ disabled: true }` (Proxy `POST /languagetool/check`; `404` = serverseitig aus)
+- `languagetoolCheck { text, language?, pageId?, bookId? }` → `{ matches: [...] }` | `{ disabled: true }` (Proxy `POST /languagetool/check`; `404` = serverseitig aus). **Lokale Overrides** (UserDefaults, `SpellcheckPrefs` in [EditorBridge.swift](schreibwerkstatt-focuseditor/Web/EditorBridge.swift)): `spellcheck.localEnabled=false` → `{ disabled: true }` ohne Roundtrip; `spellcheck.languageOverride` (≠ „auto") übersteuert die gesendete Sprache.
 - `dictionaryAdd { word, lang?, bookId? }` → `{ ok }` (Proxy `POST /dictionary`, User-Wörterbuch)
+- `focusGranularity {}` → `{ granularity }` (lokale Fokus-Stufe, Boot-Pull)
+- `editorTypography {}` → CSS-fertiges Payload `{ fontSize, lineHeight, measure, fontFamily, paperBg?, paperText? }` (lokale Typografie, Boot-Pull; vom `TypographyController`, [Theme/TypographyController.swift](schreibwerkstatt-focuseditor/Theme/TypographyController.swift))
+- `reportStats { words, chars, pageId? }` → `null` (JS meldet Live-Wort-/Zeichenzahl der offenen Seite; treibt Toolbar-Stats, Schreibziel und den Tages-Delta im `WritingStatsStore`, [Writing/WritingStatsStore.swift](schreibwerkstatt-focuseditor/Writing/WritingStatsStore.swift))
 
 **Rechtschreibprüfung (LanguageTool):** Der unveränderte Editor-Controller (`public/js/cards/editor-spellcheck/controller.js` im Hauptrepo) wird ins OTA-Bundle gezogen und im Boot ([WebAssets.swift](schreibwerkstatt-focuseditor/Web/WebAssets.swift) `indexHTML`) verdrahtet; statt direktem `fetch` laufen Prüfung + Wörterbuch über die obigen Bridge-Ops. Settings (enabled/url/picky/rules) liegen **serverseitig** in `app_settings` und werden vom Proxy angewandt — der Client liefert nur Text + `bookId`/`pageId`. **Locale:** Client sendet `language:"auto"` + `bookId`; serverseitig gewinnt `getBookLocale(bookId)` → `de-CH`. Online-only (kein Offline-Kern-Inhalt); offline/`404` degradiert still. Voraussetzung im Hauptrepo (SSoT): `controller.js` macht seine zwei `fetch` über injizierbare `checkText`/`addWord`-Callbacks (Default bleibt `fetch`), und `lib/editor-bundle.js` nimmt `controller.js` + `css/editor/spellcheck.css` + `icons.svg` ins OTA-Bundle auf (im Hauptrepo erledigt).
 
 Bridge-Kanal **Swift → JS** (`callAsyncJavaScript` in `contentWorld: .page`): Die Facade stellt einen Event-Bus `window.__focusBridge.on(event, cb)` / `_receive(event, payload)` bereit. Swift sendet:
 - `serverUpdate { pageId, html, baseUpdatedAt }` → saubere offene Seite wurde serverseitig aktualisiert → still neu laden.
 - `openPage { pageId, html, baseUpdatedAt }` → nativer Picker hat eine Seite gewählt → im Editor öffnen.
+- `focusGranularity { granularity }` → Fokus-Stufe live umgeschaltet (CSS-Klasse `focus-mode--<value>`).
+- `editorTypography { … }` → Typografie live umgeschaltet; der Boot-Glue setzt CSS-Custom-Properties auf `:root` + injiziert EIN `<style id="sw-native-typography">`, das `.focus-editor__content` überschreibt (Override-Schicht über dem unveränderten Editor-CSS — kein Fork).
 
 Block-Merge (409): `window.__focusBridge._merge3(base, local, server)` lädt das gecachte `block-merge.js` dynamisch und liefert `{ merged, conflictCount }`. Der Swift-Kern ruft das beim 409-Push: `conflictCount == 0` → gemergtes HTML mit neuer Basis erneut pushen (still); `> 0` → Konflikt erfassen (Editor-Konflikt-UI). Merge-Ancestor (`base`) führt die SyncEngine als `serverBaseHtml` je Seite.
 
@@ -131,12 +136,17 @@ schreibwerkstatt-focuseditor/
       WebAssets.swift                  Bridge-Facade-JS + index.html-Boot (Client-Glue) + Dev-Harness
       AppSchemeHandler.swift           liefert den Cache unter EINER Origin (swk-app://) an die WebView
     Store/                             GRDB-LocalStore + Outbox
-    Sync/                              SyncEngine + Reachability + SyncState (Cursor/Basis) + SyncModels
+    Sync/                              SyncEngine + Reachability + SyncState (Cursor/Basis) + SyncModels + SyncPreferences (Poll-Modus)
     Auth/                              Keychain + Device-Token + Login-Flow + APIClient + ServerConfig
     Content/                           ContentAPI: Lese-Zugriff auf Buch-/Kapitel-Struktur (Server-Soll)
     Library/                           Buch-/Seitenauswahl-State (LibraryStore) + native Picker (BookPicker, PagePickerOverlay)
-    Theme/                             Light/Dark/System-Umschalter (AppearanceController) + BrandColor + BrandFont
+    Theme/                             AppearanceController (Light/Dark/System) + TypographyController (Schrift/Layout/Papier) + BrandColor + BrandFont
+    Focus/                             FocusController (lokale Fokus-Granularität)
+    Writing/                           WritingStatsStore (Live-Wortzahl/Lesezeit/Schreibziel/Tages-Delta)
+    Settings/                          SettingsView (⌘, Tabs: Allgemein/Darstellung/Typografie/Schreiben/Sync/Rechtschreibung/Konto)
 ```
+
+**Einstellungen (alle gerätelokal, UserDefaults):** Server-URL + Lieblingsbuch (Allgemein) · Hell/Dunkel/System + Fokus-Granularität + Kiosk-beim-Start + Auto-Hide-Toolbar (Darstellung) · Schriftgrösse/-art, Zeilenhöhe, Spaltenbreite (measure), Papier-Ton (Typografie) · Wortzahl-Anzeige + Wort-Ziel pro Seite (Schreiben) · Poll-Kadenz/Pause/manueller Sync (Sync) · LanguageTool an-aus + Sprach-Override (Rechtschreibung) · Abmelden + Editor-Bundle-Version/Update + Cache leeren (Konto). Editor-wirksame Werte (Typografie, Fokus) fliessen über die Bridge als CSS — **kein Editor-Fork**.
 
 Der App-Sources-Ordner ist eine `PBXFileSystemSynchronizedRootGroup` (Xcode 16+) → neue Swift-Dateien kommen **automatisch** ins Target (kein pbxproj-Edit nötig).
 
@@ -173,4 +183,4 @@ Der App-Sources-Ordner ist eine `PBXFileSystemSynchronizedRootGroup` (Xcode 16+)
 2. **Device-Token-Auth** am Server — *erledigt* (Tabelle `device_tokens`, `swd_`-Bearer, `/me/device-tokens`). Frontend-UI zum Ausstellen noch offen.
 3. **Inkrementeller Sync** am Server — *erledigt*: `GET /content/books/:book_id/sync` (Keyset-Cursor, voller HTML, inkl. eigener Edits) + 409-Semantik (`PAGE_CONFLICT`) auf `PUT /content/pages/:id`.
 4. **macOS-Shell + Offline-Kern** — WKWebView + Bridge *(steht)*, LocalStore + Outbox *(steht)*, GRDB *(erledigt — `GRDBLocalStore`, ersetzt den In-Memory/JSON-Platzhalter; `InMemoryLocalStore` bleibt als Fallback/Tests)*, **SyncEngine (Polling-Pull + Push + Delete-Reconcile)** *(steht — Cross-Session-Frische, s. „Sync")*.
-5. **Nativer Feinschliff** — *teilweise erledigt*: echtes Vollbild (`KioskFullscreen.swift`), Dark Mode (`Theme/AppearanceController.swift`, Light/Dark/System) und Brand-Fonts/-Farben (`Theme/`) stehen. Offen: Menüleiste-/⌘-Shortcut-Feinschliff, Preferences, Sparkle-Auto-Update, Code-Signing/Notarization.
+5. **Nativer Feinschliff** — *teilweise erledigt*: echtes Vollbild (`KioskFullscreen.swift`), Dark Mode (`Theme/AppearanceController.swift`, Light/Dark/System), Brand-Fonts/-Farben (`Theme/`) und **Preferences** (`Settings/SettingsView.swift`, 7 Tabs — Typografie/Schreibziel/Sync-Kadenz/Rechtschreib-Overrides/Kiosk-Start/Auto-Hide/Konto-Wartung) stehen. Offen: Sparkle-Auto-Update, Code-Signing/Notarization. *Server-/Editor-abhängige Settings bewusst NICHT umgesetzt (s. u.).*

@@ -62,7 +62,25 @@ final class KioskFullscreen: ObservableObject {
                                object: window, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated { self?.nativeFullscreenChanged(false) }
             },
+            // Resize/Key-Wechsel bauen das SwiftUI-Hosting-View neu auf und legen
+            // es wieder über die Titelleiste → Ampeln erneut nach vorne holen.
+            center.addObserver(forName: NSWindow.didResizeNotification,
+                               object: window, queue: .main) { [weak self, weak window] _ in
+                MainActor.assumeIsolated { if let window { self?.reassertTitlebarIfNormal(window) } }
+            },
+            center.addObserver(forName: NSWindow.didBecomeKeyNotification,
+                               object: window, queue: .main) { [weak self, weak window] _ in
+                MainActor.assumeIsolated { if let window { self?.reassertTitlebarIfNormal(window) } }
+            },
         ]
+    }
+
+    /// Ampeln nur im normalen Fenster wieder nach vorne holen — im
+    /// ablenkungsfreien/nativen Vollbild sollen sie ausgeblendet bleiben.
+    private func reassertTitlebarIfNormal(_ window: NSWindow) {
+        guard !isActive, !isNativeFullscreen else { return }
+        raiseTitlebar(window)
+        updateTrafficLightInset(window)
     }
 
     /// Basis-Chrome des normalen Fensters: randloser Inhalt bis ganz nach oben,
@@ -80,7 +98,41 @@ final class KioskFullscreen: ObservableObject {
         for kind in Self.buttons {
             window.standardWindowButton(kind)?.isHidden = false
         }
+        raiseTitlebar(window)
         updateTrafficLightInset(window)
+
+        // Nach dem Aufbau der SwiftUI-Hierarchie erneut nach vorne holen: das
+        // randlose `NSHostingView` (Toolbar-Vibrancy/WebView) wird sonst ÜBER
+        // den Titelleisten-Container gelegt und verdeckt die Ampel-Buttons.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self, weak window] in
+            guard let self, let window else { return }
+            self.raiseTitlebar(window)
+            self.updateTrafficLightInset(window)
+        }
+    }
+
+    /// Hebt den Titelleisten-Container (Eltern der Ampel-Buttons) über den
+    /// Inhalts-View. Bei `fullSizeContentView` + `.ignoresSafeArea()` legt
+    /// SwiftUI das layer-gestützte `NSHostingView` (Toolbar-Vibrancy/WebView)
+    /// sonst darüber → die Knöpfe sind unsichtbar. Reines Subview-Umsortieren
+    /// überlebt ein SwiftUI-Relayout (z. B. Fenster-Resize) nicht, darum
+    /// zusätzlich die Layer-`zPosition` anheben (überlebt das Relayout) und bei
+    /// jedem Resize erneut anwenden.
+    private func raiseTitlebar(_ window: NSWindow) {
+        // `closeButton.superview` ist die `NSTitlebarView` INNERHALB des
+        // `NSTitlebarContainerView`; Geschwister des Content-Views im ThemeFrame
+        // ist erst der Container — darum eine Ebene höher anheben.
+        guard let container = window.standardWindowButton(.closeButton)?.superview?.superview,
+              let themeFrame = container.superview else { return }
+        themeFrame.addSubview(container, positioned: .above, relativeTo: nil)
+        container.wantsLayer = true
+        container.layer?.zPosition = 1_000
+
+        // TEMP-DIAGNOSE3
+        NSLog("SWK-D3 themeFrame=\(type(of: themeFrame)) sameAsContentSuper=\(window.contentView?.superview === themeFrame) container.hidden=\(container.isHidden) container.alpha=\(container.alphaValue) container.frame=\(NSStringFromRect(container.frame))")
+        for (i, v) in themeFrame.subviews.enumerated() {
+            NSLog("SWK-D3   [\(i)] \(type(of: v)) hidden=\(v.isHidden) alpha=\(v.alphaValue) z=\(v.layer?.zPosition ?? -999) frame=\(NSStringFromRect(v.frame))")
+        }
     }
 
     /// Liest den rechten Rand des Zoom-Buttons (= breitester Ampel-Knopf) und

@@ -89,6 +89,14 @@ struct schreibwerkstatt_focuseditorApp: App {
                 .pickerStyle(.inline)
             }
 
+            // Manueller Sync (⌘⇧S) — wirkt auch bei pausiertem/manuellem Modus.
+            CommandGroup(after: .toolbar) {
+                Button("Jetzt synchronisieren") {
+                    core.sync.syncManually()
+                }
+                .keyboardShortcut("s", modifiers: [.command, .shift])
+            }
+
             // Help-Menü: die Standard-„App-Hilfe" (toter Help-Book-Eintrag)
             // durch unsere Tastaturkürzel-Hilfe ersetzen (⌘?).
             CommandGroup(replacing: .help) {

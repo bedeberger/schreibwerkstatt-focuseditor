@@ -393,6 +393,17 @@ final class SyncEngine: ObservableObject {
                     log.notice("Pull übersprungen (Seite ohne updated_at): \(pid, privacy: .public)")
                     continue
                 }
+                // Echo des eigenen, eben gepushten Edits: `/sync` liefert bewusst
+                // auch eigene Edits zurück, und nach dem Push steht unsere Basis
+                // bereits auf genau diesem Server-Stempel. Gleicher Stempel = kein
+                // neuer Inhalt → NICHT erneut in den Store mergen und vor allem die
+                // offene Seite NICHT neu laden. Sonst lädt jeder Auto-Save die Seite
+                // einen Tick später unnötig neu und die Live-Statistik (Wortzahl/
+                // „heute") flackert. Fremd-Edits (anderes Gerät/Session) tragen einen
+                // ANDEREN updated_at und greifen darum weiterhin. Cursor rückt unten
+                // trotzdem regulär vor.
+                if stateStore.state.serverBaseISO[pid] == serverUpdatedAt { continue }
+
                 let serverHtml = p.html ?? ""
                 let ms = ISOTime.millis(serverUpdatedAt) ?? 0
                 // ISO als Push-Basis + HTML als Merge-Ancestor mitführen.

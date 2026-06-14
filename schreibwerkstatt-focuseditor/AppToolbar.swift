@@ -33,6 +33,18 @@ struct AppToolbar: View {
         HStack(spacing: 14) {
             BookPicker()
 
+            if let chapter = library.openChapterName {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(BrandColor.faint)
+                Text(chapter)
+                    .font(BrandFont.sans(12))
+                    .foregroundStyle(BrandColor.faint)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .layoutPriority(1)
+            }
+
             if let page = library.openPageName {
                 Image(systemName: "chevron.right")
                     .font(.system(size: 9, weight: .semibold))
@@ -42,6 +54,7 @@ struct AppToolbar: View {
                     .foregroundStyle(BrandColor.muted)
                     .lineLimit(1)
                     .truncationMode(.tail)
+                    .layoutPriority(2)
             }
 
             Spacer(minLength: 12)
@@ -55,6 +68,7 @@ struct AppToolbar: View {
 
             if writingStats.showStats {
                 WritingStatsLabel(words: writingStats.words,
+                                  wordsToday: writingStats.wordsToday,
                                   readingMinutes: writingStats.readingMinutes,
                                   goal: writingStats.pageGoalWords,
                                   progress: writingStats.goalProgress)
@@ -143,11 +157,12 @@ private struct ToolbarIconButton: View {
     }
 }
 
-/// Lebende Schreibstatistik für die Toolbar: Wortzahl + Lesezeit, plus eine
-/// schlanke Fortschrittsleiste, wenn ein Seitenziel gesetzt ist. Der Tooltip
-/// nennt zusätzlich die Zeichenzahl bzw. den Zielwert.
+/// Lebende Schreibstatistik für die Toolbar: Wortzahl, heute geschriebene Wörter
+/// und Lesezeit, plus eine schlanke Fortschrittsleiste, wenn ein Seitenziel
+/// gesetzt ist. Der Tooltip nennt zusätzlich die Zeichenzahl bzw. den Zielwert.
 struct WritingStatsLabel: View {
     let words: Int
+    let wordsToday: Int
     let readingMinutes: Int
     let goal: Int
     let progress: Double?
@@ -157,6 +172,8 @@ struct WritingStatsLabel: View {
             Image(systemName: "text.word.spacing")
                 .foregroundStyle(BrandColor.muted)
             Text("\(words) \(words == 1 ? "Wort" : "Wörter")")
+            Text("· \(signed(wordsToday)) heute")
+                .foregroundStyle(wordsToday > 0 ? BrandColor.muted : BrandColor.faint)
             if readingMinutes > 0 {
                 Text("· \(readingMinutes) min")
                     .foregroundStyle(BrandColor.faint)
@@ -170,14 +187,24 @@ struct WritingStatsLabel: View {
         }
         .font(BrandFont.sans(11))
         .foregroundStyle(BrandColor.muted)
+        .fixedSize()
         .help(tooltip)
     }
 
+    /// Vorzeichen-Formatierung wie der Web-Editor: „+120" / „−5" / „±0"
+    /// (echtes Minus U+2212).
+    private func signed(_ n: Int) -> String {
+        if n > 0 { return "+\(n)" }
+        if n < 0 { return "−\(abs(n))" }
+        return "±0"
+    }
+
     private var tooltip: String {
+        let heute = "\(signed(wordsToday)) Wörter heute auf dieser Seite"
         if goal > 0 {
-            return "\(words) von \(goal) Wörtern (\(Int(((progress ?? 0) * 100).rounded())) %)"
+            return "\(words) von \(goal) Wörtern (\(Int(((progress ?? 0) * 100).rounded())) %) · \(heute)"
         }
-        return "Wortzahl der offenen Seite · ~\(readingMinutes) min Lesezeit"
+        return "Wortzahl der offenen Seite · \(heute) · ~\(readingMinutes) min Lesezeit"
     }
 }
 

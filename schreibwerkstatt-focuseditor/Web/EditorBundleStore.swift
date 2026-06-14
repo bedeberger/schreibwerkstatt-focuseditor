@@ -34,6 +34,11 @@ final class EditorBundleStore: ObservableObject {
     }
 
     @Published private(set) var state: BundleState = .idle
+    /// Quell-Commit des aktuell gecachten Bundles (aus dem Manifest) — für die
+    /// Versionsanzeige in den Einstellungen. `nil` ohne Cache.
+    @Published private(set) var sourceCommit: String?
+    /// Läuft gerade ein manueller Update-Check? (Spinner in den Einstellungen.)
+    @Published private(set) var isCheckingUpdate = false
 
     private let api: APIClient
     private let fileManager = FileManager.default
@@ -56,6 +61,7 @@ final class EditorBundleStore: ObservableObject {
         self.cacheDir = dir.appendingPathComponent("web-cache", isDirectory: true)
         self.metaURL = dir.appendingPathComponent("web-cache.meta.json")
         if hasCache { state = .ready }
+        sourceCommit = loadMeta()?.sourceCommit
     }
 
     /// Wurzelverzeichnis, das der AppSchemeHandler ausliefert.
@@ -78,6 +84,28 @@ final class EditorBundleStore: ObservableObject {
         } else {
             await refresh(silent: false)
         }
+    }
+
+    /// Manueller Update-Check (aus den Einstellungen). Zieht das Bundle
+    /// konditional; ein neueres Bundle wird in den Cache übernommen und greift
+    /// beim nächsten Start (kein Hot-Swap mitten im Schreiben → Datenverlust-
+    /// Schutz). Setzt nur den Spinner-Status; ein vorhandenes Bundle bleibt bei
+    /// Fehlern unangetastet.
+    func checkForUpdate() async {
+        isCheckingUpdate = true
+        defer { isCheckingUpdate = false }
+        await refresh(silent: true)
+    }
+
+    /// Leert den gecachten Editor (web-cache + Meta) und lädt ihn neu. Betrifft
+    /// NUR die Editor-Assets — KEINE Inhalte (die liegen im SQLite-Spiegel und
+    /// werden nicht angetastet). Nach dem Leeren erfolgt ein frischer Download.
+    func clearEditorCache() async {
+        try? fileManager.removeItem(at: cacheDir)
+        try? fileManager.removeItem(at: metaURL)
+        sourceCommit = nil
+        state = .idle
+        await ensureReady()
     }
 
     /// Lädt das Bundle konditional (ETag) und tauscht den Cache atomar.
@@ -104,6 +132,7 @@ final class EditorBundleStore: ObservableObject {
             }
 
             try installBundle(zip: res.data, etag: res.etag)
+            sourceCommit = loadMeta()?.sourceCommit
             state = .ready
         } catch {
             if hasCache {

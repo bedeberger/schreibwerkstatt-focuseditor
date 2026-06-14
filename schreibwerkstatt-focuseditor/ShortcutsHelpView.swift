@@ -66,6 +66,7 @@ struct ShortcutsHelpView: View {
                 ShortcutSection(title: "App & Fenster", rows: [
                     (["⌘", "⌃", "F"], "Ablenkungsfreier Vollbild ein/aus"),
                     (["⎋"], "Vollbild verlassen"),
+                    (["⌘", "⇧", "S"], "Jetzt synchronisieren"),
                     (["⌘", ","], "Einstellungen öffnen"),
                     (["⌘", "?"], "Diese Tastaturkürzel-Hilfe"),
                 ])

@@ -67,6 +67,16 @@ final class LibraryStore: ObservableObject {
         return pages.first { $0.id == id }?.name
     }
 
+    /// Kapitelname der aktuell offenen Seite (für die Toolbar, als Kontext links
+    /// neben dem Seitennamen). `nil`, wenn keine Seite offen ist oder die Seite
+    /// keinem Kapitel zugeordnet ist (bzw. nur der lokale Fallback greift).
+    var openChapterName: String? {
+        guard let id = openPageId,
+              let chapter = pages.first(where: { $0.id == id })?.chapterName,
+              !chapter.isEmpty else { return nil }
+        return chapter
+    }
+
     // MARK: - Laden
 
     /// Bücherliste vom Server holen. Ohne aktives Buch wird das erste gewählt.

@@ -52,9 +52,19 @@ private struct EditorHostView: View {
     /// Sichtbarkeit des beschwörbaren Seiten-Pickers (⌘O).
     @State private var pickerOpen = false
 
-    /// Toolbar nur im normalen Fenster — im ablenkungsfreien/nativen Vollbild
-    /// pures Schreiben ohne Chrome (CLAUDE.md, „ablenkungsfreies Schreiben").
-    private var showToolbar: Bool {
+    /// „Beim Start in den Vollbild" + „Toolbar bei Inaktivität ausblenden"
+    /// (gerätelokal, gleiche Keys wie der Darstellungs-Tab der Settings).
+    @AppStorage("kiosk.startInKiosk") private var startInKiosk = false
+    @AppStorage("toolbar.autoHide") private var autoHideToolbar = false
+    /// Verhindert wiederholtes Auto-Vollbild bei jedem View-Erscheinen.
+    @State private var autoKioskApplied = false
+    /// Steuert die eingeblendete Toolbar im Auto-Hide-Modus.
+    @State private var toolbarRevealed = true
+    @State private var hideTask: Task<Void, Never>?
+
+    /// Darf überhaupt Chrome (Toolbar) gezeigt werden? Im ablenkungsfreien/
+    /// nativen Vollbild nie (CLAUDE.md, „ablenkungsfreies Schreiben").
+    private var chromeAllowed: Bool {
         !(fullscreen.isActive || fullscreen.isNativeFullscreen)
     }
 
@@ -62,23 +72,7 @@ private struct EditorHostView: View {
         Group {
             switch editorBundle.state {
             case .ready:
-                VStack(spacing: 0) {
-                    if showToolbar {
-                        AppToolbar(pickerOpen: $pickerOpen)
-                    }
-                    ZStack {
-                        // App-weiter, geteilter Store — dieselbe Instanz, die die SyncEngine bedient.
-                        FocusWebView(bridge: core.bridge, webRoot: editorBundle.webRoot)
-                            .background(BrandColor.bg)
-                            .frame(minWidth: 640, minHeight: 480)
-
-                        if pickerOpen {
-                            PagePickerOverlay(isOpen: $pickerOpen)
-                                .transition(.opacity.combined(with: .scale(scale: 0.97)))
-                        }
-                    }
-                }
-                .ignoresSafeArea()
+                editorReady
             case .failed(let message):
                 BundleUnavailableView(message: message) {
                     Task { await editorBundle.refresh(silent: false) }
@@ -88,10 +82,84 @@ private struct EditorHostView: View {
             }
         }
         .animation(.easeOut(duration: 0.12), value: pickerOpen)
+        .animation(.easeOut(duration: 0.18), value: toolbarRevealed)
         .task { await editorBundle.ensureReady() }
         // Native Fenster-Toolbar bleibt aus — wir nutzen die eigene AppToolbar.
         .toolbar(.hidden, for: .windowToolbar)
         .task { await library.loadBooks() }
+        // Beim Ausschalten von Auto-Hide die Toolbar wieder dauerhaft zeigen.
+        .onChange(of: autoHideToolbar) { _, on in
+            if !on { hideTask?.cancel(); toolbarRevealed = true }
+        }
+    }
+
+    /// Editor + Toolbar im Ready-Zustand. Zwei Layouts:
+    ///  • normal     — Toolbar oben im Fluss (Webview darunter).
+    ///  • Auto-Hide  — Toolbar als Overlay, das ein-/ausgeblendet wird; sie bleibt
+    ///    IMMER im View-Baum (nur visuell verschoben), damit ⌘O & Co. weiter
+    ///    greifen. Ein dünner Hover-Streifen ÜBER der WebView blendet sie ein
+    ///    (über dem WKWebView feuert der Streifen zuverlässig, die WebView selbst
+    ///    fängt Hover sonst ab).
+    @ViewBuilder
+    private var editorReady: some View {
+        let autoHideActive = autoHideToolbar && chromeAllowed
+        VStack(spacing: 0) {
+            if chromeAllowed && !autoHideActive {
+                AppToolbar(pickerOpen: $pickerOpen)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+            ZStack(alignment: .top) {
+                // App-weiter, geteilter Store — dieselbe Instanz, die die SyncEngine bedient.
+                FocusWebView(bridge: core.bridge, webRoot: editorBundle.webRoot)
+                    .background(BrandColor.bg)
+                    .frame(minWidth: 640, minHeight: 480)
+
+                if autoHideActive {
+                    // Hover-Fangstreifen am oberen Rand (über der WebView).
+                    Color.clear
+                        .frame(height: 8)
+                        .contentShape(Rectangle())
+                        .onContinuousHover { phase in
+                            if case .active = phase { revealToolbar() }
+                        }
+                    // Toolbar-Overlay: immer im Baum (Shortcuts!), nur verschoben.
+                    AppToolbar(pickerOpen: $pickerOpen)
+                        .background(.ultraThinMaterial)
+                        .opacity(toolbarRevealed ? 1 : 0)
+                        .offset(y: toolbarRevealed ? 0 : -52)
+                        .allowsHitTesting(toolbarRevealed)
+                        .onHover { if $0 { revealToolbar() } }
+                }
+
+                if pickerOpen {
+                    PagePickerOverlay(isOpen: $pickerOpen)
+                        .transition(.opacity.combined(with: .scale(scale: 0.97)))
+                }
+            }
+        }
+        .ignoresSafeArea()
+        .onAppear { applyAutoKioskIfNeeded() }
+    }
+
+    /// Blendet die Toolbar ein und plant das erneute Ausblenden nach Inaktivität.
+    private func revealToolbar() {
+        if !toolbarRevealed { toolbarRevealed = true }
+        hideTask?.cancel()
+        hideTask = Task {
+            try? await Task.sleep(for: .seconds(2.5))
+            guard !Task.isCancelled else { return }
+            if autoHideToolbar && chromeAllowed { toolbarRevealed = false }
+        }
+    }
+
+    /// Geht beim ersten Erscheinen des Editors in den Vollbild, wenn so gewählt.
+    private func applyAutoKioskIfNeeded() {
+        guard startInKiosk, !autoKioskApplied, !fullscreen.isActive else { return }
+        autoKioskApplied = true
+        // Ein Tick warten, bis das NSWindow gebunden + vermessen ist.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            if startInKiosk && !fullscreen.isActive { fullscreen.enter() }
+        }
     }
 }
 

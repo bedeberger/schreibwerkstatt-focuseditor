@@ -28,6 +28,15 @@ struct SettingsView: View {
 
             WritingSettingsTab()
                 .tabItem { Label("Schreiben", systemImage: "pencil.and.scribble") }
+
+            SyncSettingsTab()
+                .tabItem { Label("Sync", systemImage: "arrow.triangle.2.circlepath") }
+
+            SpellcheckSettingsTab()
+                .tabItem { Label("Rechtschreibung", systemImage: "textformat.abc.dottedunderline") }
+
+            AccountSettingsTab()
+                .tabItem { Label("Konto", systemImage: "person.crop.circle") }
         }
         .frame(width: 460)
     }
@@ -127,6 +136,8 @@ private struct GeneralSettingsTab: View {
 private struct AppearanceSettingsTab: View {
     @EnvironmentObject private var appearance: AppearanceController
     @EnvironmentObject private var focus: FocusController
+    @AppStorage("kiosk.startInKiosk") private var startInKiosk = false
+    @AppStorage("toolbar.autoHide") private var autoHideToolbar = false
 
     var body: some View {
         Form {
@@ -153,6 +164,15 @@ private struct AppearanceSettingsTab: View {
                 .pickerStyle(.inline)
 
                 Text("Bestimmt, wie stark der Editor die Umgebung des aktiven Absatzes abblendet. Die Änderung wirkt sofort im offenen Editor.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Section("Fenster") {
+                Toggle("Beim Start in den ablenkungsfreien Vollbild", isOn: $startInKiosk)
+                Toggle("Toolbar bei Inaktivität ausblenden", isOn: $autoHideToolbar)
+                Text("Der ablenkungsfreie Vollbild blendet Menüleiste und Dock aus (⎋ verlässt ihn). Die Auto-Ausblendung zeigt die Toolbar erst wieder, wenn der Zeiger an den oberen Rand fährt.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -283,5 +303,183 @@ private struct WritingSettingsTab: View {
             get: { stats.pageGoalWords > 0 },
             set: { stats.pageGoalWords = $0 ? 500 : 0 }
         )
+    }
+}
+
+// MARK: - Sync (Poll-Kadenz, Pause, Status)
+
+private struct SyncSettingsTab: View {
+    @EnvironmentObject private var sync: SyncEngine
+
+    var body: some View {
+        Form {
+            Section("Aktualisierung") {
+                Picker("Poll-Kadenz", selection: $sync.pollMode) {
+                    ForEach(SyncPollMode.allCases) { m in
+                        Text(m.label).tag(m)
+                    }
+                }
+                .pickerStyle(.inline)
+
+                Text("Wie oft im aktiven Fenster nach Änderungen gesucht wird. „Sparsam“ schont Akku/Daten; „Nur manuell“ synchronisiert ausschliesslich auf Knopfdruck.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Section("Pause") {
+                Toggle("Sync pausieren (diese Sitzung)", isOn: $sync.isPaused)
+                Text("Hält den automatischen Abgleich an, bis du ihn wieder einschaltest oder die App neu startest. Lokale Änderungen bleiben in der Warteschlange.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Section("Status") {
+                LabeledContent("Zustand", value: statusText)
+                LabeledContent("Zuletzt synchronisiert", value: lastSyncedText)
+                if sync.pendingCount > 0 {
+                    LabeledContent("Ausstehend", value: "\(sync.pendingCount) Seite\(sync.pendingCount == 1 ? "" : "n")")
+                }
+                if !sync.conflicts.isEmpty {
+                    LabeledContent("Konflikte", value: "\(sync.conflicts.count)")
+                        .foregroundStyle(.orange)
+                }
+                HStack {
+                    Spacer()
+                    Button("Jetzt synchronisieren") { sync.syncManually() }
+                }
+            }
+        }
+        .formStyle(.grouped)
+    }
+
+    private var statusText: String {
+        switch sync.status {
+        case .idle:    return sync.isPaused ? "Pausiert" : "Bereit"
+        case .syncing: return "Synchronisiere …"
+        case .offline: return "Offline"
+        }
+    }
+
+    private var lastSyncedText: String {
+        guard let last = sync.lastSyncedAt else { return "Noch nie" }
+        let rel = RelativeDateTimeFormatter()
+        rel.locale = Locale(identifier: "de")
+        return rel.localizedString(for: last, relativeTo: Date())
+    }
+}
+
+// MARK: - Rechtschreibung (lokale LanguageTool-Overrides)
+
+private struct SpellcheckSettingsTab: View {
+    @AppStorage(SpellcheckPrefs.enabledKey) private var localEnabled = true
+    @AppStorage(SpellcheckPrefs.languageKey) private var languageRaw = "auto"
+
+    var body: some View {
+        Form {
+            Section("Rechtschreibprüfung") {
+                Toggle("Auf diesem Gerät aktiv", isOn: $localEnabled)
+                Text("Die Prüfung läuft über LanguageTool am Server (online-only). Dieser Schalter kann sie zusätzlich pro Gerät abschalten — auch wenn sie serverseitig aktiv ist.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Section("Sprache") {
+                Picker("Prüfsprache", selection: $languageRaw) {
+                    ForEach(SpellcheckLanguage.allCases) { lang in
+                        Text(lang.label).tag(lang.rawValue)
+                    }
+                }
+                .disabled(!localEnabled)
+                Text("„Automatisch“ überlässt dem Server die Sprache (aus der Buch-Sprache, i. d. R. Deutsch Schweiz). Eine feste Wahl übersteuert das pro Gerät.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Section {
+                Text("Strenge (Picky) und aktive Regeln werden serverseitig verwaltet und lassen sich hier nicht ändern.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .formStyle(.grouped)
+    }
+}
+
+// MARK: - Konto (Abmelden + Editor-Bundle-Wartung)
+
+private struct AccountSettingsTab: View {
+    @EnvironmentObject private var auth: AuthStore
+    @EnvironmentObject private var editorBundle: EditorBundleStore
+    @State private var showLogoutAlert = false
+    @State private var showClearCacheAlert = false
+
+    var body: some View {
+        Form {
+            Section("Anmeldung") {
+                LabeledContent("Server", value: ServerConfig.baseURLString)
+                LabeledContent("Status", value: auth.state == .signedIn ? "Angemeldet" : "Nicht angemeldet")
+                HStack {
+                    Spacer()
+                    Button("Abmelden", role: .destructive) { showLogoutAlert = true }
+                        .disabled(auth.state != .signedIn)
+                }
+                Text("Abmelden entfernt nur das Gerätetoken aus dem Schlüsselbund. Lokale, noch nicht synchronisierte Inhalte bleiben erhalten.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Section("Editor-Version") {
+                LabeledContent("Quelle (Commit)", value: commitShort)
+                HStack {
+                    if editorBundle.isCheckingUpdate { ProgressView().controlSize(.small) }
+                    Spacer()
+                    Button("Nach Update suchen") {
+                        Task { await editorBundle.checkForUpdate() }
+                    }
+                    .disabled(editorBundle.isCheckingUpdate)
+                }
+                Text("Ein neueres Editor-Bundle wird heruntergeladen und greift beim nächsten Start (kein Wechsel mitten im Schreiben).")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Section("Wartung") {
+                HStack {
+                    Spacer()
+                    Button("Editor-Cache leeren") { showClearCacheAlert = true }
+                }
+                Text("Lädt die Editor-Assets frisch vom Server. Betrifft nur den Editor — deine Texte (lokaler Spiegel) bleiben unangetastet.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .formStyle(.grouped)
+        .alert("Abmelden?", isPresented: $showLogoutAlert) {
+            Button("Abbrechen", role: .cancel) {}
+            Button("Abmelden", role: .destructive) { auth.signOut() }
+        } message: {
+            Text("Du musst dich danach mit einem Gerätetoken neu anmelden. Lokale Inhalte bleiben erhalten.")
+        }
+        .alert("Editor-Cache leeren?", isPresented: $showClearCacheAlert) {
+            Button("Abbrechen", role: .cancel) {}
+            Button("Leeren & neu laden", role: .destructive) {
+                Task { await editorBundle.clearEditorCache() }
+            }
+        } message: {
+            Text("Der Editor wird neu vom Server geladen. Ohne Verbindung steht er bis zum nächsten erfolgreichen Download nicht zur Verfügung. Deine Texte bleiben erhalten.")
+        }
+    }
+
+    private var commitShort: String {
+        guard let c = editorBundle.sourceCommit, !c.isEmpty, c != "unknown" else { return "—" }
+        return String(c.prefix(10))
     }
 }

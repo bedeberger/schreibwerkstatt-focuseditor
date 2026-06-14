@@ -83,9 +83,11 @@ final class EditorBridge: NSObject, WKScriptMessageHandlerWithReply, EditorCoord
     }
     /// Benachrichtigung bei Wechsel der offenen Seite (treibt die Toolbar-Anzeige).
     var onOpenPageChange: ((String?) -> Void)?
-    /// Lebende Schreibstatistik (Wörter, Zeichen) aus der WebView — treibt die
-    /// Stats-Anzeige + das Schreibziel. Gesetzt vom `WritingStatsStore`.
-    var onStats: ((Int, Int) -> Void)?
+    /// Lebende Schreibstatistik (pageId, Wörter, Zeichen) aus der WebView —
+    /// treibt die Stats-Anzeige, das Schreibziel und den Tages-Delta. Die pageId
+    /// erlaubt dem Store, „heute geschrieben" PRO Seite zu führen. Gesetzt vom
+    /// `WritingStatsStore`.
+    var onStats: ((String?, Int, Int) -> Void)?
     /// Seiten mit ungespeicherten Editor-Änderungen.
     private var dirtyPages: Set<String> = []
 
@@ -185,10 +187,12 @@ final class EditorBridge: NSObject, WKScriptMessageHandlerWithReply, EditorCoord
             return typography
 
         case "reportStats":
-            // WebView meldet Wort-/Zeichenzahl der offenen Seite (Live-Stats + Ziel).
+            // WebView meldet Wort-/Zeichenzahl der offenen Seite (Live-Stats +
+            // Ziel + Tages-Delta). pageId trägt den Seitenbezug für „heute".
             let words = (params["words"] as? Int) ?? (params["words"] as? NSNumber)?.intValue ?? 0
             let chars = (params["chars"] as? Int) ?? (params["chars"] as? NSNumber)?.intValue ?? 0
-            onStats?(words, chars)
+            let pageId = params["pageId"] as? String
+            onStats?(pageId, words, chars)
             return nil
 
         case "spellcheckConfig":
@@ -256,16 +260,20 @@ final class EditorBridge: NSObject, WKScriptMessageHandlerWithReply, EditorCoord
     /// Fehler den letzten gecachten Stand, sonst „deaktiviert" (degradiert
     /// still — Spellcheck ist online-only und kein Offline-Kern-Inhalt).
     private func spellcheckConfig() async -> [String: Any] {
+        // Lokaler Override: auch bei serverseitig aktivem LT kann der Nutzer die
+        // Prüfung pro Gerät abschalten (greift beim nächsten Editor-Boot; ein
+        // Live-Aus wirkt zusätzlich über `languagetoolCheck`).
+        let localOn = SpellcheckPrefs.localEnabled
         guard let api else { return ["enabled": false, "debounceMs": 1500] }
         do {
             let cfg = try await api.send("/config", decode: ConfigDTO.self)
-            let enabled = cfg.languagetool?.enabled ?? false
+            let serverEnabled = cfg.languagetool?.enabled ?? false
             let debounce = cfg.languagetool?.debounceMs ?? 1500
-            ltConfig = (enabled, debounce)
-            return ["enabled": enabled, "debounceMs": debounce]
+            ltConfig = (serverEnabled, debounce)
+            return ["enabled": serverEnabled && localOn, "debounceMs": debounce]
         } catch {
             if let cached = ltConfig {
-                return ["enabled": cached.enabled, "debounceMs": cached.debounceMs]
+                return ["enabled": cached.enabled && localOn, "debounceMs": cached.debounceMs]
             }
             return ["enabled": false, "debounceMs": 1500]
         }
@@ -288,7 +296,14 @@ final class EditorBridge: NSObject, WKScriptMessageHandlerWithReply, EditorCoord
     private func languagetoolCheck(text: String, language: String,
                                    pageId: String?, bookId: Int?) async throws -> [String: Any] {
         guard let api else { return ["disabled": true] }
-        let req = LTCheckRequest(text: text, language: language, bookId: bookId, pageId: pageId)
+        // Lokaler Aus-Schalter wirkt sofort (auch mitten in der Sitzung): keine
+        // neuen Treffer mehr, bestehende Markierungen verschwinden beim nächsten
+        // Prüf-Zyklus des Controllers.
+        guard SpellcheckPrefs.localEnabled else { return ["disabled": true] }
+        // Lokaler Sprach-Override: gewinnt über das vom Controller gelieferte
+        // „auto" (sonst löst der Server die Locale via bookId auf → de-CH).
+        let effectiveLanguage = SpellcheckPrefs.languageOverride ?? language
+        let req = LTCheckRequest(text: text, language: effectiveLanguage, bookId: bookId, pageId: pageId)
         let (status, data) = try await api.postExpectingJSON("/languagetool/check", body: req)
         if status == 404 { return ["disabled": true] }   // Feature serverseitig aus
         guard (200...299).contains(status) else {
@@ -476,4 +491,52 @@ private struct DictionaryAddRequest: Encodable {
     let word: String
     let bookId: Int
     let lang: String
+}
+
+// MARK: - Lokale Rechtschreib-Vorlieben (UserDefaults)
+
+/// Gerätelokale Overrides der Rechtschreibprüfung. Die eigentlichen LT-Settings
+/// (Server-URL, Picky, Regeln) liegen serverseitig — hier nur, was der Client
+/// pro Gerät übersteuern darf: an/aus und die Sprache. Picky/Regeln bleiben
+/// bewusst serverseitig (Client kann sie nicht setzen).
+enum SpellcheckPrefs {
+    static let enabledKey = "spellcheck.localEnabled"
+    static let languageKey = "spellcheck.languageOverride"
+
+    /// Lokal aktiviert? Default an (folgt dann dem Server-Schalter).
+    static var localEnabled: Bool {
+        (UserDefaults.standard.object(forKey: enabledKey) as? Bool) ?? true
+    }
+
+    /// Sprach-Override oder `nil` für „auto" (Server löst via bookId auf).
+    static var languageOverride: String? {
+        let raw = UserDefaults.standard.string(forKey: languageKey) ?? "auto"
+        return raw == "auto" ? nil : raw
+    }
+}
+
+/// Auswahl für den Sprach-Override in den Einstellungen. RawValue = der
+/// LanguageTool-Sprachcode (bzw. „auto" für die serverseitige Auflösung).
+enum SpellcheckLanguage: String, CaseIterable, Identifiable {
+    case auto
+    case deCH = "de-CH"
+    case deDE = "de-DE"
+    case frCH = "fr-CH"
+    case fr
+    case it
+    case enGB = "en-GB"
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .auto: return "Automatisch (Buch-Sprache)"
+        case .deCH: return "Deutsch (Schweiz)"
+        case .deDE: return "Deutsch (Deutschland)"
+        case .frCH: return "Französisch (Schweiz)"
+        case .fr:   return "Französisch"
+        case .it:   return "Italienisch"
+        case .enGB: return "Englisch (UK)"
+        }
+    }
 }
