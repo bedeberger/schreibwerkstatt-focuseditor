@@ -18,7 +18,9 @@
 //
 
 import XCTest
-@testable import schreibwerkstatt_focuseditor
+// Non-hosted Logic-Test-Bundle: die getesteten Quelldateien (APIClient,
+// AuthError, ServerConfig, DeviceToken, SyncModels) sind direkt Mitglied dieses
+// Targets (kein App-Host, kein @testable import) → läuft headless via xctest.
 
 @MainActor
 final class SyncIntegrationTests: XCTestCase {

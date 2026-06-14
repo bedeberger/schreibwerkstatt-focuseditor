@@ -41,7 +41,7 @@ final class AppCore: ObservableObject {
                 .error("GRDB-Store nicht öffenbar, In-Memory-Fallback: \(error.localizedDescription, privacy: .public)")
             store = InMemoryLocalStore()
         }
-        let bridge = EditorBridge(store: store)
+        let bridge = EditorBridge(store: store, api: auth.api)
         let content = ContentAPI(api: auth.api)
         self.auth = auth
         self.store = store

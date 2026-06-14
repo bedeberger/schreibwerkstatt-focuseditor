@@ -51,6 +51,11 @@ Bridge-Nachrichten **JS → Swift** (`WKScriptMessageHandlerWithReply`, je `{ op
 - `list { bookId? }` → Seitenliste aus LocalStore (optional buch-gefiltert)
 - `log { level?, message }` → JS-Diagnose ins Swift-Log
 - `editorState { pageId, dirty }` → meldet offene Seite + Dirty-Flag (steuert Open-Page-Reload/-Schutz im Sync)
+- `spellcheckConfig {}` → `{ enabled, debounceMs }` (aus `GET /config`, in der Bridge gecacht)
+- `languagetoolCheck { text, language?, pageId?, bookId? }` → `{ matches: [...] }` | `{ disabled: true }` (Proxy `POST /languagetool/check`; `404` = serverseitig aus)
+- `dictionaryAdd { word, lang?, bookId? }` → `{ ok }` (Proxy `POST /dictionary`, User-Wörterbuch)
+
+**Rechtschreibprüfung (LanguageTool):** Der unveränderte Editor-Controller (`public/js/cards/editor-spellcheck/controller.js` im Hauptrepo) wird ins OTA-Bundle gezogen und im Boot ([WebAssets.swift](schreibwerkstatt-focuseditor/Web/WebAssets.swift) `indexHTML`) verdrahtet; statt direktem `fetch` laufen Prüfung + Wörterbuch über die obigen Bridge-Ops. Settings (enabled/url/picky/rules) liegen **serverseitig** in `app_settings` und werden vom Proxy angewandt — der Client liefert nur Text + `bookId`/`pageId`. **Locale:** Client sendet `language:"auto"` + `bookId`; serverseitig gewinnt `getBookLocale(bookId)` → `de-CH`. Online-only (kein Offline-Kern-Inhalt); offline/`404` degradiert still. Voraussetzung im Hauptrepo (SSoT): `controller.js` macht seine zwei `fetch` über injizierbare `checkText`/`addWord`-Callbacks (Default bleibt `fetch`), und `lib/editor-bundle.js` nimmt `controller.js` + `css/editor/spellcheck.css` + `icons.svg` ins OTA-Bundle auf — fertiger Prompt: [docs/languagetool-mutterrepo-prompt.md](docs/languagetool-mutterrepo-prompt.md).
 
 Bridge-Kanal **Swift → JS** (`callAsyncJavaScript` in `contentWorld: .page`): Die Facade stellt einen Event-Bus `window.__focusBridge.on(event, cb)` / `_receive(event, payload)` bereit. Swift sendet:
 - `serverUpdate { pageId, html, baseUpdatedAt }` → saubere offene Seite wurde serverseitig aktualisiert → still neu laden.

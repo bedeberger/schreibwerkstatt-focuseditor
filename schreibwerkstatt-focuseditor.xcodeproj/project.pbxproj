@@ -8,11 +8,21 @@
 
 /* Begin PBXBuildFile section */
 		61DB000000000000000000A3 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = 61DB000000000000000000A2 /* GRDB */; };
+		7E0000000000000000000010 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E0000000000000000000020 /* APIClient.swift */; };
+		7E0000000000000000000011 /* AuthError.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E0000000000000000000021 /* AuthError.swift */; };
+		7E0000000000000000000012 /* ServerConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E0000000000000000000022 /* ServerConfig.swift */; };
+		7E0000000000000000000013 /* DeviceToken.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E0000000000000000000023 /* DeviceToken.swift */; };
+		7E0000000000000000000014 /* SyncModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E0000000000000000000024 /* SyncModels.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		61EA813C2FDE904700FBD31B /* schreibwerkstatt-focuseditor.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "schreibwerkstatt-focuseditor.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		7E0000000000000000000002 /* schreibwerkstatt-focuseditorTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "schreibwerkstatt-focuseditorTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		7E0000000000000000000020 /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = APIClient.swift; path = "schreibwerkstatt-focuseditor/Auth/APIClient.swift"; sourceTree = SOURCE_ROOT; };
+		7E0000000000000000000021 /* AuthError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AuthError.swift; path = "schreibwerkstatt-focuseditor/Auth/AuthError.swift"; sourceTree = SOURCE_ROOT; };
+		7E0000000000000000000022 /* ServerConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ServerConfig.swift; path = "schreibwerkstatt-focuseditor/Auth/ServerConfig.swift"; sourceTree = SOURCE_ROOT; };
+		7E0000000000000000000023 /* DeviceToken.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = DeviceToken.swift; path = "schreibwerkstatt-focuseditor/Auth/DeviceToken.swift"; sourceTree = SOURCE_ROOT; };
+		7E0000000000000000000024 /* SyncModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SyncModels.swift; path = "schreibwerkstatt-focuseditor/Sync/SyncModels.swift"; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -185,6 +195,11 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				7E0000000000000000000010 /* APIClient.swift in Sources */,
+				7E0000000000000000000011 /* AuthError.swift in Sources */,
+				7E0000000000000000000012 /* ServerConfig.swift in Sources */,
+				7E0000000000000000000013 /* DeviceToken.swift in Sources */,
+				7E0000000000000000000014 /* SyncModels.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -376,7 +391,6 @@
 		7E0000000000000000000008 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -389,14 +403,12 @@
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/schreibwerkstatt-focuseditor.app/Contents/MacOS/schreibwerkstatt-focuseditor";
 			};
 			name = Debug;
 		};
 		7E0000000000000000000009 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -409,7 +421,6 @@
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/schreibwerkstatt-focuseditor.app/Contents/MacOS/schreibwerkstatt-focuseditor";
 			};
 			name = Release;
 		};

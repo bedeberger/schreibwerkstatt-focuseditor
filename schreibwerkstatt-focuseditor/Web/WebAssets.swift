@@ -50,6 +50,13 @@ enum WebAssets {
         reportState: (pageId, dirty) =>
           call('editorState', { pageId: pageId == null ? null : String(pageId), dirty: !!dirty }),
 
+        // Rechtschreibprüfung (LanguageTool) — Proxy über den Swift-Kern. Die
+        // WebView macht NIE direkten fetch; Settings (enabled/url/picky/rules)
+        // liegen serverseitig und werden vom Proxy angewandt.
+        spellcheckConfig: () => call('spellcheckConfig', {}),
+        languagetoolCheck: (params) => call('languagetoolCheck', params || {}),
+        dictionaryAdd: (params) => call('dictionaryAdd', params || {}),
+
         // Swift→JS Event-Bus. Der Editor-Host abonniert z. B. 'serverUpdate'
         // (saubere offene Seite wurde serverseitig aktualisiert → still neu laden).
         _handlers: {},
@@ -132,6 +139,10 @@ enum WebAssets {
 
               // baseUpdatedAt je Seite mitführen (für den nächsten Push / 409-Basis).
               const bases = new Map();
+              // Offene Seite + ihr Buch — die Rechtschreibprüfung reicht die
+              // bookId an den Server, der daraus die Locale (de-CH) auflöst.
+              let currentPageId = null;
+              let currentBookId = null;
               const bridge = {
                 granularity: 'paragraph',
                 loadPage: async () => {
@@ -143,9 +154,13 @@ enum WebAssets {
                   try { page = await fb.load(id); } catch (_) {}
                   if (page) {
                     bases.set(String(page.id), page.updatedAt ?? null);
+                    currentPageId = String(page.id);
+                    currentBookId = (page.bookId != null) ? Number(page.bookId) : null;
                     return { id: page.id, name: page.pageName || page.title || 'Seite', html: page.html || '<p><br></p>' };
                   }
                   bases.set('default', null);
+                  currentPageId = 'default';
+                  currentBookId = null;
                   return { id: 'default', name: 'Neue Seite', html: '<p><br></p>' };
                 },
                 savePage: async ({ id, html }) => {
@@ -159,6 +174,81 @@ enum WebAssets {
               window.__standalone = await mountStandaloneFocus({ mount: document.getElementById('mount'), bridge });
               status.remove();
               fb.log?.('Standalone-Focus gemountet');
+
+              // ── Rechtschreibprüfung (LanguageTool) ──────────────────────────
+              // Wiederverwendet den unveränderten Editor-Controller aus dem
+              // Hauptrepo (kein Fork). Statt direktem fetch laufen Prüfung +
+              // Wörterbuch über die Bridge → Swift-Kern → Server-Proxy. Greift
+              // nur, wenn LT serverseitig aktiv ist UND das Bundle den Controller
+              // mitliefert; sonst still übersprungen (degradiert sauber, offline
+              // ohnehin kein Prüf-Roundtrip — kein Offline-Kern-Inhalt).
+              try {
+                const cfg = await fb.spellcheckConfig();
+                if (cfg && cfg.enabled) {
+                  const mod = await import('./js/cards/editor-spellcheck/controller.js');
+                  const root = document.querySelector('.focus-editor__content');
+                  if (mod && typeof mod.createSpellcheckController === 'function' && root) {
+                    const I18N = {
+                      'spellcheck.popover.ignore': 'Ignorieren',
+                      'spellcheck.popover.add_to_dict': 'Zum Wörterbuch',
+                      'spellcheck.popover.no_suggestions': 'Keine Vorschläge',
+                      'spellcheck.popover.rule_info': 'Regel-Info',
+                      'spellcheck.status.active': 'LanguageTool aktiv',
+                      'spellcheck.status.disabled': 'LanguageTool deaktiviert',
+                      'spellcheck.status.error': 'LanguageTool-Fehler',
+                      'spellcheck.status.matches': '{n} Hinweise',
+                      'spellcheck.status.no_matches': 'Keine Hinweise',
+                      'spellcheck.extension_conflict.title': 'LanguageTool-Browser-Extension erkannt',
+                    };
+                    const ctl = mod.createSpellcheckController({
+                      root,
+                      scrollContainer: root,            // .focus-editor__content ist Root UND Scroller
+                      getHtml: () => root.innerHTML,
+                      editorKind: 'focus',
+                      getBookLocale: () => 'auto',      // Server löst Locale via bookId auf
+                      getBookId: () => currentBookId,
+                      getPageId: () => currentPageId,
+                      isEnabled: () => true,
+                      getDebounceMs: () => Number(cfg.debounceMs) || 1500,
+                      i18n: (k) => I18N[k] || k,
+                      onApplyReplacement: (range, text) => {
+                        if (!range) return;
+                        try {
+                          range.deleteContents();
+                          range.insertNode(document.createTextNode(text));
+                        } catch (_) { return; }
+                        try {
+                          const sel = window.getSelection();
+                          sel?.removeAllRanges();
+                          const r2 = document.createRange();
+                          r2.setStartAfter(range.endContainer);
+                          r2.collapse(true);
+                          sel?.addRange(r2);
+                        } catch (_) {}
+                        root.dispatchEvent(new Event('input', { bubbles: true }));
+                      },
+                      // Transport über die Bridge (kein direkter fetch).
+                      checkText: async ({ text, language, bookId, pageId }) => {
+                        const res = await fb.languagetoolCheck({
+                          text, language, bookId,
+                          pageId: pageId == null ? null : String(pageId),
+                        });
+                        if (res && res.disabled) return { disabled: true };
+                        return { matches: (res && res.matches) || [] };
+                      },
+                      addWord: async ({ word, bookId, lang }) => {
+                        const res = await fb.dictionaryAdd({ word, bookId, lang });
+                        return !!(res && res.ok);
+                      },
+                    });
+                    ctl.attach();
+                    window.__spellcheck = ctl;
+                    fb.log?.('Rechtschreibprüfung aktiv');
+                  }
+                }
+              } catch (e) {
+                fb.log?.('Rechtschreibprüfung nicht verfügbar: ' + (e && e.message ? e.message : e), 'info');
+              }
             } catch (e) {
               status.className = 'err';
               status.textContent = 'Boot-Fehler: ' + (e && e.message ? e.message : e);
