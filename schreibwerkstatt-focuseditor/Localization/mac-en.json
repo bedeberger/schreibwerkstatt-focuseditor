@@ -117,6 +117,10 @@
   "sync.state.serverUnreachable": "Server unreachable",
   "sync.lastSynced.never": "Never",
 
+  "sync.conflict.keepLocal": "Keep mine (overwrite server)",
+  "sync.conflict.keepServer": "Take server version (discard local)",
+  "sync.conflict.serverGone": "Page no longer exists on the server — your local version is kept.",
+
   "settings.spell.section": "Spell check",
   "settings.spell.deviceToggle": "Active on this device",
   "settings.spell.deviceHint": "Checking runs via LanguageTool on the server (online only). This switch can additionally turn it off per device — even when it's enabled on the server.",
@@ -179,7 +183,7 @@
   "toolbar.tip.todayWords": "{n} words today on this page",
   "toolbar.tip.goal": "{words} of {goal} words ({pct} %) · {today}",
   "toolbar.tip.noGoal": "Word count of the open page · {today} · ~{min} min reading time",
-  "toolbar.tip.conflicts": "Unresolved conflicts — resolve in the editor",
+  "toolbar.tip.conflicts": "Unresolved conflicts — click to resolve",
   "toolbar.tip.lastSynced": "Last synced {rel}",
   "toolbar.tip.offline": "Offline — no connection",
   "toolbar.tip.serverUnreachable": "Server unreachable — local changes are saved safely and will sync once the server responds again",

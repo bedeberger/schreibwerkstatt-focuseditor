@@ -85,8 +85,11 @@ struct AppToolbar: View {
             }
 
             SyncStatusLabel(status: sync.status,
-                            conflicts: sync.conflicts.count,
-                            lastSyncedAt: sync.lastSyncedAt)
+                            conflicts: sync.conflicts,
+                            lastSyncedAt: sync.lastSyncedAt,
+                            onResolve: { pageId, keepLocal in
+                                Task { await sync.resolveConflict(pageId: pageId, keepLocal: keepLocal) }
+                            })
 
             overflowMenu
         }
@@ -249,33 +252,61 @@ struct WritingStatsLabel: View {
 /// Der Hover-Tooltip nennt den Zeitpunkt der letzten erfolgreichen Synchronisation.
 struct SyncStatusLabel: View {
     let status: SyncEngine.Status
-    let conflicts: Int
+    let conflicts: [SyncEngine.Conflict]
     let lastSyncedAt: Date?
+    /// Auflösungs-Wahl je Seite: `(pageId, keepLocal)`. `keepLocal == true` →
+    /// lokalen Stand erzwingen (Server überschreiben); `false` → Server übernehmen.
+    var onResolve: (String, Bool) -> Void = { _, _ in }
 
     var body: some View {
-        HStack(spacing: 6) {
-            if conflicts > 0 {
+        if conflicts.isEmpty {
+            statusLabel
+        } else {
+            conflictMenu
+        }
+    }
+
+    /// Klickbares Konflikt-Menü: pro betroffener Seite die Auflösungs-Wahl.
+    private var conflictMenu: some View {
+        Menu {
+            ForEach(conflicts) { c in
+                Section(c.pageName ?? c.pageId) {
+                    Button(t("sync.conflict.keepLocal")) { onResolve(c.pageId, true) }
+                    Button(t("sync.conflict.keepServer")) { onResolve(c.pageId, false) }
+                }
+            }
+        } label: {
+            HStack(spacing: 6) {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundStyle(.orange)
-                Text(tn(conflicts, "toolbar.conflicts"))
-            } else {
-                switch status {
-                case .syncing:
-                    // Nur ein dezenter Spinner an der Stelle des Idle-Icons —
-                    // kein Text, damit das ~3s-Polling die Toolbar nicht ständig
-                    // umbricht/flackert. Der Tooltip nennt weiterhin den Zustand.
-                    ProgressView().controlSize(.small)
-                case .offline:
-                    Image(systemName: "wifi.slash").foregroundStyle(BrandColor.muted)
-                    Text(t("sync.state.offline"))
-                case .serverUnreachable:
-                    // Netz da, aber Server antwortet nicht — deutlich (orange)
-                    // anzeigen, damit es nicht wie ein sauberer Sync-Zustand wirkt.
-                    Image(systemName: "exclamationmark.icloud").foregroundStyle(.orange)
-                    Text(t("sync.state.serverUnreachable"))
-                case .idle:
-                    Image(systemName: "checkmark.circle").foregroundStyle(BrandColor.muted)
-                }
+                Text(tn(conflicts.count, "toolbar.conflicts"))
+            }
+            .font(BrandFont.sans(11))
+            .foregroundStyle(BrandColor.muted)
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .help(t("toolbar.tip.conflicts"))
+    }
+
+    private var statusLabel: some View {
+        HStack(spacing: 6) {
+            switch status {
+            case .syncing:
+                // Nur ein dezenter Spinner an der Stelle des Idle-Icons —
+                // kein Text, damit das ~3s-Polling die Toolbar nicht ständig
+                // umbricht/flackert. Der Tooltip nennt weiterhin den Zustand.
+                ProgressView().controlSize(.small)
+            case .offline:
+                Image(systemName: "wifi.slash").foregroundStyle(BrandColor.muted)
+                Text(t("sync.state.offline"))
+            case .serverUnreachable:
+                // Netz da, aber Server antwortet nicht — deutlich (orange)
+                // anzeigen, damit es nicht wie ein sauberer Sync-Zustand wirkt.
+                Image(systemName: "exclamationmark.icloud").foregroundStyle(.orange)
+                Text(t("sync.state.serverUnreachable"))
+            case .idle:
+                Image(systemName: "checkmark.circle").foregroundStyle(BrandColor.muted)
             }
         }
         .font(BrandFont.sans(11))
@@ -285,7 +316,6 @@ struct SyncStatusLabel: View {
 
     /// „Zuletzt synchronisiert“ als relative Zeit, sonst der aktuelle Zustand.
     private var tooltip: String {
-        if conflicts > 0 { return t("toolbar.tip.conflicts") }
         // Server-Unerreichbarkeit ist ein aktiver Fehlerzustand — auch wenn früher
         // schon einmal erfolgreich synchronisiert wurde, geht sie der „zuletzt
         // synchronisiert"-Meldung vor.

@@ -38,6 +38,8 @@ final class SyncEngine: ObservableObject {
     struct Conflict: Identifiable, Equatable {
         var id: String { pageId }
         let pageId: String
+        /// Anzeigename der Seite (für die Konflikt-UI) — lokaler `pageName`/Titel.
+        let pageName: String?
         let serverUpdatedAt: String?
         let serverEditorName: String?
     }
@@ -297,9 +299,23 @@ final class SyncEngine: ObservableObject {
             if let until = lockedUntil[entry.pageId], until > now { continue }
 
             guard let base = stateStore.state.serverBaseISO[entry.pageId] else {
-                // Keine Server-Basis → Seite existiert serverseitig (noch) nicht.
-                // PUT kann nur updaten, nicht anlegen (Anlegen wäre POST /content/pages).
-                log.info("Push übersprungen (keine Server-Basis): \(entry.pageId, privacy: .public)")
+                // Keine Server-Basis → PUT kann nur updaten, nicht anlegen
+                // (Anlegen wäre POST /content/pages). Zwei Fälle unterscheiden:
+                //   • Seite HAT ein Buch → sie ist nur noch nicht gepullt; der
+                //     nächste Pull setzt die Basis, dann pusht sie. Still weiter.
+                //   • Seite hat KEIN Buch → Waise (z. B. Rest eines früheren
+                //     Servers): wird NIE gepullt (Pull ist buch-skopiert) und NIE
+                //     gepusht → ihre lokalen Edits versickern lautlos. Darum als
+                //     sichtbaren Konflikt erfassen (Toolbar-Indikator), statt sie
+                //     ewig still zu überspringen. Lokaler Inhalt bleibt erhalten;
+                //     der Konflikt-Guard oben verhindert nutzlose Re-Versuche.
+                let storedBookId = ((try? await store.page(id: entry.pageId)) ?? nil)?.bookId
+                if storedBookId == nil {
+                    await recordConflict(pageId: entry.pageId, serverUpdatedAt: nil, serverEditorName: nil)
+                    log.notice("Push-Sackgasse: Seite ohne Buch & ohne Server-Basis (Waise) als Konflikt erfasst: \(entry.pageId, privacy: .public)")
+                } else {
+                    log.info("Push übersprungen (keine Server-Basis, noch nicht gepullt): \(entry.pageId, privacy: .public)")
+                }
                 continue
             }
 
@@ -339,7 +355,7 @@ final class SyncEngine: ObservableObject {
                 // erfassen, damit der Nutzer es bemerkt; der Konflikt-Guard oben
                 // verhindert zugleich nutzlose Re-Pushes.
                 stateStore.mutate { $0.serverBaseISO[entry.pageId] = nil }
-                recordConflict(pageId: entry.pageId, serverUpdatedAt: nil, serverEditorName: nil)
+                await recordConflict(pageId: entry.pageId, serverUpdatedAt: nil, serverEditorName: nil)
                 log.notice("Seite serverseitig nicht gefunden (404), als Konflikt erfasst: \(entry.pageId, privacy: .public)")
             } catch AuthError.unauthorized {
                 // Session beendet → ganzen Sync abbrechen (kein blindes Weiterpushen).
@@ -362,9 +378,9 @@ final class SyncEngine: ObservableObject {
 
         // Kein WebView/Editor-Bundle → nicht auto-mergebar, echter Konflikt für die UI.
         guard let editor else {
-            recordConflict(pageId: pid,
-                           serverUpdatedAt: c?.server_updated_at,
-                           serverEditorName: c?.server_editor_name)
+            await recordConflict(pageId: pid,
+                                 serverUpdatedAt: c?.server_updated_at,
+                                 serverEditorName: c?.server_editor_name)
             log.notice("Konflikt \(pid, privacy: .public): kein Editor zum Mergen")
             return
         }
@@ -393,18 +409,18 @@ final class SyncEngine: ObservableObject {
             outcome = try await editor.merge3(base: base, local: entry.html, server: serverHtml)
         } catch {
             // Kein Editor-Bundle/WebView → nicht auto-mergebar, als Konflikt zur UI.
-            recordConflict(pageId: pid,
-                           serverUpdatedAt: serverPage.updated_at,
-                           serverEditorName: c?.server_editor_name)
+            await recordConflict(pageId: pid,
+                                 serverUpdatedAt: serverPage.updated_at,
+                                 serverEditorName: c?.server_editor_name)
             log.notice("Block-Merge nicht verfügbar für \(pid, privacy: .public) — Konflikt offen")
             return
         }
 
         guard outcome.conflictCount == 0 else {
             // Echte Block-Kollision → Konflikt-Modal des Editors.
-            recordConflict(pageId: pid,
-                           serverUpdatedAt: serverPage.updated_at,
-                           serverEditorName: c?.server_editor_name)
+            await recordConflict(pageId: pid,
+                                 serverUpdatedAt: serverPage.updated_at,
+                                 serverEditorName: c?.server_editor_name)
             log.notice("Block-Kollision bei \(pid, privacy: .public): \(outcome.conflictCount) Block/Blöcke — UI nötig")
             return
         }
@@ -659,8 +675,10 @@ final class SyncEngine: ObservableObject {
 
     // MARK: - Konflikte
 
-    private func recordConflict(pageId: String, serverUpdatedAt: String?, serverEditorName: String?) {
+    private func recordConflict(pageId: String, serverUpdatedAt: String?, serverEditorName: String?) async {
+        let stored = (try? await store.page(id: pageId)) ?? nil
         let c = Conflict(pageId: pageId,
+                         pageName: stored?.pageName ?? stored?.title,
                          serverUpdatedAt: serverUpdatedAt,
                          serverEditorName: serverEditorName)
         if let idx = conflicts.firstIndex(where: { $0.pageId == pageId }) {
@@ -674,5 +692,100 @@ final class SyncEngine: ObservableObject {
     /// Der nächste Push nimmt die Seite dann wieder mit.
     func clearConflict(pageId: String) {
         conflicts.removeAll { $0.pageId == pageId }
+    }
+
+    /// Manuelle Konflikt-Auflösung aus der UI. Verwirft Inhalte NUR auf
+    /// ausdrückliche Nutzer-Wahl (CLAUDE.md: kein automatisches Verwerfen).
+    ///  • `keepLocal == true`: lokaler Stand erzwingt sich gegen den Server
+    ///    (Force-Push). Wir holen den frischen Server-`updated_at` und pushen das
+    ///    lokale Outbox-HTML mit genau dieser Basis → der Server-Stand wird
+    ///    überschrieben. Damit löst sich auch ein „klebriger" Konflikt, dessen
+    ///    Auto-Merge an einer falschen Basis (z. B. nach Serverwechsel) scheiterte.
+    ///  • `keepLocal == false`: Server-Stand übernehmen, die lokale ungepushte
+    ///    Änderung verwerfen (Outbox-Eintrag droppen, offene Seite neu laden).
+    func resolveConflict(pageId pid: String, keepLocal: Bool) async {
+        guard conflicts.contains(where: { $0.pageId == pid }) else { return }
+
+        // Frischen Server-Stand holen — liefert die exakte `updated_at`-Basis,
+        // die das Überschreiben (PUT) bzw. das Übernehmen braucht.
+        let serverPage: PushResponse
+        do {
+            serverPage = try await api.send("/content/pages/\(pid)",
+                                            method: .GET,
+                                            decode: PushResponse.self)
+        } catch let AuthError.server(status, _, _) where status == 404 {
+            // Seite serverseitig weg (PUT kann nicht anlegen). Konflikt fällt weg,
+            // der lokale Inhalt bleibt erhalten (kein Anlage-Pfad im Client).
+            clearConflict(pageId: pid)
+            lastError = t("sync.conflict.serverGone")
+            log.notice("Konflikt-Auflösung \(pid, privacy: .public): Seite serverseitig nicht (mehr) vorhanden")
+            return
+        } catch {
+            lastError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            log.error("Konflikt-Auflösung \(pid, privacy: .public): Server-GET fehlgeschlagen: \(self.lastError ?? "?", privacy: .public)")
+            return
+        }
+
+        let entry = ((try? await store.pendingOutbox()) ?? []).first { $0.pageId == pid }
+
+        if keepLocal {
+            guard let entry else {
+                // Kein lokaler Outbox-Stand mehr (z. B. zwischenzeitlich quittiert)
+                // → nichts zu erzwingen, nur Basis auf den Server stellen.
+                stateStore.mutate {
+                    $0.serverBaseISO[pid] = serverPage.updated_at
+                    $0.serverBaseHtml[pid] = serverPage.html ?? ""
+                }
+                clearConflict(pageId: pid)
+                return
+            }
+            let req = PushRequest(html: entry.html, expected_updated_at: serverPage.updated_at)
+            do {
+                let resp = try await api.send("/content/pages/\(pid)",
+                                              method: .PUT,
+                                              body: req,
+                                              decode: PushResponse.self)
+                let ms = ISOTime.millis(resp.updated_at) ?? entry.queuedAt
+                stateStore.mutate {
+                    $0.serverBaseISO[pid] = resp.updated_at
+                    $0.serverBaseHtml[pid] = entry.html
+                }
+                try? await store.markPushed(id: pid, queuedAt: entry.queuedAt, serverUpdatedAtMillis: ms)
+                clearConflict(pageId: pid)
+                lastError = nil
+                lastSyncedAt = Date()
+                log.info("Konflikt aufgelöst (lokaler Stand erzwungen): \(pid, privacy: .public)")
+            } catch {
+                // Force-Push misslungen (z. B. erneutes Rennen) → Konflikt bleibt
+                // bestehen, der Nutzer kann es erneut versuchen.
+                lastError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                log.error("Force-Push \(pid, privacy: .public) fehlgeschlagen: \(self.lastError ?? "?", privacy: .public)")
+            }
+        } else {
+            // Server-Stand übernehmen, lokale Änderung verwerfen.
+            let serverHtml = serverPage.html ?? ""
+            let ms = ISOTime.millis(serverPage.updated_at) ?? 0
+            stateStore.mutate {
+                $0.serverBaseISO[pid] = serverPage.updated_at
+                $0.serverBaseHtml[pid] = serverHtml
+            }
+            try? await store.applyServerPage(id: pid, html: serverHtml,
+                                             pageName: nil, bookId: nil, chapterId: nil,
+                                             serverUpdatedAtMillis: ms)
+            // Outbox-Eintrag droppen (falls unverändert seit dem Lesen oben).
+            if let entry {
+                try? await store.markPushed(id: pid, queuedAt: entry.queuedAt, serverUpdatedAtMillis: ms)
+            }
+            clearConflict(pageId: pid)
+            lastError = nil
+            // Offene Seite mit dem übernommenen Server-Stand neu laden (Nutzer hat
+            // „Server übernehmen" gewählt → auch eine dirty Seite wird ersetzt).
+            if editor?.openPageId == pid {
+                await editor?.reloadPage(pageId: pid, html: serverHtml, baseUpdatedAt: ms)
+            }
+            log.info("Konflikt aufgelöst (Server-Stand übernommen): \(pid, privacy: .public)")
+        }
+
+        pendingCount = (try? await store.pendingOutbox().count) ?? pendingCount
     }
 }

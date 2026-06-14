@@ -117,6 +117,10 @@
   "sync.state.serverUnreachable": "Server nicht erreichbar",
   "sync.lastSynced.never": "Noch nie",
 
+  "sync.conflict.keepLocal": "Meinen Stand behalten (Server überschreiben)",
+  "sync.conflict.keepServer": "Server-Stand übernehmen (lokal verwerfen)",
+  "sync.conflict.serverGone": "Seite ist serverseitig nicht mehr vorhanden — lokaler Stand bleibt erhalten.",
+
   "settings.spell.section": "Rechtschreibprüfung",
   "settings.spell.deviceToggle": "Auf diesem Gerät aktiv",
   "settings.spell.deviceHint": "Die Prüfung läuft über LanguageTool am Server (online-only). Dieser Schalter kann sie zusätzlich pro Gerät abschalten — auch wenn sie serverseitig aktiv ist.",
@@ -179,7 +183,7 @@
   "toolbar.tip.todayWords": "{n} Wörter heute auf dieser Seite",
   "toolbar.tip.goal": "{words} von {goal} Wörtern ({pct} %) · {today}",
   "toolbar.tip.noGoal": "Wortzahl der offenen Seite · {today} · ~{min} min Lesezeit",
-  "toolbar.tip.conflicts": "Ungelöste Konflikte — im Editor auflösen",
+  "toolbar.tip.conflicts": "Ungelöste Konflikte — zum Auflösen anklicken",
   "toolbar.tip.lastSynced": "Zuletzt synchronisiert {rel}",
   "toolbar.tip.offline": "Offline — keine Verbindung",
   "toolbar.tip.serverUnreachable": "Server nicht erreichbar — lokale Änderungen sind sicher gespeichert und werden synchronisiert, sobald der Server wieder antwortet",
