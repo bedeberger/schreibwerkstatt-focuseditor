@@ -1,33 +1,35 @@
 # schreibwerkstatt-focuseditor (macOS-Client)
 
-Nativer macOS-Client für den **Focus-Editor** der Schreibwerkstatt: eine SwiftUI/AppKit-Shell mit `WKWebView`, die ein **offline gebündeltes Build** des bestehenden Focus-Editors aus dem Hauptrepo lädt. Schreiben geht zuerst in einen lokalen SQLite-Spiegel; eine Sync-Engine schiebt Änderungen bei Konnektivität an den Server und zieht Deltas zurück.
+Nativer macOS-Client für den **Focus-Editor** der Schreibwerkstatt: eine SwiftUI/AppKit-Shell mit `WKWebView`, die ein **lokal gecachtes Build** des bestehenden Focus-Editors lädt. Das Build wird **zur Laufzeit per OTA vom Server gezogen** (statt zur Build-Zeit gebündelt) und im App-Support gecacht. Schreiben geht zuerst in einen lokalen SQLite-Spiegel; eine Sync-Engine schiebt Änderungen bei Konnektivität an den Server und zieht Deltas zurück.
 
 **Zweck:** ablenkungsfreies Schreiben auf genau einer Seite, voll offline-fähig. Kein Buchorganizer, keine Analyse-Karten, keine KI-Jobs — nur der Schreibmodus.
 
 ## Quellprojekt (Single Source of Truth)
 
 - Hauptrepo: `/Users/bd/ClaudeProjects/schreibwerkstatt`
-- Der Editor-Code wird **nicht geforkt**. Ein Build-Step bündelt die unveränderten Quelldateien aus `public/js/editor/focus/` + `public/js/editor/shared/` (+ benötigtes `public/css/editor/`, `public/js/editor/shared/block-merge.js`) ins App-Paket (`Resources/web/`). SSoT bleibt das Hauptrepo — hier liegt **kein** kopierter Editor-Code, nur die Bridge und das Build-Skript.
-- Bei Editor-Bugs/-Features: Fix gehört ins Hauptrepo, danach neu bündeln. Niemals den gebündelten Output von Hand patchen.
+- Der Editor-Code wird **nicht geforkt** und **nicht zur Build-Zeit kopiert**. Der Server bündelt die unveränderte ES-Modul-Import-Closure (ab `public/js/editor/focus.js` / `focus/standalone.js` / `shared/editor-host.js` / `shared/block-merge.js`) + die Focus-Editor-CSS als **OTA-ZIP** und liefert sie über `GET /content/editor-bundle.zip` aus ([lib/editor-bundle.js](../../ClaudeProjects/schreibwerkstatt/lib/editor-bundle.js)). Der Client zieht das ZIP zur Laufzeit und cacht es lokal. SSoT bleibt das Hauptrepo — hier liegt **kein** kopierter Editor-Code, nur Bridge + Shell + Sync + Auth + OTA-Lader.
+- Bei Editor-Bugs/-Features: Fix gehört ins Hauptrepo. Der nächste Start des Clients zieht das aktualisierte Bundle automatisch (ETag-getrieben). Niemals den gecachten Output von Hand patchen.
+- **Das `index.html` (Boot/Bridge) ist NICHT im Server-Bundle** — es ist Client-Glue (adaptiert `window.__focusBridge` auf den standalone-Vertrag) und liegt in [Web/WebAssets.swift](schreibwerkstatt-focuseditor/Web/WebAssets.swift) (`indexHTML(cssFiles:sourceCommit:)`). Der Client schreibt es beim Entpacken aus dem Manifest in den Cache.
 
 ## Architektur
 
 ```
 AppKit/SwiftUI-Shell
-  └─ WKWebView  ──lädt──>  Resources/web/  (offline gebündeltes Focus-Editor-Build)
+  └─ WKWebView  ──lädt (swk-app://)──>  web-cache/  (lokal gecachtes Focus-Editor-Build)
         │  WKScriptMessageHandler-Bridge (JS ⇄ Swift)
         ▼
   Swift-Kern
-     ├─ LocalStore  (GRDB / SQLite-Spiegel der Seiten)
-     ├─ Outbox      (Schreib-Queue, immer erst lokal)
-     ├─ SyncEngine  (Scene-Phase-getriebenes Polling ~5 s + Reachability-Trigger; Push + Pull)
-     └─ Auth        (Device-Token im Keychain)
+     ├─ LocalStore         (GRDB / SQLite-Spiegel der Seiten)
+     ├─ Outbox             (Schreib-Queue, immer erst lokal)
+     ├─ SyncEngine         (Scene-Phase-getriebenes Polling ~5 s + Reachability-Trigger; Push + Pull)
+     ├─ EditorBundleStore  (OTA: zieht/cacht das Editor-Bundle, ETag-getrieben)
+     └─ Auth               (Device-Token im Keychain)
                  │ HTTPS Bearer swd_…
                  ▼
         schreibwerkstatt-Server  (Express, Port 3737 / NGINX HTTPS)
 ```
 
-**Offline-Kern-Prinzip:** Der WebView lädt **immer** das lokale Bundle, **nie** eine Server-URL. Die WebView kennt keinen Server — sie spricht ausschließlich über die Bridge mit dem Swift-Kern. Netzwerk macht nur der Swift-Kern.
+**Offline-Kern-Prinzip:** Der WebView lädt **immer** den lokalen Cache, **nie** eine Server-URL. Die WebView kennt keinen Server — sie spricht ausschließlich über die Bridge mit dem Swift-Kern. Netzwerk macht nur der Swift-Kern (Sync **und** OTA-Bundle-Refresh). Nach dem ersten erfolgreichen Bundle-Download arbeitet die App vollständig offline; nur der **allererste** Start braucht Netz (der Device-Token-Login ist ohnehin online).
 
 ## Bridge-Vertrag (JS ⇄ Swift)
 
@@ -54,7 +56,7 @@ Bridge-Kanal **Swift → JS** (`callAsyncJavaScript` in `contentWorld: .page`): 
 - `serverUpdate { pageId, html, baseUpdatedAt }` → saubere offene Seite wurde serverseitig aktualisiert → still neu laden.
 - `openPage { pageId, html, baseUpdatedAt }` → nativer Picker hat eine Seite gewählt → im Editor öffnen.
 
-Block-Merge (409): `window.__focusBridge._merge3(base, local, server)` lädt das gebündelte `block-merge.js` dynamisch und liefert `{ merged, conflictCount }`. Der Swift-Kern ruft das beim 409-Push: `conflictCount == 0` → gemergtes HTML mit neuer Basis erneut pushen (still); `> 0` → Konflikt erfassen (Editor-Konflikt-UI). Merge-Ancestor (`base`) führt die SyncEngine als `serverBaseHtml` je Seite.
+Block-Merge (409): `window.__focusBridge._merge3(base, local, server)` lädt das gecachte `block-merge.js` dynamisch und liefert `{ merged, conflictCount }`. Der Swift-Kern ruft das beim 409-Push: `conflictCount == 0` → gemergtes HTML mit neuer Basis erneut pushen (still); `> 0` → Konflikt erfassen (Editor-Konflikt-UI). Merge-Ancestor (`base`) führt die SyncEngine als `serverBaseHtml` je Seite.
 
 **Regel:** Die Facade ist die **einzige** Kopplungsschicht. Kein direkter `fetch` aus dem gebündelten Editor-Code. Wenn der Editor eine neue Root-Methode braucht, wird sie zuerst in der Facade ergänzt und der Bridge-Vertrag hier dokumentiert.
 
@@ -69,6 +71,15 @@ Basis-URL konfigurierbar (Default Prod-Host). Auth über **Device-Token** (Beare
 - Jeder Request: `Authorization: Bearer swd_…`. Der Server löst auf den echten User + dessen echte Rolle auf und respektiert das Status-Gate (suspended/deleted → 401).
 - Token-Verwaltung am Server: `GET/POST /me/device-tokens`, `POST /me/device-tokens/:id/revoke`, `DELETE /me/device-tokens/:id`.
 - 401 → Token ungültig/widerrufen: Client muss neu authentifizieren (Token aus Keychain löschen, Re-Login anstoßen). Ungespeicherte lokale Inhalte **nie** verwerfen.
+
+### Editor-Bundle (OTA) — `GET /content/editor-bundle.zip`
+
+*(Server: erledigt, [routes/content.js](../../ClaudeProjects/schreibwerkstatt/routes/content.js) + [lib/editor-bundle.js](../../ClaudeProjects/schreibwerkstatt/lib/editor-bundle.js))*
+- **Auth nötig** (Bearer `swd_…`, globaler Guard wie alle `/content`-Routen).
+- Liefert ein **DEFLATE-ZIP** (JSZip) mit der JS-Import-Closure (`js/…`), den Focus-Editor-CSS (`css/…`) und `bundle-manifest.json` (`{ sourceCommit, jsFiles[], cssFiles[] }`). **Kein `index.html`** (Client-Glue, s. o.).
+- **ETag** (`"sha256…"` über Commit + sortierte Datei-Hashes) + `If-None-Match` → **304** ohne Body. Der Client fragt bei jedem Online-Start konditional an.
+- **Client-Seite:** [Web/EditorBundleStore.swift](schreibwerkstatt-focuseditor/Web/EditorBundleStore.swift) lädt (ETag aus Sidecar), entpackt mit [Web/MiniZip.swift](schreibwerkstatt-focuseditor/Web/MiniZip.swift) (bordeigener ZIP/DEFLATE-Reader — App ist sandboxed, kein `Process`/`unzip`, keine SPM-Dependency), schreibt `index.html` aus dem Manifest und tauscht den Cache **atomar**. Cache-Ort: `Application Support/schreibwerkstatt-focuseditor/web-cache/` (+ `web-cache.meta.json` für ETag/Commit).
+- **Refresh-Timing:** Mit vorhandenem Cache startet der Editor sofort; der Refresh läuft still im Hintergrund und greift erst beim **nächsten** Start (kein Hot-Swap mitten im Schreiben → Datenverlust-Schutz). Ohne Cache: blockierender Erst-Download (UI-Lade-/Fehlerzustand in [ContentView.swift](schreibwerkstatt-focuseditor/ContentView.swift)).
 
 ### Sync (Polling: Pull + Push)
 
@@ -103,24 +114,25 @@ Der Sync hält den lokalen Spiegel **aktuell, auch wenn eine Seite in einer ande
 schreibwerkstatt-focuseditor/
   schreibwerkstatt-focuseditor/        App-Sources (Swift)
     *App.swift                         @main, Scene/Window
-    ContentView.swift                  Shell-Root (WebView-Host)
+    ContentView.swift                  Shell-Root (WebView-Host + Bundle-Lade-/Fehlerzustand)
     Web/                               WKWebView-Host + Bridge (WKScriptMessageHandler)
+      EditorBundleStore.swift          OTA-Lader: Download + Entpacken + atomarer Cache-Swap + ETag
+      MiniZip.swift                    bordeigener ZIP/DEFLATE-Reader (sandbox-tauglich, dependency-frei)
+      WebAssets.swift                  Bridge-Facade-JS + index.html-Boot (Client-Glue) + Dev-Harness
+      AppSchemeHandler.swift           liefert den Cache unter EINER Origin (swk-app://) an die WebView
     Store/                             GRDB-LocalStore + Outbox
     Sync/                              SyncEngine + Reachability + SyncState (Cursor/Basis) + SyncModels
-    Auth/                              Keychain + Device-Token + Login-Flow
-  web/                                 ← gebündeltes Editor-Build (Output von scripts/bundle-editor.mjs, gitignored)
-                                         Top-Level (NICHT in App-Sources) + als Folder-Reference eingebunden →
-                                         landet strukturerhaltend als Contents/Resources/web/ im App-Paket.
-  scripts/bundle-editor.mjs            Build-Step: löst die ES-Modul-Import-Closure ab editor/focus.js auf und
-                                         kopiert sie + Token/Editor-CSS + generiert index.html nach web/
+    Auth/                              Keychain + Device-Token + Login-Flow + APIClient
 ```
 
-**Warum `web/` top-level statt `Resources/web/`:** Der App-Sources-Ordner ist eine `PBXFileSystemSynchronizedRootGroup` (Xcode 16+) — sie schleust jede Datei darin **einzeln und flach** als Resource ein (verschachtelte Struktur kaputt → relative ES-Modul-Imports brechen). Eine Folder-Reference auf einen Ordner **ausserhalb** der Sync-Group kopiert den Baum dagegen verbatim. Daher liegt das Bundle top-level. Neue Swift-Dateien in den App-Sources kommen umgekehrt **automatisch** ins Target (kein pbxproj-Edit nötig).
+Der App-Sources-Ordner ist eine `PBXFileSystemSynchronizedRootGroup` (Xcode 16+) → neue Swift-Dateien kommen **automatisch** ins Target (kein pbxproj-Edit nötig).
+
+**Editor-Cache (Laufzeit, nicht im Repo):** Das Editor-Build liegt **nicht** mehr im App-Paket, sondern wird per OTA gezogen und unter `~/Library/Application Support/schreibwerkstatt-focuseditor/web-cache/` gecacht (s. „Editor-Bundle (OTA)"). Es gibt **keinen** Build-Step und **kein** `web/`-Verzeichnis mehr.
 
 ## Harte Regeln
 
-- **Kein Editor-Fork.** Editor-Logik, CSS und `block-merge.js` kommen aus dem Hauptrepo via Build-Step. Hier nur Bridge + Shell + Sync + Auth. Gebündelten Output nie von Hand editieren.
-- **WebView lädt nur lokal.** Niemals eine Server-URL in den `WKWebView` laden. Server-Kontakt ausschließlich im Swift-Kern.
+- **Kein Editor-Fork.** Editor-Logik, CSS und `block-merge.js` kommen aus dem Hauptrepo via OTA-Bundle (`GET /content/editor-bundle.zip`). Hier nur Bridge + Shell + Sync + Auth + OTA-Lader. Gecachten Output nie von Hand editieren.
+- **WebView lädt nur lokal.** Niemals eine Server-URL in den `WKWebView` laden — die WebView liest ausschließlich aus dem lokalen Cache (`AppSchemeHandler`). Server-Kontakt (Sync **und** Bundle-Download) ausschließlich im Swift-Kern.
 - **Local-first Writes.** Jeder Save geht zuerst in LocalStore + Outbox, erst danach (bei Konnektivität) zum Server. UI nie auf Netzwerk warten lassen.
 - **Token nur im Keychain.** Device-Token niemals in UserDefaults, Plist, Logs oder Bridge-Messages an die WebView leaken. Die WebView braucht das Token nicht — Netzwerk macht Swift.
 - **Konflikte über Block-Merge.** 409-Auflösung läuft über `block-merge.js` (3-Wege, `data-bid`), nicht über naives Last-Write-Wins. `data-bid`-Attribute nie strippen.
@@ -131,8 +143,8 @@ schreibwerkstatt-focuseditor/
 ## Build & Run
 
 - Xcode-Projekt: `schreibwerkstatt-focuseditor.xcodeproj`. Target: macOS (SwiftUI-App-Lifecycle).
-- Vor dem Build: Editor-Bundle erzeugen (Build-Step / Run-Script-Phase), das `focus/` + `shared/` aus dem Hauptrepo nach `Resources/web/` bündelt.
-- Abhängigkeiten (geplant): GRDB (SQLite), Sparkle (Auto-Update, später).
+- **Kein Bundle-Build-Step nötig** — das Editor-Build wird zur Laufzeit per OTA gezogen (s. „Editor-Bundle (OTA)"). Zum Testen muss der Server (Default `localhost:3737`) erreichbar und ein gültiges Device-Token eingeloggt sein.
+- Abhängigkeiten: GRDB (SQLite) *(integriert, SPM `groue/GRDB.swift`, `upToNextMajor` ab 7.11.0)*; Sparkle (Auto-Update, später, geplant). ZIP-Entpacken bewusst **ohne** Dependency (`MiniZip.swift` + `Compression`-Framework, sandbox-tauglich).
 - **Build-Check nach jeder Swift-Änderung** (Pflicht, s. Harte Regeln):
 
   ```bash
@@ -143,8 +155,8 @@ schreibwerkstatt-focuseditor/
 
 ## Roadmap (Plan)
 
-1. **Bridge-Facade** im Hauptrepo (`editor/focus/` + `editor/shared/`) + Build-Step → Offline-Bundle.
+1. **Bridge-Facade** + **OTA-Bundle** — *erledigt*: Server bündelt die Editor-Closure als ZIP (`GET /content/editor-bundle.zip`, [lib/editor-bundle.js](../../ClaudeProjects/schreibwerkstatt/lib/editor-bundle.js)); Client zieht/cacht/entpackt (`EditorBundleStore` + `MiniZip`). Build-Step + `web/`-Ordner entfallen.
 2. **Device-Token-Auth** am Server — *erledigt* (Tabelle `device_tokens`, `swd_`-Bearer, `/me/device-tokens`). Frontend-UI zum Ausstellen noch offen.
 3. **Inkrementeller Sync** am Server — *erledigt*: `GET /content/books/:book_id/sync` (Keyset-Cursor, voller HTML, inkl. eigener Edits) + 409-Semantik (`PAGE_CONFLICT`) auf `PUT /content/pages/:id`.
-4. **macOS-Shell + Offline-Kern** — WKWebView + Bridge *(steht)*, LocalStore + Outbox *(steht, In-Memory/JSON-Platzhalter)*, GRDB *(offen)*, **SyncEngine (Polling-Pull + Push)** *(offen — Cross-Session-Frische, s. „Sync")*.
+4. **macOS-Shell + Offline-Kern** — WKWebView + Bridge *(steht)*, LocalStore + Outbox *(steht)*, GRDB *(erledigt — `GRDBLocalStore`, ersetzt den In-Memory/JSON-Platzhalter; `InMemoryLocalStore` bleibt als Fallback/Tests)*, **SyncEngine (Polling-Pull + Push + Delete-Reconcile)** *(steht — Cross-Session-Frische, s. „Sync")*.
 5. **Nativer Feinschliff** — Menüleiste, ⌘-Shortcuts, echtes Vollbild, Preferences, Dark Mode, Sparkle-Auto-Update, Code-Signing/Notarization.

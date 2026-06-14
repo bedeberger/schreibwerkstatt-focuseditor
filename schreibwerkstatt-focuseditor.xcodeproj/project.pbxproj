@@ -8,18 +8,22 @@
 
 /* Begin PBXBuildFile section */
 		61DB000000000000000000A3 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = 61DB000000000000000000A2 /* GRDB */; };
-		61EA81F0000000000000FB03 /* web in Resources */ = {isa = PBXBuildFile; fileRef = 61EA81F0000000000000FB02 /* web */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		61EA813C2FDE904700FBD31B /* schreibwerkstatt-focuseditor.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "schreibwerkstatt-focuseditor.app"; sourceTree = BUILT_PRODUCTS_DIR; };
-		61EA81F0000000000000FB02 /* web */ = {isa = PBXFileReference; lastKnownFileType = folder; path = web; sourceTree = SOURCE_ROOT; };
+		7E0000000000000000000002 /* schreibwerkstatt-focuseditorTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "schreibwerkstatt-focuseditorTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		61EA813E2FDE904700FBD31B /* schreibwerkstatt-focuseditor */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = "schreibwerkstatt-focuseditor";
+			sourceTree = "<group>";
+		};
+		7E0000000000000000000003 /* schreibwerkstatt-focuseditorTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "schreibwerkstatt-focuseditorTests";
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -33,23 +37,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		7E0000000000000000000005 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		61A6A6E02FDEA3B200596EFA /* Recovered References */ = {
-			isa = PBXGroup;
-			children = (
-				61EA81F0000000000000FB02 /* web */,
-			);
-			name = "Recovered References";
-			sourceTree = "<group>";
-		};
 		61EA81332FDE904700FBD31B = {
 			isa = PBXGroup;
 			children = (
 				61EA813E2FDE904700FBD31B /* schreibwerkstatt-focuseditor */,
+				7E0000000000000000000003 /* schreibwerkstatt-focuseditorTests */,
 				61EA813D2FDE904700FBD31B /* Products */,
-				61A6A6E02FDEA3B200596EFA /* Recovered References */,
 			);
 			sourceTree = "<group>";
 		};
@@ -57,6 +60,7 @@
 			isa = PBXGroup;
 			children = (
 				61EA813C2FDE904700FBD31B /* schreibwerkstatt-focuseditor.app */,
+				7E0000000000000000000002 /* schreibwerkstatt-focuseditorTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -87,6 +91,29 @@
 			productReference = 61EA813C2FDE904700FBD31B /* schreibwerkstatt-focuseditor.app */;
 			productType = "com.apple.product-type.application";
 		};
+		7E0000000000000000000001 /* schreibwerkstatt-focuseditorTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 7E0000000000000000000007 /* Build configuration list for PBXNativeTarget "schreibwerkstatt-focuseditorTests" */;
+			buildPhases = (
+				7E0000000000000000000004 /* Sources */,
+				7E0000000000000000000005 /* Frameworks */,
+				7E0000000000000000000006 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				7E000000000000000000000A /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				7E0000000000000000000003 /* schreibwerkstatt-focuseditorTests */,
+			);
+			name = "schreibwerkstatt-focuseditorTests";
+			packageProductDependencies = (
+			);
+			productName = "schreibwerkstatt-focuseditorTests";
+			productReference = 7E0000000000000000000002 /* schreibwerkstatt-focuseditorTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -99,6 +126,10 @@
 				TargetAttributes = {
 					61EA813B2FDE904700FBD31B = {
 						CreatedOnToolsVersion = 26.5;
+					};
+					7E0000000000000000000001 = {
+						CreatedOnToolsVersion = 26.5;
+						TestTargetID = 61EA813B2FDE904700FBD31B;
 					};
 				};
 			};
@@ -120,6 +151,7 @@
 			projectRoot = "";
 			targets = (
 				61EA813B2FDE904700FBD31B /* schreibwerkstatt-focuseditor */,
+				7E0000000000000000000001 /* schreibwerkstatt-focuseditorTests */,
 			);
 		};
 /* End PBXProject section */
@@ -129,7 +161,13 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				61EA81F0000000000000FB03 /* web in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7E0000000000000000000006 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -137,6 +175,13 @@
 
 /* Begin PBXSourcesBuildPhase section */
 		61EA81382FDE904700FBD31B /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7E0000000000000000000004 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -328,6 +373,46 @@
 			};
 			name = Release;
 		};
+		7E0000000000000000000008 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.5;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "David-Berger.schreibwerkstatt-focuseditorTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/schreibwerkstatt-focuseditor.app/Contents/MacOS/schreibwerkstatt-focuseditor";
+			};
+			name = Debug;
+		};
+		7E0000000000000000000009 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.5;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = "David-Berger.schreibwerkstatt-focuseditorTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/schreibwerkstatt-focuseditor.app/Contents/MacOS/schreibwerkstatt-focuseditor";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -349,7 +434,34 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+		7E0000000000000000000007 /* Build configuration list for PBXNativeTarget "schreibwerkstatt-focuseditorTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				7E0000000000000000000008 /* Debug */,
+				7E0000000000000000000009 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 /* End XCConfigurationList section */
+
+/* Begin PBXContainerItemProxy section */
+		7E000000000000000000000B /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 61EA81342FDE904700FBD31B /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 61EA813B2FDE904700FBD31B;
+			remoteInfo = "schreibwerkstatt-focuseditor";
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXTargetDependency section */
+		7E000000000000000000000A /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 61EA813B2FDE904700FBD31B /* schreibwerkstatt-focuseditor */;
+			targetProxy = 7E000000000000000000000B /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCRemoteSwiftPackageReference section */
 		61DB000000000000000000A1 /* XCRemoteSwiftPackageReference "GRDB" */ = {

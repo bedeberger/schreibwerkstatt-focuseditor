@@ -179,12 +179,12 @@ final class GRDBLocalStore: LocalStore {
 // Die Domänen-Typen sind bereits Codable; GRDB leitet Fetch/Persist daraus ab.
 // Spaltennamen == Property-Namen (siehe Migration oben).
 
-extension StoredPage: @MainActor FetchableRecord, @MainActor PersistableRecord {
+extension StoredPage: nonisolated FetchableRecord, nonisolated PersistableRecord {
     nonisolated static let databaseTableName = "page"
 }
 
-extension OutboxEntry: @MainActor FetchableRecord, @MainActor PersistableRecord {
+extension OutboxEntry: nonisolated FetchableRecord, nonisolated PersistableRecord {
     nonisolated static let databaseTableName = "outbox"
 }
 
-extension PageSummary: FetchableRecord {}
+extension PageSummary: nonisolated FetchableRecord {}

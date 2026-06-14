@@ -17,6 +17,14 @@
 //    • editorState { pageId, dirty }           → null   (offene Seite + Dirty-Flag)
 //    • log  { level?, message }                → null   (JS-Diagnose im Swift-Log)
 //
+//  Rechtschreibprüfung (LanguageTool) — Proxy über den Swift-Kern, NIE direkter
+//  fetch aus der WebView (HARTE REGEL). Die Server-Settings (enabled/url/picky)
+//  werden serverseitig angewandt; der Client liefert nur Text + Sprache:
+//    • spellcheckConfig {}                     → { enabled, debounceMs }  (aus /config)
+//    • languagetoolCheck { text, language?, pageId?, bookId? }
+//                                              → { matches: [...] } | { disabled: true }
+//    • dictionaryAdd { word, lang?, bookId? }  → { ok }   (Wort ins User-Wörterbuch)
+//
 //  Events (Swift → JS, via `__focusBridge._receive(event, payload)`):
 //    • serverUpdate { pageId, html, baseUpdatedAt }  (offene Seite serverseitig aktualisiert)
 //    • openPage     { pageId, html?, baseUpdatedAt? } (nativer Picker öffnet Seite)
@@ -36,7 +44,16 @@ final class EditorBridge: NSObject, WKScriptMessageHandlerWithReply, EditorCoord
     static let handlerName = "swBridge"
 
     private let store: any LocalStore
+    /// HTTP-Client für den LanguageTool-/Wörterbuch-Proxy. Optional, damit die
+    /// Bridge ohne Netz-Abhängigkeit (Tests/Dev-Harness) konstruierbar bleibt;
+    /// fehlt er, melden die Spellcheck-Ops „deaktiviert".
+    private let api: APIClient?
     private let log = Logger(subsystem: "ch.schreibwerkstatt.focuseditor", category: "bridge")
+
+    /// Zuletzt vom Server gelesene LanguageTool-Konfiguration (aus `/config`).
+    /// Wird gecacht, damit ein Offline-Tick den letzten bekannten Stand behält
+    /// statt die Prüfung fälschlich abzuschalten.
+    private var ltConfig: (enabled: Bool, debounceMs: Int)?
 
     /// WebView für den Swift→JS-Kanal (`callAsyncJavaScript`). Schwach: die
     /// View besitzt die Bridge (Handler-Registrierung), nicht umgekehrt.
@@ -47,8 +64,9 @@ final class EditorBridge: NSObject, WKScriptMessageHandlerWithReply, EditorCoord
     /// Seiten mit ungespeicherten Editor-Änderungen.
     private var dirtyPages: Set<String> = []
 
-    init(store: any LocalStore) {
+    init(store: any LocalStore, api: APIClient? = nil) {
         self.store = store
+        self.api = api
     }
 
     /// Verbindet die Bridge mit der WebView (Swift→JS-Kanal). Wird vom
@@ -126,9 +144,78 @@ final class EditorBridge: NSObject, WKScriptMessageHandlerWithReply, EditorCoord
             }
             return nil
 
+        case "spellcheckConfig":
+            return await spellcheckConfig()
+
+        case "languagetoolCheck":
+            let text = try requireString(params, "text")
+            let language = (params["language"] as? String) ?? "auto"
+            let pageId = params["pageId"] as? String
+            let bookId = params["bookId"] as? Int
+            return try await languagetoolCheck(text: text, language: language,
+                                               pageId: pageId, bookId: bookId)
+
+        case "dictionaryAdd":
+            let word = try requireString(params, "word")
+            let lang = (params["lang"] as? String) ?? "*"
+            let bookId = (params["bookId"] as? Int) ?? 0
+            return try await dictionaryAdd(word: word, lang: lang, bookId: bookId)
+
         default:
             throw BridgeError.unknownOp(op)
         }
+    }
+
+    // MARK: LanguageTool-Proxy
+    //
+    // Netzwerk macht ausschliesslich der Swift-Kern — die WebView reicht nur
+    // Plain-Text + Sprache durch. Alle LT-Settings (enabled/url/picky/rules)
+    // liegen serverseitig in app_settings und werden vom `/languagetool/check`-
+    // Proxy angewandt; der Client kennt sie nicht.
+
+    /// Liefert die LanguageTool-Konfiguration aus `/config`. Bei Netz-/Auth-
+    /// Fehler den letzten gecachten Stand, sonst „deaktiviert" (degradiert
+    /// still — Spellcheck ist online-only und kein Offline-Kern-Inhalt).
+    private func spellcheckConfig() async -> [String: Any] {
+        guard let api else { return ["enabled": false, "debounceMs": 1500] }
+        do {
+            let cfg = try await api.send("/config", decode: ConfigDTO.self)
+            let enabled = cfg.languagetool?.enabled ?? false
+            let debounce = cfg.languagetool?.debounceMs ?? 1500
+            ltConfig = (enabled, debounce)
+            return ["enabled": enabled, "debounceMs": debounce]
+        } catch {
+            if let cached = ltConfig {
+                return ["enabled": cached.enabled, "debounceMs": cached.debounceMs]
+            }
+            return ["enabled": false, "debounceMs": 1500]
+        }
+    }
+
+    /// Proxyt den Prüf-Request an `POST /languagetool/check`. `404` (LT
+    /// serverseitig aus) wird als `{ disabled: true }` zurückgegeben — kein
+    /// Fehler. Die `matches` werden als roher JSON-Baum durchgereicht
+    /// (NSJSON-konform → direkt als Bridge-Reply nutzbar).
+    private func languagetoolCheck(text: String, language: String,
+                                   pageId: String?, bookId: Int?) async throws -> [String: Any] {
+        guard let api else { return ["disabled": true] }
+        let req = LTCheckRequest(text: text, language: language, bookId: bookId, pageId: pageId)
+        let (status, data) = try await api.postExpectingJSON("/languagetool/check", body: req)
+        if status == 404 { return ["disabled": true] }   // Feature serverseitig aus
+        guard (200...299).contains(status) else {
+            throw BridgeError.languagetool(status: status)
+        }
+        let obj = try? JSONSerialization.jsonObject(with: data)
+        let matches = (obj as? [String: Any])?["matches"] as? [Any] ?? []
+        return ["matches": matches]
+    }
+
+    /// Fügt ein Wort dem serverseitigen User-Wörterbuch hinzu (`POST /dictionary`).
+    private func dictionaryAdd(word: String, lang: String, bookId: Int) async throws -> [String: Any] {
+        guard let api else { return ["ok": false] }
+        let req = DictionaryAddRequest(word: word, bookId: bookId, lang: lang)
+        let (status, _) = try await api.postExpectingJSON("/dictionary", body: req)
+        return ["ok": (200...299).contains(status)]
     }
 
     // MARK: EditorCoordinating (Swift→JS)
@@ -221,6 +308,7 @@ enum BridgeError: LocalizedError {
     case missingParam(String)
     case webViewUnavailable
     case mergeFailed
+    case languagetool(status: Int)
 
     var errorDescription: String? {
         switch self {
@@ -228,6 +316,36 @@ enum BridgeError: LocalizedError {
         case .missingParam(let key): return "Bridge: Parameter '\(key)' fehlt"
         case .webViewUnavailable:    return "Bridge: keine WebView verfügbar (Swift→JS)"
         case .mergeFailed:           return "Bridge: Block-Merge lieferte kein Ergebnis"
+        case .languagetool(let s):   return "Bridge: LanguageTool-Proxy antwortete mit Status \(s)"
         }
     }
+}
+
+// MARK: - Spellcheck-DTOs
+
+/// Antwort-Ausschnitt von `GET /config` — nur der LanguageTool-Block.
+private struct ConfigDTO: Decodable {
+    struct LanguageTool: Decodable {
+        let enabled: Bool?
+        let debounceMs: Int?
+    }
+    let languagetool: LanguageTool?
+}
+
+/// Body für `POST /languagetool/check` (Server-Vertrag, siehe
+/// routes/languagetool.js). `bookId`/`pageId` treiben serverseitiges Caching
+/// + Wörterbuch-Filter; beide optional.
+private struct LTCheckRequest: Encodable {
+    let text: String
+    let language: String
+    let bookId: Int?
+    let pageId: String?
+}
+
+/// Body für `POST /dictionary` (Wort ins User-Wörterbuch). `bookId: 0` =
+/// global (alle Bücher), `lang: "*"` = alle Sprachen.
+private struct DictionaryAddRequest: Encodable {
+    let word: String
+    let bookId: Int
+    let lang: String
 }

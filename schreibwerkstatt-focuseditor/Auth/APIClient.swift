@@ -62,6 +62,54 @@ final class APIClient {
         _ = try await sendRaw(path, method: method, body: body, overrideToken: overrideToken)
     }
 
+    /// POST mit JSON-Body, der fachliche 4xx-Antworten als `(status, data)`
+    /// durchreicht, statt sie zu werfen. Gedacht für Endpoints, deren 4xx eine
+    /// Bedeutung trägt, die der Aufrufer deuten muss — z. B. liefert
+    /// `POST /languagetool/check` ein `404`, wenn LanguageTool serverseitig
+    /// deaktiviert ist (kein Fehler, sondern „Feature aus").
+    ///
+    /// `401` schlägt wie üblich auf `onUnauthorized` durch und wirft; `5xx`
+    /// und Netzfehler werfen ebenfalls. Lokale Inhalte werden NIE verworfen.
+    func postExpectingJSON(_ path: String, body: Encodable) async throws -> (status: Int, data: Data) {
+        guard let baseURL = ServerConfig.baseURL,
+              let url = URL(string: path, relativeTo: baseURL) else {
+            throw AuthError.invalidServerURL
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = Method.POST.rawValue
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let token = tokenProvider() {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        request.httpBody = try JSONEncoder().encode(AnyEncodable(body))
+
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session.data(for: request)
+        } catch {
+            throw AuthError.network(error)
+        }
+
+        guard let http = response as? HTTPURLResponse else {
+            throw AuthError.server(status: -1, code: nil, body: nil)
+        }
+
+        switch http.statusCode {
+        case 401:
+            onUnauthorized?()
+            throw AuthError.unauthorized
+        case 500...599:
+            let code = (try? decoder.decode(ServerErrorBody.self, from: data))?.error_code
+            throw AuthError.server(status: http.statusCode, code: code, body: data)
+        default:
+            // 2xx und fachliche 4xx (z. B. 404/413) reicht der Aufrufer aus.
+            return (http.statusCode, data)
+        }
+    }
+
     /// Ergebnis eines Roh-GET ohne JSON-Decode (für Nicht-JSON-Ressourcen wie
     /// das Editor-Bundle-ZIP). `notModified` = Server-304 auf `If-None-Match`.
     struct RawResponse {

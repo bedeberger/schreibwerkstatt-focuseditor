@@ -13,7 +13,10 @@ import Foundation
 
 enum ServerConfig {
     private static let defaultsKey = "server.baseURL"
-    private static let fallback = "http://localhost:3737"
+    // IPv4 statt `localhost`: Der Dev-Server bindet nur IPv4 (`*:3737`),
+    // `localhost` löst unter macOS aber bevorzugt auf IPv6 `::1` auf →
+    // „Connection refused". 127.0.0.1 erzwingt den passenden Stack.
+    private static let fallback = "http://127.0.0.1:3737"
 
     /// Aktuelle Basis-URL als String (für Anzeige/Eingabe).
     static var baseURLString: String {
@@ -34,8 +37,14 @@ enum ServerConfig {
         guard let url = URL(string: s),
               let scheme = url.scheme?.lowercased(),
               scheme == "http" || scheme == "https",
-              url.host != nil else {
+              let host = url.host else {
             return nil
+        }
+        // `localhost` deterministisch auf IPv4 zwingen (s. `fallback`).
+        if host.lowercased() == "localhost",
+           var comps = URLComponents(url: url, resolvingAgainstBaseURL: false) {
+            comps.host = "127.0.0.1"
+            if let coerced = comps.url { return coerced }
         }
         return url
     }
