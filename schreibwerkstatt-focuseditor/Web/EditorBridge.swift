@@ -280,8 +280,13 @@ final class EditorBridge: NSObject, WKScriptMessageHandlerWithReply, EditorCoord
             return try? await store.page(id: pageId)
         }
         let ms = ISOTime.millis(resp.updated_at) ?? 0
+        // book_id/chapter_id liefert `/content/pages/:id` (noch) nicht zwingend
+        // (anders als der Sync-Pull) → ggf. nil. Dann bleibt das Buch vorerst
+        // ungesetzt; der Delete-Reconcile trägt es über den Buch-Tree nach
+        // (LocalStore.assignBook), damit die Seite nicht als Waise unsichtbar wird.
         try? await store.applyServerPage(id: pageId, html: html,
-                                         pageName: resp.name, bookId: nil, chapterId: nil,
+                                         pageName: resp.name,
+                                         bookId: resp.book_id, chapterId: resp.chapter_id,
                                          serverUpdatedAtMillis: ms)
         return try? await store.page(id: pageId)
     }

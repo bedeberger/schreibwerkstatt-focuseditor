@@ -148,13 +148,16 @@ struct PagePickerOverlay: View {
     @ViewBuilder
     private var content: some View {
         if library.isLoadingPages && library.pages.isEmpty {
-            centered { ProgressView() }
-        } else if filtered.isEmpty {
             centered {
-                Text(library.activeBookId == nil ? t("picker.noBookSelected") : t("picker.noPages"))
-                    .font(BrandFont.sans(13))
-                    .foregroundStyle(BrandColor.muted)
+                VStack(spacing: 10) {
+                    ProgressView()
+                    Text(t("picker.loadingPages"))
+                        .font(BrandFont.sans(12))
+                        .foregroundStyle(BrandColor.muted)
+                }
             }
+        } else if filtered.isEmpty {
+            centered { emptyState }
         } else {
             ScrollViewReader { proxy in
                 ScrollView {
@@ -183,6 +186,35 @@ struct PagePickerOverlay: View {
                 }
             }
         }
+    }
+
+    /// Leerzustand des Pickers — unterscheidet drei Fälle (Suche ohne Treffer /
+    /// kein Buch gewählt / Buch ohne Seiten) mit Icon, klarer Aussage und einem
+    /// konkreten nächsten Schritt, statt einer einzelnen kargen Textzeile.
+    @ViewBuilder
+    private var emptyState: some View {
+        let searching = !query.isEmpty
+        let noBook = library.activeBookId == nil
+        let icon = searching ? "magnifyingglass" : (noBook ? "books.vertical" : "doc.text")
+        let title = searching ? t("picker.noMatches")
+            : (noBook ? t("picker.noBookSelected") : t("picker.noPages"))
+        let hint: String? = searching ? nil : (noBook ? t("picker.noBookHint") : t("picker.noPagesHint"))
+
+        VStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(.system(size: 26, weight: .light))
+                .foregroundStyle(BrandColor.faint)
+            Text(title)
+                .font(BrandFont.sans(13))
+                .foregroundStyle(BrandColor.muted)
+            if let hint {
+                Text(hint)
+                    .font(BrandFont.sans(11))
+                    .foregroundStyle(BrandColor.faint)
+                    .multilineTextAlignment(.center)
+            }
+        }
+        .frame(maxWidth: 280)
     }
 
     /// Pinned Kapitel-Überschrift — gruppiert die Seiten darunter, statt den
@@ -219,7 +251,17 @@ struct PagePickerOverlay: View {
                         .background(BrandColor.primary.opacity(0.12),
                                     in: Capsule())
                 }
-                Spacer(minLength: 0)
+                Spacer(minLength: 8)
+                // Dezente Relativ-Zeit der letzten Änderung — Orientierung im
+                // grossen Buch („woran habe ich zuletzt geschrieben?").
+                if let updated = row.updatedAt {
+                    Text(Self.relative(updated))
+                        .font(BrandFont.sans(10))
+                        .monospacedDigit()
+                        .foregroundStyle(BrandColor.faint)
+                        .lineLimit(1)
+                        .layoutPriority(1)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, 7)
@@ -236,6 +278,14 @@ struct PagePickerOverlay: View {
     private func centered<V: View>(@ViewBuilder _ inner: () -> V) -> some View {
         VStack { Spacer(); inner(); Spacer() }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// Letzte Änderung als kurze Relativ-Zeit in der App-Sprache (z. B. „vor 3 Std.").
+    private static func relative(_ date: Date) -> String {
+        let f = RelativeDateTimeFormatter()
+        f.locale = Locale(identifier: L10nStore.shared.localeCode)
+        f.unitsStyle = .abbreviated
+        return f.localizedString(for: date, relativeTo: Date())
     }
 
     // MARK: Aktionen

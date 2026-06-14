@@ -69,6 +69,12 @@ struct PushResponse: Decodable {
     let updated_at: String
     let name: String?
     let html: String?
+    // Buch-/Kapitel-Zuordnung: optional, weil `GET /content/pages/:id` sie
+    // (noch) nicht zwingend liefert. Sobald der Server sie mitschickt, setzt das
+    // Bridge-Nachladen das Buch sofort — sonst trägt der Reconcile-Backfill es
+    // über den Buch-Tree nach (LocalStore.assignBook). Siehe CLAUDE.md.
+    let book_id: Int?
+    let chapter_id: Int?
 }
 
 /// 409-Body `PAGE_CONFLICT`.

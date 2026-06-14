@@ -224,6 +224,7 @@
 
   "picker.searchPage": "Search page …",
   "picker.noBookSelected": "No book selected",
+  "picker.noMatches": "No matches",
   "picker.noPages": "No pages in this book",
   "picker.noPagesHint": "Create a page on the web, or pick another book.",
   "picker.noBookHint": "Choose a book in the toolbar on the left.",

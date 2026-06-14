@@ -81,6 +81,11 @@ struct PagePickerRow: Identifiable, Equatable {
     let name: String
     let chapterName: String?
     let depth: Int
+    /// Letzte Änderung (Server-`updated_at`, sonst lokaler Spiegel) — treibt die
+    /// dezente Relativ-Zeit pro Picker-Zeile (Orientierung im grossen Buch).
+    /// `nil`, wenn kein Zeitstempel vorliegt. Default-Wert hält bestehende
+    /// Initializer (ohne Zeitstempel) gültig.
+    var updatedAt: Date? = nil
 }
 
 // MARK: - API
@@ -138,7 +143,8 @@ final class ContentAPI {
                     rows.append(PagePickerRow(id: p.id,
                                               name: p.name ?? "Ohne Titel",
                                               chapterName: ch.name,
-                                              depth: depth))
+                                              depth: depth,
+                                              updatedAt: date(from: p.updated_at)))
                 }
                 walk(ch.subchapters, depth: depth + 1)
             }
@@ -149,8 +155,16 @@ final class ContentAPI {
             rows.append(PagePickerRow(id: p.id,
                                       name: p.name ?? "Ohne Titel",
                                       chapterName: nil,
-                                      depth: 0))
+                                      depth: 0,
+                                      updatedAt: date(from: p.updated_at)))
         }
         return rows
+    }
+
+    /// Server-ISO-Zeitstempel → `Date` (über `ISOTime`, das auch die Sync-Engine
+    /// nutzt). `nil` bei fehlendem/unparsbarem Wert.
+    static func date(from iso: String?) -> Date? {
+        guard let iso, let ms = ISOTime.millis(iso) else { return nil }
+        return Date(timeIntervalSince1970: ms / 1000)
     }
 }
