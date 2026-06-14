@@ -22,6 +22,12 @@ struct SettingsView: View {
 
             AppearanceSettingsTab()
                 .tabItem { Label("Darstellung", systemImage: "paintbrush") }
+
+            TypographySettingsTab()
+                .tabItem { Label("Typografie", systemImage: "textformat.size") }
+
+            WritingSettingsTab()
+                .tabItem { Label("Schreiben", systemImage: "pencil.and.scribble") }
         }
         .frame(width: 460)
     }
@@ -153,5 +159,129 @@ private struct AppearanceSettingsTab: View {
             }
         }
         .formStyle(.grouped)
+    }
+}
+
+// MARK: - Typografie (Schriftgrösse, Zeilenhöhe, Spaltenbreite, Familie, Papier)
+
+private struct TypographySettingsTab: View {
+    @EnvironmentObject private var typography: TypographyController
+
+    var body: some View {
+        Form {
+            Section("Schrift") {
+                Picker("Schriftart", selection: $typography.fontFamily) {
+                    ForEach(EditorFontFamily.allCases) { f in
+                        Text(f.label).tag(f)
+                    }
+                }
+
+                LabeledContent("Schriftgrösse") {
+                    HStack {
+                        Slider(value: $typography.fontSize,
+                               in: TypographyController.fontSizeRange, step: 1)
+                        Text("\(Int(typography.fontSize.rounded())) px")
+                            .font(.callout.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                            .frame(width: 52, alignment: .trailing)
+                    }
+                }
+
+                LabeledContent("Zeilenhöhe") {
+                    HStack {
+                        Slider(value: $typography.lineHeight,
+                               in: TypographyController.lineHeightRange, step: 0.05)
+                        Text(String(format: "%.2f", typography.lineHeight))
+                            .font(.callout.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                            .frame(width: 52, alignment: .trailing)
+                    }
+                }
+            }
+
+            Section("Layout") {
+                Toggle("Spaltenbreite begrenzen", isOn: measureEnabled)
+                if typography.measure > 0 {
+                    LabeledContent("Breite") {
+                        HStack {
+                            Slider(value: $typography.measure,
+                                   in: TypographyController.measureRange, step: 1)
+                            Text("\(Int(typography.measure.rounded())) ch")
+                                .font(.callout.monospacedDigit())
+                                .foregroundStyle(.secondary)
+                                .frame(width: 52, alignment: .trailing)
+                        }
+                    }
+                }
+                Text("Begrenzt die Zeilenlänge (in Zeichen) für angenehmeres Lesen. „ch“ ≈ Breite einer Ziffer.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Section("Papier") {
+                Picker("Hintergrund", selection: $typography.paperTone) {
+                    ForEach(PaperTone.allCases) { t in
+                        Text(t.label).tag(t)
+                    }
+                }
+                Text("„System“ folgt Hell/Dunkel. Andere Töne erzwingen eine feste Schreibfläche (z. B. Sepia für warmes Licht).")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Section {
+                HStack {
+                    Spacer()
+                    Button("Auf Standard zurücksetzen") { typography.resetToDefaults() }
+                }
+            }
+        }
+        .formStyle(.grouped)
+    }
+
+    /// Toggle koppelt „begrenzen" an measure==0 (aus) bzw. den letzten Wert.
+    private var measureEnabled: Binding<Bool> {
+        Binding(
+            get: { typography.measure > 0 },
+            set: { typography.measure = $0 ? 64 : 0 }
+        )
+    }
+}
+
+// MARK: - Schreiben (Statistik + Seitenziel)
+
+private struct WritingSettingsTab: View {
+    @EnvironmentObject private var stats: WritingStatsStore
+
+    var body: some View {
+        Form {
+            Section("Statistik") {
+                Toggle("Wortzahl & Lesezeit in der Toolbar zeigen", isOn: $stats.showStats)
+            }
+
+            Section("Schreibziel") {
+                Toggle("Wort-Ziel pro Seite", isOn: goalEnabled)
+                if stats.pageGoalWords > 0 {
+                    Stepper(value: $stats.pageGoalWords, in: 50...5000, step: 50) {
+                        LabeledContent("Ziel", value: "\(stats.pageGoalWords) Wörter")
+                    }
+                }
+                Text("Zeigt einen Fortschrittsbalken in der Toolbar, bis die offene Seite das Ziel erreicht. Die App ist auf genau eine Seite ausgelegt — das Ziel gilt darum pro Seite.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .formStyle(.grouped)
+    }
+
+    /// Toggle koppelt „Ziel an" an pageGoalWords==0 (aus) bzw. einen Default.
+    private var goalEnabled: Binding<Bool> {
+        Binding(
+            get: { stats.pageGoalWords > 0 },
+            set: { stats.pageGoalWords = $0 ? 500 : 0 }
+        )
     }
 }

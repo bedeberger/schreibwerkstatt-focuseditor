@@ -61,6 +61,15 @@ enum WebAssets {
         // Boot-Pull; Live-Umschalten kommt zusätzlich als 'focusGranularity'-Event.
         focusGranularity: () => call('focusGranularity', {}),
 
+        // Lokale Editor-Typografie (Schriftgrösse/Zeilenhöhe/measure/Familie/
+        // Papier-Ton) als CSS-fertiges Payload. Boot-Pull; Live-Umschalten kommt
+        // zusätzlich als 'editorTypography'-Event.
+        editorTypography: () => call('editorTypography', {}),
+
+        // Lebende Schreibstatistik (Wörter/Zeichen) der offenen Seite an Swift
+        // melden (Live-Stats + Schreibziel). Feuert debounced bei Eingabe.
+        reportStats: (words, chars) => call('reportStats', { words, chars }),
+
         // Swift→JS Event-Bus. Der Editor-Host abonniert z. B. 'serverUpdate'
         // (saubere offene Seite wurde serverseitig aktualisiert → still neu laden).
         _handlers: {},
@@ -164,6 +173,22 @@ enum WebAssets {
               let currentPageId = null;
               let currentBookId = null;
 
+              // Offene Seite + Dirty-Flag an den Swift-Kern melden (`editorState`).
+              // Treibt die Seiten-Anzeige in der Toolbar UND die Sync-Logik:
+              // Open-Page-Reload der sauberen offenen Seite + Datenverlust-Schutz
+              // der dirty offenen Seite (SyncEngine liest openPageId/isDirty). Ohne
+              // diesen Aufruf bliebe die Bridge-seitige openPageId immer null.
+              // Nur bei echtem Zustandswechsel posten (keine Keystroke-Flut).
+              let reportedPageId;
+              let reportedDirty;
+              function reportEditorState(pageId, dirty) {
+                const pid = pageId == null ? null : String(pageId);
+                if (pid === reportedPageId && dirty === reportedDirty) return;
+                reportedPageId = pid;
+                reportedDirty = dirty;
+                try { fb.reportState(pid, dirty); } catch (_) {}
+              }
+
               // Lokale Fokus-Granularität: beim Boot aus dem Swift-Kern ziehen
               // (UserDefaults-Wert), damit das initiale Mount schon die richtige
               // CSS-Klasse setzt. Live-Umschalten kommt später als Event.
@@ -197,6 +222,7 @@ enum WebAssets {
                   const base = bases.get(String(id)) ?? null;
                   const res = await fb.save(id, html, base);
                   if (res && res.updatedAt != null) bases.set(String(id), res.updatedAt);
+                  reportEditorState(id, false);   // gespeichert → nicht mehr dirty
                   return res;
                 },
               };
@@ -204,6 +230,18 @@ enum WebAssets {
               window.__standalone = await mountStandaloneFocus({ mount: document.getElementById('mount'), bridge });
               status.remove();
               fb.log?.('Standalone-Focus gemountet');
+
+              // Initial geöffnete Seite (loadPage) an Swift melden → Toolbar-Titel
+              // steht ab Boot, nicht erst nach dem ersten Picker-Wechsel.
+              reportEditorState(currentPageId, false);
+              // Tastatureingaben markieren die offene Seite dirty (Datenverlust-
+              // Schutz im Sync). Listener am Mount-Container (überlebt setPage,
+              // das den Content-Knoten austauscht); 'input' bubbelt aus dem
+              // contenteditable hoch.
+              const mountEl = document.getElementById('mount');
+              if (mountEl) mountEl.addEventListener('input', () => {
+                if (currentPageId) reportEditorState(currentPageId, true);
+              });
 
               // ── Seitenwechsel / Server-Frische (Swift → JS Event-Bus) ───────
               // Der native Picker (⌘O) und die SyncEngine heben Seiten über die
@@ -226,6 +264,10 @@ enum WebAssets {
                   name: (page && (page.pageName || page.title)) || 'Seite',
                   html: (page && page.html != null) ? page.html : '<p><br></p>',
                 });
+                // Neu eingespielte Seite ist sauber → Swift/Toolbar nachziehen.
+                reportEditorState(String(pageId), false);
+                // Stats nach dem Seitenwechsel neu zählen (setPage feuert kein input).
+                try { window.__countStats && window.__countStats(); } catch (_) {}
               }
 
               // Nativer Picker → andere Seite öffnen (vorher aktuellen Stand sichern).
@@ -262,6 +304,76 @@ enum WebAssets {
               fb.on('focusGranularity', (p) => {
                 if (p && p.granularity) applyGranularity(p.granularity);
               });
+
+              // ── Editor-Typografie (Schriftgrösse/Zeilenhöhe/measure/…) ──────
+              // Override-Schicht ÜBER dem unveränderten Editor-CSS (kein Fork):
+              // CSS-Custom-Properties auf :root + EIN persistentes <style>, das
+              // den Editor-Content überschreibt. Überlebt setPage (greift nicht
+              // in den Content-Baum ein). Werte kommen CSS-fertig aus Swift.
+              function applyTypography(t) {
+                if (!t) return;
+                const root = document.documentElement;
+                if (t.fontSize)   root.style.setProperty('--sw-font-size', t.fontSize);
+                if (t.lineHeight) root.style.setProperty('--sw-line-height', t.lineHeight);
+                if (t.measure)    root.style.setProperty('--sw-measure', t.measure);
+                if (t.fontFamily) root.style.setProperty('--sw-font-family', t.fontFamily);
+                // Papier-Ton: null = keine Überschreibung (System-/Theme-Fläche).
+                if (t.paperBg)   root.style.setProperty('--sw-paper-bg', t.paperBg);
+                else             root.style.removeProperty('--sw-paper-bg');
+                if (t.paperText) root.style.setProperty('--sw-paper-text', t.paperText);
+                else             root.style.removeProperty('--sw-paper-text');
+                root.setAttribute('data-sw-paper', (t.paperBg ? 'custom' : 'system'));
+
+                let style = document.getElementById('sw-native-typography');
+                if (!style) {
+                  style = document.createElement('style');
+                  style.id = 'sw-native-typography';
+                  style.textContent = [
+                    '.focus-editor__content {',
+                    '  font-size: var(--sw-font-size, 19px) !important;',
+                    '  line-height: var(--sw-line-height, 1.7) !important;',
+                    '  font-family: var(--sw-font-family, ui-serif, Georgia, serif) !important;',
+                    '  max-width: var(--sw-measure, none) !important;',
+                    '  margin-inline: auto !important;',
+                    '}',
+                    // Papier-Ton nur, wenn gesetzt — sonst bleibt die native,
+                    // transparente Brand-Fläche (Light/Dark) sichtbar.
+                    ':root[data-sw-paper="custom"] body,',
+                    ':root[data-sw-paper="custom"] .focus-editor {',
+                    '  background: var(--sw-paper-bg) !important;',
+                    '  color: var(--sw-paper-text) !important;',
+                    '}',
+                  ].join('\\n');
+                  document.head.appendChild(style);
+                }
+              }
+              fb.on('editorTypography', (t) => applyTypography(t));
+              // Boot-Pull: initiale Typografie ziehen und anwenden.
+              try { applyTypography(await fb.editorTypography()); } catch (_) {}
+
+              // ── Lebende Schreibstatistik (Wörter/Zeichen) ───────────────────
+              // Zählt den Text der offenen Seite und meldet ihn debounced an
+              // Swift (Toolbar-Stats + Schreibziel). Liest .focus-editor__content
+              // (Root der Schreibfläche, denselben Knoten nutzt die Spellcheck).
+              (function () {
+                let statsTimer = null;
+                function countAndReport() {
+                  const root = document.querySelector('.focus-editor__content');
+                  const text = root ? (root.innerText || root.textContent || '') : '';
+                  const trimmed = text.trim();
+                  const words = trimmed ? trimmed.split(/\\s+/).length : 0;
+                  const chars = text.replace(/\\u00a0/g, ' ').length;
+                  try { fb.reportStats(words, chars); } catch (_) {}
+                }
+                window.__countStats = countAndReport;
+                // Debounced bei Eingabe (input bubblet vom Content nach oben).
+                document.addEventListener('input', function () {
+                  if (statsTimer) clearTimeout(statsTimer);
+                  statsTimer = setTimeout(countAndReport, 400);
+                }, true);
+                // Initiale Zählung (nach dem ersten Mount/loadPage).
+                setTimeout(countAndReport, 150);
+              })();
 
               // ── Rechtschreibprüfung (LanguageTool) ──────────────────────────
               // Wiederverwendet den unveränderten Editor-Controller aus dem

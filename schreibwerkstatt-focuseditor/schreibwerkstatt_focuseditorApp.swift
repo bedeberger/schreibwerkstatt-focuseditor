@@ -13,6 +13,8 @@ struct schreibwerkstatt_focuseditorApp: App {
     @StateObject private var fullscreen = KioskFullscreen()
     @StateObject private var appearance = AppearanceController()
     @StateObject private var focus = FocusController()
+    @StateObject private var typography = TypographyController()
+    @StateObject private var writingStats = WritingStatsStore()
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.openWindow) private var openWindow
 
@@ -27,11 +29,16 @@ struct schreibwerkstatt_focuseditorApp: App {
                 .environmentObject(fullscreen)
                 .environmentObject(appearance)
                 .environmentObject(focus)
+                .environmentObject(typography)
+                .environmentObject(writingStats)
                 .background(WindowAccessor { fullscreen.bind($0) })
                 .task {
-                    // Fokus-Controller an die app-weite Bridge koppeln (Push der
-                    // Live-Umschaltung), dann Auth/Sync hochfahren.
+                    // Fokus- + Typografie-Controller an die app-weite Bridge
+                    // koppeln (Push der Live-Umschaltung), Stats-Kanal anhängen,
+                    // dann Auth/Sync hochfahren.
                     focus.bind(core.bridge)
+                    typography.bind(core.bridge)
+                    writingStats.attach(to: core.bridge)
                     await core.bootstrap()
                 }
                 // Nach dem Anmelden den Server-Default der Fokus-Stufe ziehen
@@ -105,8 +112,12 @@ struct schreibwerkstatt_focuseditorApp: App {
                 .environmentObject(core)
                 .environmentObject(core.auth)
                 .environmentObject(core.library)
+                .environmentObject(core.editorBundle)
+                .environmentObject(core.sync)
                 .environmentObject(appearance)
                 .environmentObject(focus)
+                .environmentObject(typography)
+                .environmentObject(writingStats)
         }
     }
 }

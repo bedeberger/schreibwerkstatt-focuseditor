@@ -69,6 +69,11 @@ final class EditorBridge: NSObject, WKScriptMessageHandlerWithReply, EditorCoord
         return (FocusGranularity(rawValue: raw) ?? .paragraph).rawValue
     }()
 
+    /// CSS-fertiges Typografie-Payload (Schriftgrösse/Zeilenhöhe/measure/Familie/
+    /// Papier-Ton). Vom `TypographyController` gesetzt; Boot-Pull liefert es über
+    /// die `editorTypography`-Op, Live-Umschalten über `pushTypography()`.
+    var typography: [String: Any] = [:]
+
     /// Aktuell im Editor geöffnete Seite (vom JS via `editorState` gemeldet).
     private(set) var openPageId: String? {
         didSet {
@@ -78,6 +83,9 @@ final class EditorBridge: NSObject, WKScriptMessageHandlerWithReply, EditorCoord
     }
     /// Benachrichtigung bei Wechsel der offenen Seite (treibt die Toolbar-Anzeige).
     var onOpenPageChange: ((String?) -> Void)?
+    /// Lebende Schreibstatistik (Wörter, Zeichen) aus der WebView — treibt die
+    /// Stats-Anzeige + das Schreibziel. Gesetzt vom `WritingStatsStore`.
+    var onStats: ((Int, Int) -> Void)?
     /// Seiten mit ungespeicherten Editor-Änderungen.
     private var dirtyPages: Set<String> = []
 
@@ -171,6 +179,17 @@ final class EditorBridge: NSObject, WKScriptMessageHandlerWithReply, EditorCoord
         case "focusGranularity":
             // Boot-Pull: der Editor liest die lokale Fokus-Stufe beim Mounten.
             return ["granularity": focusGranularity]
+
+        case "editorTypography":
+            // Boot-Pull: der Editor-Glue liest die lokale Typografie beim Mounten.
+            return typography
+
+        case "reportStats":
+            // WebView meldet Wort-/Zeichenzahl der offenen Seite (Live-Stats + Ziel).
+            let words = (params["words"] as? Int) ?? (params["words"] as? NSNumber)?.intValue ?? 0
+            let chars = (params["chars"] as? Int) ?? (params["chars"] as? NSNumber)?.intValue ?? 0
+            onStats?(words, chars)
+            return nil
 
         case "spellcheckConfig":
             return await spellcheckConfig()
@@ -345,6 +364,22 @@ final class EditorBridge: NSObject, WKScriptMessageHandlerWithReply, EditorCoord
                 contentWorld: .page)
         } catch {
             log.error("pushFocusGranularity fehlgeschlagen: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// Schaltet die Editor-Typografie live in der WebView um (`editorTypography`-
+    /// Event). No-op ohne WebView (der Boot-Pull liest dann ohnehin `typography`).
+    /// Rein visuell, kein Datenverlust-Risiko → Fehler werden nur geloggt.
+    func pushTypography() async {
+        guard let webView else { return }
+        do {
+            _ = try await webView.callAsyncJavaScript(
+                "window.__focusBridge._receive('editorTypography', payload);",
+                arguments: ["payload": typography],
+                in: nil,
+                contentWorld: .page)
+        } catch {
+            log.error("pushTypography fehlgeschlagen: \(error.localizedDescription, privacy: .public)")
         }
     }
 

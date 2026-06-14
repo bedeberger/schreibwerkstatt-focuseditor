@@ -21,6 +21,7 @@ struct AppToolbar: View {
     @EnvironmentObject private var library: LibraryStore
     @EnvironmentObject private var appearance: AppearanceController
     @EnvironmentObject private var fullscreen: KioskFullscreen
+    @EnvironmentObject private var writingStats: WritingStatsStore
 
     /// Steuert den beschwörbaren Seiten-Picker (⌘O) im Host.
     @Binding var pickerOpen: Bool
@@ -51,6 +52,13 @@ struct AppToolbar: View {
                 pickerOpen.toggle()
             }
             .keyboardShortcut("o", modifiers: .command)
+
+            if writingStats.showStats {
+                WritingStatsLabel(words: writingStats.words,
+                                  readingMinutes: writingStats.readingMinutes,
+                                  goal: writingStats.pageGoalWords,
+                                  progress: writingStats.goalProgress)
+            }
 
             SyncStatusLabel(status: sync.status,
                             conflicts: sync.conflicts.count,
@@ -132,6 +140,44 @@ private struct ToolbarIconButton: View {
         .onHover { hovering = $0 }
         .help(help)
         .accessibilityLabel(accessibilityLabel)
+    }
+}
+
+/// Lebende Schreibstatistik für die Toolbar: Wortzahl + Lesezeit, plus eine
+/// schlanke Fortschrittsleiste, wenn ein Seitenziel gesetzt ist. Der Tooltip
+/// nennt zusätzlich die Zeichenzahl bzw. den Zielwert.
+struct WritingStatsLabel: View {
+    let words: Int
+    let readingMinutes: Int
+    let goal: Int
+    let progress: Double?
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "text.word.spacing")
+                .foregroundStyle(BrandColor.muted)
+            Text("\(words) \(words == 1 ? "Wort" : "Wörter")")
+            if readingMinutes > 0 {
+                Text("· \(readingMinutes) min")
+                    .foregroundStyle(BrandColor.faint)
+            }
+            if let progress {
+                ProgressView(value: progress)
+                    .progressViewStyle(.linear)
+                    .frame(width: 48)
+                    .tint(progress >= 1 ? .green : BrandColor.muted)
+            }
+        }
+        .font(BrandFont.sans(11))
+        .foregroundStyle(BrandColor.muted)
+        .help(tooltip)
+    }
+
+    private var tooltip: String {
+        if goal > 0 {
+            return "\(words) von \(goal) Wörtern (\(Int(((progress ?? 0) * 100).rounded())) %)"
+        }
+        return "Wortzahl der offenen Seite · ~\(readingMinutes) min Lesezeit"
     }
 }
 

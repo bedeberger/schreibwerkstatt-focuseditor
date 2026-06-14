@@ -44,6 +44,26 @@ final class SyncEngine: ObservableObject {
     @Published private(set) var lastSyncedAt: Date?
     @Published private(set) var lastError: String?
     @Published private(set) var conflicts: [Conflict] = []
+    /// Anzahl lokal noch nicht gepushter Seiten (Outbox) — für die Status-UI.
+    @Published private(set) var pendingCount: Int = 0
+
+    /// Poll-Kadenz (persistiert). Änderung startet den Loop passend neu.
+    @Published var pollMode: SyncPollMode {
+        didSet {
+            guard pollMode != oldValue else { return }
+            UserDefaults.standard.set(pollMode.rawValue, forKey: SyncPollMode.storageKey)
+            restartPolling()
+        }
+    }
+
+    /// Transientes Pausieren des Auto-Polls (nur diese Sitzung). Manueller Sync
+    /// bleibt möglich; Pushes gehen so beim nächsten manuellen Tick raus.
+    @Published var isPaused: Bool = false {
+        didSet {
+            guard isPaused != oldValue else { return }
+            restartPolling()
+        }
+    }
 
     private let api: APIClient
     private let content: ContentAPI
@@ -57,8 +77,10 @@ final class SyncEngine: ObservableObject {
     private let shouldSync: () -> Bool
     private let log = Logger(subsystem: "ch.schreibwerkstatt.focuseditor", category: "sync")
 
-    /// Poll-Periode, solange das Fenster aktiv ist (Doku-Richtwert ~5 s).
-    private let pollInterval: Duration = .seconds(5)
+    /// Aktive Poll-Periode aus dem gewählten Modus (`nil` = manuell, kein Loop).
+    private var pollInterval: Duration? { isPaused ? nil : pollMode.interval }
+    /// Soll der Auto-Poll laufen? (Aktives Fenster + Modus ≠ manuell + nicht pausiert.)
+    private var autoPollEnabled: Bool { isActive && !isPaused && pollMode.interval != nil }
     /// Delete-Reconcile ist teurer (ein Tree-Fetch je Buch) → seltener als der
     /// Poll. Mindestabstand zwischen zwei Reconcile-Durchläufen.
     private let reconcileInterval: TimeInterval = 60
@@ -79,6 +101,7 @@ final class SyncEngine: ObservableObject {
         self.reachability = reachability ?? Reachability()
         self.shouldSync = shouldSync
         self.stateStore = SyncStateStore()
+        self.pollMode = SyncPollMode.current
     }
 
     // MARK: - Lifecycle
@@ -89,8 +112,8 @@ final class SyncEngine: ObservableObject {
         reachability.onChange = { [weak self] online in
             guard let self else { return }
             self.status = online ? .idle : .offline
-            // Netz wieder da + Fenster aktiv → sofort ein Tick.
-            if online && self.isActive { self.requestSync() }
+            // Netz wieder da + Auto-Poll erlaubt → sofort ein Tick.
+            if online && self.autoPollEnabled { self.requestSync() }
         }
         reachability.start()
     }
@@ -106,7 +129,7 @@ final class SyncEngine: ObservableObject {
         guard active != isActive else { return }
         isActive = active
         if active {
-            requestSync()        // sofortiger Tick beim Reaktivieren
+            if autoPollEnabled { requestSync() }   // sofortiger Tick beim Reaktivieren
             startPolling()
         } else {
             stopPolling()
@@ -118,16 +141,34 @@ final class SyncEngine: ObservableObject {
         Task { await syncNow() }
     }
 
+    /// Manueller Sync-Auslöser (Menü/Toolbar/Settings) — wirkt auch bei
+    /// pausiertem oder manuellem Modus (überschreibt den Auto-Poll-Stopp).
+    func syncManually() {
+        Task { await syncNow() }
+    }
+
+    /// Startet den Poll-Loop, sofern der Auto-Poll erlaubt ist; sonst No-op
+    /// (manueller Modus/pausiert → kein automatischer Tick).
     private func startPolling() {
         pollTask?.cancel()
+        pollTask = nil
+        guard autoPollEnabled, let interval = pollInterval else { return }
         pollTask = Task { [weak self] in
             guard let self else { return }
             // Erster Tick kommt über requestSync(); der Loop ergänzt Folge-Ticks.
             while !Task.isCancelled {
-                try? await Task.sleep(for: self.pollInterval)
+                try? await Task.sleep(for: interval)
                 await self.syncNow()
             }
         }
+    }
+
+    /// Loop nach einer Modus-/Pause-Änderung neu aufsetzen (nur im aktiven Fenster).
+    private func restartPolling() {
+        guard isActive else { return }
+        stopPolling()
+        if autoPollEnabled { requestSync() }
+        startPolling()
     }
 
     private func stopPolling() {
@@ -150,6 +191,7 @@ final class SyncEngine: ObservableObject {
             try await pushOutbox()
             try await pullDeltas()
             await reconcileDeletesIfDue()
+            pendingCount = (try? await store.pendingOutbox().count) ?? pendingCount
             lastSyncedAt = Date()
             lastError = nil
         } catch AuthError.unauthorized {
@@ -221,15 +263,26 @@ final class SyncEngine: ObservableObject {
     private func resolveConflict(entry: OutboxEntry, conflict c: ConflictBody?) async {
         let pid = entry.pageId
 
-        // Aktuelles Server-HTML + neue Basis holen.
-        guard let editor,
-              let serverPage = try? await api.send("/content/pages/\(pid)",
-                                                    method: .GET,
-                                                    decode: PushResponse.self) else {
+        // Kein WebView/Editor-Bundle → nicht auto-mergebar, echter Konflikt für die UI.
+        guard let editor else {
             recordConflict(pageId: pid,
                            serverUpdatedAt: c?.server_updated_at,
                            serverEditorName: c?.server_editor_name)
-            log.notice("Konflikt \(pid, privacy: .public): Merge-Voraussetzungen fehlen")
+            log.notice("Konflikt \(pid, privacy: .public): kein Editor zum Mergen")
+            return
+        }
+
+        // Aktuelles Server-HTML + neue Basis holen. Ein transienter Netzfehler hier
+        // darf KEINEN klebrigen Konflikt setzen (würde die Seite bis Neustart vom
+        // Sync ausschließen). Stattdessen still verschieben: Eintrag bleibt in der
+        // Outbox ohne Konflikt-Flag, der nächste Push-Tick versucht es erneut.
+        let serverPage: PushResponse
+        do {
+            serverPage = try await api.send("/content/pages/\(pid)",
+                                            method: .GET,
+                                            decode: PushResponse.self)
+        } catch {
+            log.notice("Konflikt-Merge für \(pid, privacy: .public) verschoben: \(error.localizedDescription, privacy: .public)")
             return
         }
 
@@ -298,7 +351,16 @@ final class SyncEngine: ObservableObject {
         }
 
         for bookId in stateStore.state.bookIds {
-            try await pullBook(bookId)
+            do {
+                try await pullBook(bookId)
+            } catch AuthError.unauthorized {
+                // Session beendet → ganzen Sync abbrechen.
+                throw AuthError.unauthorized
+            } catch {
+                // Netzfehler/Timeout bei einem Buch blockiert die restlichen nicht.
+                log.error("Pull Buch \(bookId) fehlgeschlagen: \(error.localizedDescription, privacy: .public)")
+                continue
+            }
         }
     }
 
