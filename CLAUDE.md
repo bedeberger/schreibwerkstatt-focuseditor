@@ -55,7 +55,7 @@ Bridge-Nachrichten **JS → Swift** (`WKScriptMessageHandlerWithReply`, je `{ op
 - `languagetoolCheck { text, language?, pageId?, bookId? }` → `{ matches: [...] }` | `{ disabled: true }` (Proxy `POST /languagetool/check`; `404` = serverseitig aus)
 - `dictionaryAdd { word, lang?, bookId? }` → `{ ok }` (Proxy `POST /dictionary`, User-Wörterbuch)
 
-**Rechtschreibprüfung (LanguageTool):** Der unveränderte Editor-Controller (`public/js/cards/editor-spellcheck/controller.js` im Hauptrepo) wird ins OTA-Bundle gezogen und im Boot ([WebAssets.swift](schreibwerkstatt-focuseditor/Web/WebAssets.swift) `indexHTML`) verdrahtet; statt direktem `fetch` laufen Prüfung + Wörterbuch über die obigen Bridge-Ops. Settings (enabled/url/picky/rules) liegen **serverseitig** in `app_settings` und werden vom Proxy angewandt — der Client liefert nur Text + `bookId`/`pageId`. **Locale:** Client sendet `language:"auto"` + `bookId`; serverseitig gewinnt `getBookLocale(bookId)` → `de-CH`. Online-only (kein Offline-Kern-Inhalt); offline/`404` degradiert still. Voraussetzung im Hauptrepo (SSoT): `controller.js` macht seine zwei `fetch` über injizierbare `checkText`/`addWord`-Callbacks (Default bleibt `fetch`), und `lib/editor-bundle.js` nimmt `controller.js` + `css/editor/spellcheck.css` + `icons.svg` ins OTA-Bundle auf — fertiger Prompt: [docs/languagetool-mutterrepo-prompt.md](docs/languagetool-mutterrepo-prompt.md).
+**Rechtschreibprüfung (LanguageTool):** Der unveränderte Editor-Controller (`public/js/cards/editor-spellcheck/controller.js` im Hauptrepo) wird ins OTA-Bundle gezogen und im Boot ([WebAssets.swift](schreibwerkstatt-focuseditor/Web/WebAssets.swift) `indexHTML`) verdrahtet; statt direktem `fetch` laufen Prüfung + Wörterbuch über die obigen Bridge-Ops. Settings (enabled/url/picky/rules) liegen **serverseitig** in `app_settings` und werden vom Proxy angewandt — der Client liefert nur Text + `bookId`/`pageId`. **Locale:** Client sendet `language:"auto"` + `bookId`; serverseitig gewinnt `getBookLocale(bookId)` → `de-CH`. Online-only (kein Offline-Kern-Inhalt); offline/`404` degradiert still. Voraussetzung im Hauptrepo (SSoT): `controller.js` macht seine zwei `fetch` über injizierbare `checkText`/`addWord`-Callbacks (Default bleibt `fetch`), und `lib/editor-bundle.js` nimmt `controller.js` + `css/editor/spellcheck.css` + `icons.svg` ins OTA-Bundle auf (im Hauptrepo erledigt).
 
 Bridge-Kanal **Swift → JS** (`callAsyncJavaScript` in `contentWorld: .page`): Die Facade stellt einen Event-Bus `window.__focusBridge.on(event, cb)` / `_receive(event, payload)` bereit. Swift sendet:
 - `serverUpdate { pageId, html, baseUpdatedAt }` → saubere offene Seite wurde serverseitig aktualisiert → still neu laden.
@@ -119,15 +119,23 @@ Der Sync hält den lokalen Spiegel **aktuell, auch wenn eine Seite in einer ande
 schreibwerkstatt-focuseditor/
   schreibwerkstatt-focuseditor/        App-Sources (Swift)
     *App.swift                         @main, Scene/Window
+    AppCore.swift                      App-weite Instanziierung (geteilter LocalStore für Bridge + Sync)
     ContentView.swift                  Shell-Root (WebView-Host + Bundle-Lade-/Fehlerzustand)
+    KioskFullscreen.swift              ablenkungsfreier Vollbild (Menüleiste UND Dock ausgeblendet)
     Web/                               WKWebView-Host + Bridge (WKScriptMessageHandler)
+      FocusWebView.swift               NSViewRepresentable-Host des WKWebView
+      EditorBridge.swift               die EINZIGE Kopplungsschicht WebView ⇄ Swift-Kern
+      EditorCoordinating.swift         Protokoll/Koordination zwischen Shell und Bridge
       EditorBundleStore.swift          OTA-Lader: Download + Entpacken + atomarer Cache-Swap + ETag
       MiniZip.swift                    bordeigener ZIP/DEFLATE-Reader (sandbox-tauglich, dependency-frei)
       WebAssets.swift                  Bridge-Facade-JS + index.html-Boot (Client-Glue) + Dev-Harness
       AppSchemeHandler.swift           liefert den Cache unter EINER Origin (swk-app://) an die WebView
     Store/                             GRDB-LocalStore + Outbox
     Sync/                              SyncEngine + Reachability + SyncState (Cursor/Basis) + SyncModels
-    Auth/                              Keychain + Device-Token + Login-Flow + APIClient
+    Auth/                              Keychain + Device-Token + Login-Flow + APIClient + ServerConfig
+    Content/                           ContentAPI: Lese-Zugriff auf Buch-/Kapitel-Struktur (Server-Soll)
+    Library/                           Buch-/Seitenauswahl-State (LibraryStore) + native Picker (BookPicker, PagePickerOverlay)
+    Theme/                             Light/Dark/System-Umschalter (AppearanceController) + BrandColor + BrandFont
 ```
 
 Der App-Sources-Ordner ist eine `PBXFileSystemSynchronizedRootGroup` (Xcode 16+) → neue Swift-Dateien kommen **automatisch** ins Target (kein pbxproj-Edit nötig).
@@ -142,6 +150,7 @@ Der App-Sources-Ordner ist eine `PBXFileSystemSynchronizedRootGroup` (Xcode 16+)
 - **Token nur im Keychain.** Device-Token niemals in UserDefaults, Plist, Logs oder Bridge-Messages an die WebView leaken. Die WebView braucht das Token nicht — Netzwerk macht Swift.
 - **Konflikte über Block-Merge.** 409-Auflösung läuft über `block-merge.js` (3-Wege, `data-bid`), nicht über naives Last-Write-Wins. `data-bid`-Attribute nie strippen.
 - **Datenverlust-Schutz vor allem.** Bei Auth-/Sync-Fehlern lokale Inhalte behalten; kein automatisches Verwerfen, kein Überschreiben ohne Merge.
+- **Tastaturkürzel-Hilfe pflegen.** Wird ein Tastaturkürzel neu hinzugefügt, geändert oder entfernt (Swift `.keyboardShortcut`/Kiosk-Escape **oder** ein Editor-Shortcut, der für den Nutzer im Client greift), muss es in der Hilfe-Liste [ShortcutsHelpView.swift](schreibwerkstatt-focuseditor/ShortcutsHelpView.swift) (Help-Menü → „Tastaturkürzel", ⌘?) im selben Schritt aktualisiert werden. Die Liste ist die Single Source of Truth für die Nutzer-Hilfe — nie veralten lassen.
 - **Sprache:** UI-Texte folgen der Locale der Schreibwerkstatt (de/en). Code-Kommentare auf Deutsch (wie Hauptrepo).
 - **Nach jeder Swift-Änderung builden.** Nach jeder Anpassung an Swift-Code den Build laufen lassen (s. „Build & Run") und Fehler/Warnings zurückmelden, bevor es weitergeht. Nicht ungeprüft mehrere Änderungen stapeln.
 
@@ -164,4 +173,4 @@ Der App-Sources-Ordner ist eine `PBXFileSystemSynchronizedRootGroup` (Xcode 16+)
 2. **Device-Token-Auth** am Server — *erledigt* (Tabelle `device_tokens`, `swd_`-Bearer, `/me/device-tokens`). Frontend-UI zum Ausstellen noch offen.
 3. **Inkrementeller Sync** am Server — *erledigt*: `GET /content/books/:book_id/sync` (Keyset-Cursor, voller HTML, inkl. eigener Edits) + 409-Semantik (`PAGE_CONFLICT`) auf `PUT /content/pages/:id`.
 4. **macOS-Shell + Offline-Kern** — WKWebView + Bridge *(steht)*, LocalStore + Outbox *(steht)*, GRDB *(erledigt — `GRDBLocalStore`, ersetzt den In-Memory/JSON-Platzhalter; `InMemoryLocalStore` bleibt als Fallback/Tests)*, **SyncEngine (Polling-Pull + Push + Delete-Reconcile)** *(steht — Cross-Session-Frische, s. „Sync")*.
-5. **Nativer Feinschliff** — Menüleiste, ⌘-Shortcuts, echtes Vollbild, Preferences, Dark Mode, Sparkle-Auto-Update, Code-Signing/Notarization.
+5. **Nativer Feinschliff** — *teilweise erledigt*: echtes Vollbild (`KioskFullscreen.swift`), Dark Mode (`Theme/AppearanceController.swift`, Light/Dark/System) und Brand-Fonts/-Farben (`Theme/`) stehen. Offen: Menüleiste-/⌘-Shortcut-Feinschliff, Preferences, Sparkle-Auto-Update, Code-Signing/Notarization.

@@ -25,6 +25,9 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var books: [BookDTO] = []
     @Published private(set) var activeBookId: Int?
     @Published private(set) var pages: [PagePickerRow] = []
+    /// Aktuell im Editor geöffnete Seite (von der Bridge gemeldet bzw. per Picker
+    /// gewählt) — treibt die Seiten-Anzeige in der Toolbar.
+    @Published private(set) var openPageId: Int?
     @Published private(set) var isLoadingBooks = false
     @Published private(set) var isLoadingPages = false
     @Published var lastError: String?
@@ -43,12 +46,25 @@ final class LibraryStore: ObservableObject {
         // Aktives Buch wiederherstellen (0 = nicht gesetzt).
         let saved = UserDefaults.standard.integer(forKey: defaultsKey)
         self.activeBookId = saved == 0 ? nil : saved
+        // Offene Seite vom Editor übernehmen (per Picker geöffnet oder beim Boot
+        // wiederhergestellt) — hält die Toolbar-Anzeige aktuell.
+        bridge.onOpenPageChange = { [weak self] pageId in
+            self?.openPageId = pageId.flatMap(Int.init)
+        }
     }
 
     /// Anzeigename des aktiven Buchs (für die Toolbar).
     var activeBookName: String? {
         guard let id = activeBookId else { return nil }
         return books.first { $0.id == id }?.name
+    }
+
+    /// Name der aktuell offenen Seite (für die Toolbar), aufgelöst über die
+    /// Seitenliste des aktiven Buchs. `nil`, solange keine Seite offen ist oder
+    /// die Seite (noch) nicht in der Liste steht.
+    var openPageName: String? {
+        guard let id = openPageId else { return nil }
+        return pages.first { $0.id == id }?.name
     }
 
     // MARK: - Laden
@@ -113,6 +129,7 @@ final class LibraryStore: ObservableObject {
 
     /// Hebt die gewählte Seite über die Bridge in den Editor.
     func openPage(_ row: PagePickerRow) {
+        openPageId = row.id   // sofortige Toolbar-Anzeige; editorState bestätigt später
         Task {
             let ok = await bridge.openPage(pageId: String(row.id))
             if !ok { log.notice("openPage ohne WebView — Editor noch nicht bereit") }

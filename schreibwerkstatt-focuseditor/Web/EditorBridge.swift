@@ -70,7 +70,14 @@ final class EditorBridge: NSObject, WKScriptMessageHandlerWithReply, EditorCoord
     }()
 
     /// Aktuell im Editor geöffnete Seite (vom JS via `editorState` gemeldet).
-    private(set) var openPageId: String?
+    private(set) var openPageId: String? {
+        didSet {
+            guard openPageId != oldValue else { return }
+            onOpenPageChange?(openPageId)
+        }
+    }
+    /// Benachrichtigung bei Wechsel der offenen Seite (treibt die Toolbar-Anzeige).
+    var onOpenPageChange: ((String?) -> Void)?
     /// Seiten mit ungespeicherten Editor-Änderungen.
     private var dirtyPages: Set<String> = []
 
@@ -245,6 +252,16 @@ final class EditorBridge: NSObject, WKScriptMessageHandlerWithReply, EditorCoord
         }
     }
 
+    /// Liest die serverseitige Fokus-Granularität aus `/config`
+    /// (`userSettings.focus_granularity`, die Web-Einstellung des Users). Dient
+    /// dem `FocusController` als Initial-Default, solange keine lokale Wahl
+    /// vorliegt. `nil` bei Netz-/Auth-Fehler oder fehlendem User-Kontext.
+    func serverFocusGranularity() async -> String? {
+        guard let api else { return nil }
+        let cfg = try? await api.send("/config", decode: ConfigDTO.self)
+        return cfg?.userSettings?.focus_granularity
+    }
+
     /// Proxyt den Prüf-Request an `POST /languagetool/check`. `404` (LT
     /// serverseitig aus) wird als `{ disabled: true }` zurückgegeben — kein
     /// Fehler. Die `matches` werden als roher JSON-Baum durchgereicht
@@ -311,6 +328,23 @@ final class EditorBridge: NSObject, WKScriptMessageHandlerWithReply, EditorCoord
         } catch {
             log.error("openPage(\(pageId, privacy: .public)) fehlgeschlagen: \(error.localizedDescription, privacy: .public)")
             return false
+        }
+    }
+
+    /// Schaltet die Fokus-Granularität live in der WebView um (`focusGranularity`-
+    /// Event). No-op, solange noch keine WebView verbunden ist (der Boot-Pull
+    /// liest dann ohnehin `focusGranularity`). Fehler werden nur geloggt — die
+    /// Stufe ist rein visuell, kein Datenverlust-Risiko.
+    func pushFocusGranularity() async {
+        guard let webView else { return }
+        do {
+            _ = try await webView.callAsyncJavaScript(
+                "window.__focusBridge._receive('focusGranularity', { granularity });",
+                arguments: ["granularity": focusGranularity],
+                in: nil,
+                contentWorld: .page)
+        } catch {
+            log.error("pushFocusGranularity fehlgeschlagen: \(error.localizedDescription, privacy: .public)")
         }
     }
 
@@ -382,7 +416,13 @@ private struct ConfigDTO: Decodable {
         let enabled: Bool?
         let debounceMs: Int?
     }
+    struct UserSettings: Decodable {
+        let focus_granularity: String?
+    }
     let languagetool: LanguageTool?
+    /// Pro-User-Einstellungen (nur mit aufgelöstem User, also auch per
+    /// Device-Token — der Guard setzt `req.session.user`). `nil` ohne User.
+    let userSettings: UserSettings?
 }
 
 /// Body für `POST /languagetool/check` (Server-Vertrag, siehe

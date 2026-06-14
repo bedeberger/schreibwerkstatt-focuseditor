@@ -12,7 +12,9 @@ struct schreibwerkstatt_focuseditorApp: App {
     @StateObject private var core = AppCore()
     @StateObject private var fullscreen = KioskFullscreen()
     @StateObject private var appearance = AppearanceController()
+    @StateObject private var focus = FocusController()
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.openWindow) private var openWindow
 
     var body: some Scene {
         WindowGroup {
@@ -24,13 +26,27 @@ struct schreibwerkstatt_focuseditorApp: App {
                 .environmentObject(core.editorBundle)
                 .environmentObject(fullscreen)
                 .environmentObject(appearance)
+                .environmentObject(focus)
                 .background(WindowAccessor { fullscreen.bind($0) })
-                .task { await core.bootstrap() }
+                .task {
+                    // Fokus-Controller an die app-weite Bridge koppeln (Push der
+                    // Live-Umschaltung), dann Auth/Sync hochfahren.
+                    focus.bind(core.bridge)
+                    await core.bootstrap()
+                }
         }
         // Polling nur solange das Fenster aktiv ist; im Hintergrund pausieren,
         // beim Reaktivieren sofort ein Tick (CLAUDE.md, Cross-Session-Frische).
         .onChange(of: scenePhase, initial: true) { _, phase in
             core.sync.setActive(phase == .active)
+        }
+        // Nach dem Anmelden den Server-Default der Fokus-Stufe ziehen (solange
+        // lokal nichts gewählt ist). Greift bei Start-mit-Token UND frischem
+        // Login; der `/config`-Request braucht das gültige Token.
+        .onChange(of: core.auth.state, initial: true) { _, state in
+            if state == .signedIn {
+                Task { await focus.seedFromServerIfNeeded() }
+            }
         }
         .commands {
             // Ablenkungsfreier Vollbild per ⌘⌃F (Menüleiste/Dock komplett aus);
@@ -53,7 +69,33 @@ struct schreibwerkstatt_focuseditorApp: App {
                 }
                 .pickerStyle(.inline)
             }
+
+            // Fokus-Granularität — bestimmt, wie stark der Editor die Umgebung
+            // des aktiven Absatzes abblendet. Wirkt sofort bei offenem Editor.
+            CommandGroup(after: .toolbar) {
+                Picker("Fokus", selection: $focus.granularity) {
+                    ForEach(FocusGranularity.allCases) { g in
+                        Text(g.label).tag(g)
+                    }
+                }
+                .pickerStyle(.inline)
+            }
+
+            // Help-Menü: die Standard-„App-Hilfe" (toter Help-Book-Eintrag)
+            // durch unsere Tastaturkürzel-Hilfe ersetzen (⌘?).
+            CommandGroup(replacing: .help) {
+                Button("Tastaturkürzel") {
+                    openWindow(id: "shortcuts-help")
+                }
+                .keyboardShortcut("?", modifiers: .command)
+            }
         }
+
+        // Tastaturkürzel-Hilfe als eigenes, einfaches Fenster.
+        Window("Tastaturkürzel", id: "shortcuts-help") {
+            ShortcutsHelpView()
+        }
+        .windowResizability(.contentSize)
 
         // Natives Einstellungen-Fenster (⌘,). Environment-Objects fließen NICHT
         // automatisch aus der WindowGroup hierher → explizit weiterreichen.
@@ -63,6 +105,7 @@ struct schreibwerkstatt_focuseditorApp: App {
                 .environmentObject(core.auth)
                 .environmentObject(core.library)
                 .environmentObject(appearance)
+                .environmentObject(focus)
         }
     }
 }

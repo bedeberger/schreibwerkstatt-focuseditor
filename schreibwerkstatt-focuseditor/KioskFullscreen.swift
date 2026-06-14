@@ -67,7 +67,14 @@ final class KioskFullscreen: ObservableObject {
     private func applyBaseChrome(_ window: NSWindow) {
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
-        window.styleMask.insert(.fullSizeContentView)
+        // Titled-Stil + randloser Inhalt: ohne `.titled` zeigt macOS keine
+        // Ampel-Buttons. Beides setzen, damit die Knöpfe oben links erscheinen.
+        window.styleMask.insert([.titled, .fullSizeContentView])
+        // Ampel-Buttons im normalen Fenster explizit einblenden (nur der
+        // ablenkungsfreie/native Vollbild versteckt sie wieder).
+        for kind in Self.buttons {
+            window.standardWindowButton(kind)?.isHidden = false
+        }
     }
 
     private func teardownFullscreenObservers() {

@@ -13,6 +13,12 @@
 //   • Push bei Änderung — `EditorBridge.pushFocusGranularity()` schickt das Event
 //     `focusGranularity` live in die WebView (Umschalten bei offenem Editor).
 //
+//  Initial-Default: Solange der Nutzer hier NICHT selbst gewählt hat (kein
+//  UserDefaults-Eintrag), folgt die Stufe dem Server-Wert (`/config` →
+//  userSettings.focus_granularity, die Web-Einstellung). Sobald lokal gewählt
+//  wird, gewinnt die lokale Wahl dauerhaft — `seedFromServerIfNeeded()` ist dann
+//  ein No-op. So bleibt der Default offline-sicher und web-synchron zugleich.
+//
 
 import SwiftUI
 import Combine
@@ -49,9 +55,22 @@ enum FocusGranularity: String, CaseIterable, Identifiable {
 final class FocusController: ObservableObject {
     private weak var bridge: EditorBridge?
 
+    /// Hat der Nutzer lokal gewählt? Genau dann liegt ein UserDefaults-Eintrag
+    /// vor — Server-Seeding ist dann gesperrt (lokale Wahl gewinnt dauerhaft).
+    private var hasLocalOverride: Bool {
+        UserDefaults.standard.object(forKey: FocusGranularity.storageKey) != nil
+    }
+
+    /// Unterdrückt die Persistenz, während ein Server-Default eingespielt wird:
+    /// Seeding soll NICHT als lokale Wahl zählen (sonst friert der erste Server-
+    /// Wert die „folgt dem Server"-Semantik ein).
+    private var isSeeding = false
+
     @Published var granularity: FocusGranularity {
         didSet {
-            UserDefaults.standard.set(granularity.rawValue, forKey: FocusGranularity.storageKey)
+            if !isSeeding {
+                UserDefaults.standard.set(granularity.rawValue, forKey: FocusGranularity.storageKey)
+            }
             apply()
         }
     }
@@ -66,6 +85,20 @@ final class FocusController: ObservableObject {
     func bind(_ bridge: EditorBridge) {
         self.bridge = bridge
         bridge.focusGranularity = granularity.rawValue
+    }
+
+    /// Zieht den Server-Default (`/config` → userSettings.focus_granularity),
+    /// solange der Nutzer lokal nichts gewählt hat. Nach jedem Anmelden aufrufen
+    /// (der `/config`-Request braucht ein gültiges Token). Offline/Fehler →
+    /// bleibt beim aktuellen Wert. Eine zwischenzeitliche lokale Wahl gewinnt.
+    func seedFromServerIfNeeded() async {
+        guard !hasLocalOverride, let bridge else { return }
+        guard let raw = await bridge.serverFocusGranularity(),
+              let server = FocusGranularity(rawValue: raw) else { return }
+        guard !hasLocalOverride, server != granularity else { return }
+        isSeeding = true
+        granularity = server      // aktualisiert UI + pusht live, ohne zu persistieren
+        isSeeding = false
     }
 
     /// Spiegelt die Wahl in die Bridge (Op-Antwort) und pusht sie live in die

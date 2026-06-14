@@ -57,6 +57,10 @@ enum WebAssets {
         languagetoolCheck: (params) => call('languagetoolCheck', params || {}),
         dictionaryAdd: (params) => call('dictionaryAdd', params || {}),
 
+        // Lokale Fokus-Granularität (paragraph/sentence/window-3/typewriter-only).
+        // Boot-Pull; Live-Umschalten kommt zusätzlich als 'focusGranularity'-Event.
+        focusGranularity: () => call('focusGranularity', {}),
+
         // Swift→JS Event-Bus. Der Editor-Host abonniert z. B. 'serverUpdate'
         // (saubere offene Seite wurde serverseitig aktualisiert → still neu laden).
         _handlers: {},
@@ -113,6 +117,22 @@ enum WebAssets {
           <meta name="viewport" content="width=device-width, initial-scale=1">
           <title>Schreibwerkstatt — Focus-Editor</title>
           <!-- GENERIERT vom EditorBundleStore aus dem OTA-Bundle (Quelle @\(sourceCommit)). Nicht von Hand editieren. -->
+          <script>
+            // Theme-Brücke: Die Editor-CSS schaltet Dark Mode NUR über
+            // :root[data-theme="dark"] (theme-init.js aus dem Hauptrepo läuft
+            // hier nicht). Die native AppearanceController setzt NSApp.appearance,
+            // die WKWebView erbt sie → prefers-color-scheme stimmt. Wir spiegeln
+            // diese Media-Query auf data-theme (vor erstem Paint = FOUC-sicher)
+            // und folgen Live-Umschaltungen (System wie auch manuell Hell/Dunkel).
+            (function () {
+              var mq = window.matchMedia('(prefers-color-scheme: dark)');
+              var sync = function () {
+                document.documentElement.setAttribute('data-theme', mq.matches ? 'dark' : 'light');
+              };
+              sync();
+              mq.addEventListener ? mq.addEventListener('change', sync) : mq.addListener(sync);
+            })();
+          </script>
         \(links)
           <style>
             html, body { margin: 0; height: 100%; background: var(--color-bg, #faf7f2); color: var(--color-text, #1f1c18); }
@@ -143,8 +163,18 @@ enum WebAssets {
               // bookId an den Server, der daraus die Locale (de-CH) auflöst.
               let currentPageId = null;
               let currentBookId = null;
+
+              // Lokale Fokus-Granularität: beim Boot aus dem Swift-Kern ziehen
+              // (UserDefaults-Wert), damit das initiale Mount schon die richtige
+              // CSS-Klasse setzt. Live-Umschalten kommt später als Event.
+              let initialGranularity = 'paragraph';
+              try {
+                const fc = await fb.focusGranularity();
+                if (fc && fc.granularity) initialGranularity = fc.granularity;
+              } catch (_) {}
+
               const bridge = {
-                granularity: 'paragraph',
+                granularity: initialGranularity,
                 loadPage: async () => {
                   let pages = [];
                   try { pages = await fb.list(); } catch (_) {}
@@ -209,6 +239,28 @@ enum WebAssets {
               fb.on('serverUpdate', (p) => {
                 if (!p || p.pageId == null) return;
                 applyPage(p.pageId, { save: false });
+              });
+
+              // ── Fokus-Granularität live umschalten (Swift → JS) ─────────────
+              // Spiegelt das Verhalten der SPA (editor-focus-card.js $watch):
+              // Host-Feld setzen, CSS-Klasse tauschen, Fokus-Overlay neu rechnen.
+              // Die Engine liest focusGranularity sonst nur beim enterFocusMode.
+              function applyGranularity(g) {
+                const valid = ['paragraph', 'sentence', 'window-3', 'typewriter-only'];
+                const gran = valid.indexOf(g) >= 0 ? g : 'paragraph';
+                const handle = window.__standalone;
+                if (handle && handle.host) handle.host.focusGranularity = gran;
+                const focusEl = document.querySelector('.focus-editor');
+                if (focusEl) {
+                  focusEl.classList.remove(
+                    'focus-mode--paragraph', 'focus-mode--sentence',
+                    'focus-mode--window-3', 'focus-mode--typewriter-only');
+                  focusEl.classList.add('focus-mode--' + gran);
+                }
+                try { handle && handle.controller && handle.controller._focusUpdateActive(false); } catch (_) {}
+              }
+              fb.on('focusGranularity', (p) => {
+                if (p && p.granularity) applyGranularity(p.granularity);
               });
 
               // ── Rechtschreibprüfung (LanguageTool) ──────────────────────────

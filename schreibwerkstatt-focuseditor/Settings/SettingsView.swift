@@ -120,6 +120,7 @@ private struct GeneralSettingsTab: View {
 
 private struct AppearanceSettingsTab: View {
     @EnvironmentObject private var appearance: AppearanceController
+    @EnvironmentObject private var focus: FocusController
 
     var body: some View {
         Form {
@@ -132,6 +133,20 @@ private struct AppearanceSettingsTab: View {
                 .pickerStyle(.inline)
 
                 Text("„Automatisch“ folgt dem System; Hell/Dunkel erzwingt das Aussehen für Shell und Editor.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Section("Fokus") {
+                Picker("Granularität", selection: $focus.granularity) {
+                    ForEach(FocusGranularity.allCases) { g in
+                        Text(g.label).tag(g)
+                    }
+                }
+                .pickerStyle(.inline)
+
+                Text("Bestimmt, wie stark der Editor die Umgebung des aktiven Absatzes abblendet. Die Änderung wirkt sofort im offenen Editor.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

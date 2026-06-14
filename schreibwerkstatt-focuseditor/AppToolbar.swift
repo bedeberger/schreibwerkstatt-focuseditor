@@ -31,6 +31,17 @@ struct AppToolbar: View {
         HStack(spacing: 14) {
             BookPicker()
 
+            if let page = library.openPageName {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(BrandColor.faint)
+                Text(page)
+                    .font(BrandFont.sans(12))
+                    .foregroundStyle(BrandColor.muted)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+
             Spacer(minLength: 12)
 
             Button { pickerOpen.toggle() } label: {

@@ -94,6 +94,11 @@ final class EditorBundleStore: ObservableObject {
             let res = try await api.getRaw(bundlePath, ifNoneMatch: loadMeta()?.etag)
 
             if res.notModified {
+                // Bundle unverändert — aber das index.html ist Client-Glue und
+                // kann sich mit einem App-Update geändert haben (z. B. Theme-
+                // Brücke). Aus dem gecachten Manifest neu erzeugen, damit solche
+                // Änderungen nicht erst beim nächsten Server-Bundle greifen.
+                if hasCache { regenerateIndexHTMLFromCache() }
                 state = hasCache ? .ready : .failed("Server meldet 304, aber kein lokaler Cache.")
                 return
             }
@@ -146,6 +151,21 @@ final class EditorBundleStore: ObservableObject {
 
         try swapIntoPlace(staging: staging)
         saveMeta(BundleMeta(etag: etag, sourceCommit: commit))
+    }
+
+    /// Erzeugt das Client-glue `index.html` aus dem bereits gecachten Manifest
+    /// neu und schreibt es nur bei tatsächlicher Änderung (vermeidet I/O bei
+    /// jedem Start). Greift auf der 304-Strecke, wenn das Bundle gleich bleibt,
+    /// der App-seitige Boot-Code aber aktualisiert wurde.
+    private func regenerateIndexHTMLFromCache() {
+        let manifestURL = cacheDir.appendingPathComponent("bundle-manifest.json")
+        guard let data = try? Data(contentsOf: manifestURL),
+              let manifest = try? JSONDecoder().decode(BundleManifest.self, from: data) else { return }
+        let html = WebAssets.indexHTML(cssFiles: manifest.cssFiles ?? [],
+                                       sourceCommit: manifest.sourceCommit ?? "unknown")
+        let indexURL = cacheDir.appendingPathComponent("index.html")
+        if let current = try? String(contentsOf: indexURL, encoding: .utf8), current == html { return }
+        try? Data(html.utf8).write(to: indexURL, options: .atomic)
     }
 
     /// Ersetzt den Live-Cache atomar durch das Staging-Verzeichnis.
