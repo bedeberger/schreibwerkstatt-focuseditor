@@ -12,6 +12,7 @@
 //
 
 import SwiftUI
+import AppKit
 
 struct PagePickerOverlay: View {
     @EnvironmentObject private var library: LibraryStore
@@ -19,6 +20,11 @@ struct PagePickerOverlay: View {
 
     @State private var query = ""
     @FocusState private var searchFocused: Bool
+    /// Index der per Tastatur/Hover markierten Zeile in `filtered`.
+    @State private var selected = 0
+    /// Lokaler Key-Monitor für ↑/↓/⏎ — fängt die Tasten ab, bevor das fokussierte
+    /// Suchfeld sie als Cursor-Bewegung/Submit schluckt.
+    @State private var keyMonitor: Any?
 
     private var filtered: [PagePickerRow] {
         guard !query.isEmpty else { return library.pages }
@@ -52,8 +58,11 @@ struct PagePickerOverlay: View {
         .onExitCommand { close() }               // ⎋
         .onAppear {
             searchFocused = true
+            installKeyMonitor()
             Task { await library.refreshPages() } // beim Öffnen frisch ziehen
         }
+        .onDisappear { removeKeyMonitor() }
+        .onChange(of: query) { _, _ in selected = 0 }  // neue Suche → oben anfangen
     }
 
     // MARK: Teile
@@ -66,7 +75,14 @@ struct PagePickerOverlay: View {
                 .textFieldStyle(.plain)
                 .font(BrandFont.sans(14))
                 .focused($searchFocused)
-                .onSubmit(openFirst)            // ⏎
+                .onSubmit(openSelected)         // ⏎ (Fallback; Monitor fängt i. d. R. ab)
+
+            if !library.pages.isEmpty {
+                Text("\(filtered.count)")
+                    .font(BrandFont.sans(11))
+                    .monospacedDigit()
+                    .foregroundStyle(BrandColor.muted)
+            }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 12)
@@ -83,18 +99,27 @@ struct PagePickerOverlay: View {
                     .foregroundStyle(BrandColor.muted)
             }
         } else {
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(filtered) { row in
-                        rowButton(row)
-                        Divider().opacity(0.4)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        ForEach(Array(filtered.enumerated()), id: \.element.id) { index, row in
+                            rowButton(row, isSelected: index == selected)
+                                .id(index)
+                                .onHover { if $0 { selected = index } }
+                            Divider().opacity(0.4)
+                        }
+                    }
+                }
+                .onChange(of: selected) { _, new in
+                    withAnimation(.easeOut(duration: 0.1)) {
+                        proxy.scrollTo(new, anchor: .center)
                     }
                 }
             }
         }
     }
 
-    private func rowButton(_ row: PagePickerRow) -> some View {
+    private func rowButton(_ row: PagePickerRow, isSelected: Bool) -> some View {
         Button { open(row) } label: {
             VStack(alignment: .leading, spacing: 2) {
                 Text(row.name.isEmpty ? "Ohne Titel" : row.name)
@@ -111,6 +136,7 @@ struct PagePickerOverlay: View {
             .padding(.leading, CGFloat(row.depth) * 14 + 14)
             .padding(.trailing, 14)
             .contentShape(Rectangle())
+            .background(isSelected ? BrandColor.primary.opacity(0.12) : Color.clear)
         }
         .buttonStyle(.plain)
     }
@@ -127,11 +153,44 @@ struct PagePickerOverlay: View {
         close()
     }
 
-    private func openFirst() {
-        if let first = filtered.first { open(first) }
+    /// Öffnet die aktuell markierte Zeile (Tastatur/Hover); fällt auf den ersten
+    /// Treffer zurück, falls der Index durch eine neue Filterung verrutscht ist.
+    private func openSelected() {
+        guard !filtered.isEmpty else { return }
+        let row = filtered.indices.contains(selected) ? filtered[selected] : filtered[0]
+        open(row)
+    }
+
+    /// Bewegt die Markierung um `delta`, begrenzt auf die Trefferliste.
+    private func moveSelection(_ delta: Int) {
+        guard !filtered.isEmpty else { return }
+        selected = max(0, min(filtered.count - 1, selected + delta))
     }
 
     private func close() {
         isOpen = false
+    }
+
+    // MARK: Tastatur
+
+    /// Fängt ↑/↓/⏎ ab, solange das Overlay offen ist. Das Suchfeld behält den
+    /// Fokus fürs Tippen; die Pfeiltasten steuern die Auswahl statt den Cursor.
+    private func installKeyMonitor() {
+        guard keyMonitor == nil else { return }
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            switch event.keyCode {
+            case 125: moveSelection(1);  return nil   // ↓
+            case 126: moveSelection(-1); return nil   // ↑
+            case 36, 76: openSelected(); return nil   // ⏎ / Enter
+            default: return event
+            }
+        }
+    }
+
+    private func removeKeyMonitor() {
+        if let monitor = keyMonitor {
+            NSEvent.removeMonitor(monitor)
+            keyMonitor = nil
+        }
     }
 }

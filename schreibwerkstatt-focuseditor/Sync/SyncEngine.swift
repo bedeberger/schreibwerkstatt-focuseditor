@@ -202,6 +202,14 @@ final class SyncEngine: ObservableObject {
                 // Inhalt aber lokal behalten (kein Datenverlust).
                 stateStore.mutate { $0.serverBaseISO[entry.pageId] = nil }
                 log.info("Seite serverseitig nicht gefunden (404): \(entry.pageId, privacy: .public)")
+            } catch AuthError.unauthorized {
+                // Session beendet → ganzen Sync abbrechen (kein blindes Weiterpushen).
+                throw AuthError.unauthorized
+            } catch {
+                // Netzfehler/Timeout o. Ä. → nur diesen Eintrag überspringen, die
+                // restliche Outbox nicht blockieren. Nächster Tick versucht erneut.
+                log.error("Push fehlgeschlagen \(entry.pageId, privacy: .public): \(error.localizedDescription, privacy: .public)")
+                continue
             }
         }
     }

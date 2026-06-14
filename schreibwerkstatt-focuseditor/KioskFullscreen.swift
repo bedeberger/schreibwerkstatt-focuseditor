@@ -21,6 +21,11 @@ final class KioskFullscreen: ObservableObject {
     /// True, solange das Fenster im **nativen** macOS-Vollbild ist. Steuert das
     /// Ausblenden der Toolbar (ablenkungsfrei) in `ContentView`.
     @Published private(set) var isNativeFullscreen = false
+    /// Linker Einzug der `AppToolbar`, damit ihr Inhalt rechts neben den
+    /// Ampel-Buttons beginnt. Aus der echten Button-Geometrie gelesen (statt
+    /// fester Magic-Number) → robust gegen System-/Größenänderungen. Der
+    /// Default greift, solange das Fenster noch nicht vermessen ist.
+    @Published private(set) var trafficLightInset: CGFloat = 78
 
     private weak var window: NSWindow?
 
@@ -75,6 +80,16 @@ final class KioskFullscreen: ObservableObject {
         for kind in Self.buttons {
             window.standardWindowButton(kind)?.isHidden = false
         }
+        updateTrafficLightInset(window)
+    }
+
+    /// Liest den rechten Rand des Zoom-Buttons (= breitester Ampel-Knopf) und
+    /// leitet daraus den Toolbar-Einzug ab. Fällt still auf den Default zurück,
+    /// solange die Knöpfe noch nicht vermessen sind (Frame == 0).
+    private func updateTrafficLightInset(_ window: NSWindow) {
+        guard let zoom = window.standardWindowButton(.zoomButton) else { return }
+        let trailing = zoom.frame.maxX
+        if trailing > 0 { trafficLightInset = trailing + 14 }
     }
 
     private func teardownFullscreenObservers() {

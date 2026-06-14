@@ -28,7 +28,7 @@ final class Reachability: ObservableObject {
         started = true
         monitor.pathUpdateHandler = { [weak self] path in
             let online = path.status == .satisfied
-            Task { @MainActor in
+            Task { @MainActor [weak self] in
                 self?.update(online)
             }
         }

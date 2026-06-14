@@ -34,19 +34,20 @@ struct schreibwerkstatt_focuseditorApp: App {
                     focus.bind(core.bridge)
                     await core.bootstrap()
                 }
+                // Nach dem Anmelden den Server-Default der Fokus-Stufe ziehen
+                // (solange lokal nichts gewählt ist). `onReceive` abonniert den
+                // Publisher direkt → greift zuverlässig bei Start-mit-Token UND
+                // frischem Login (der `/config`-Request braucht das Token).
+                .onReceive(core.auth.$state) { state in
+                    if state == .signedIn {
+                        Task { await focus.seedFromServerIfNeeded() }
+                    }
+                }
         }
         // Polling nur solange das Fenster aktiv ist; im Hintergrund pausieren,
         // beim Reaktivieren sofort ein Tick (CLAUDE.md, Cross-Session-Frische).
         .onChange(of: scenePhase, initial: true) { _, phase in
             core.sync.setActive(phase == .active)
-        }
-        // Nach dem Anmelden den Server-Default der Fokus-Stufe ziehen (solange
-        // lokal nichts gewählt ist). Greift bei Start-mit-Token UND frischem
-        // Login; der `/config`-Request braucht das gültige Token.
-        .onChange(of: core.auth.state, initial: true) { _, state in
-            if state == .signedIn {
-                Task { await focus.seedFromServerIfNeeded() }
-            }
         }
         .commands {
             // Ablenkungsfreier Vollbild per ⌘⌃F (Menüleiste/Dock komplett aus);

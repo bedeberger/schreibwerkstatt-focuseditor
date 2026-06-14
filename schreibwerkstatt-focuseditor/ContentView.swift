@@ -74,7 +74,7 @@ private struct EditorHostView: View {
 
                         if pickerOpen {
                             PagePickerOverlay(isOpen: $pickerOpen)
-                                .transition(.opacity)
+                                .transition(.opacity.combined(with: .scale(scale: 0.97)))
                         }
                     }
                 }

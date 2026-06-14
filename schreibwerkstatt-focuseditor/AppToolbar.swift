@@ -20,12 +20,13 @@ struct AppToolbar: View {
     @EnvironmentObject private var sync: SyncEngine
     @EnvironmentObject private var library: LibraryStore
     @EnvironmentObject private var appearance: AppearanceController
+    @EnvironmentObject private var fullscreen: KioskFullscreen
 
     /// Steuert den beschwörbaren Seiten-Picker (⌘O) im Host.
     @Binding var pickerOpen: Bool
 
-    /// Breite der Aussparung links für die Fenster-Ampel-Buttons.
-    private let trafficLightInset: CGFloat = 78
+    /// Hover-Zustand des Überlauf-Menüs (Material-Highlight).
+    @State private var overflowHover = false
 
     var body: some View {
         HStack(spacing: 14) {
@@ -44,25 +45,28 @@ struct AppToolbar: View {
 
             Spacer(minLength: 12)
 
-            Button { pickerOpen.toggle() } label: {
-                Image(systemName: "doc.text.magnifyingglass")
-                    .font(.system(size: 14))
+            ToolbarIconButton(systemName: "doc.text.magnifyingglass",
+                              help: "Seite öffnen (⌘O)",
+                              accessibilityLabel: "Seite öffnen") {
+                pickerOpen.toggle()
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(BrandColor.muted)
             .keyboardShortcut("o", modifiers: .command)
-            .help("Seite öffnen (⌘O)")
 
-            SyncStatusLabel(status: sync.status, conflicts: sync.conflicts.count)
+            SyncStatusLabel(status: sync.status,
+                            conflicts: sync.conflicts.count,
+                            lastSyncedAt: sync.lastSyncedAt)
 
             overflowMenu
         }
-        .padding(.leading, trafficLightInset)
+        .padding(.leading, fullscreen.trafficLightInset)
         .padding(.trailing, 16)
         .frame(height: 42)
         .frame(maxWidth: .infinity)
         .background(WindowDragArea())          // leere Flächen ziehen das Fenster
-        .background(BrandColor.surface)
+        // Warm getönte Vibrancy: das Papier-Surface über dem Material gibt der
+        // Leiste den nativen Blur, ohne die warme Markenfläche zu verlieren.
+        .background(BrandColor.surface.opacity(0.7))
+        .background(.ultraThinMaterial)
         .overlay(alignment: .bottom) {
             Rectangle()
                 .fill(BrandColor.faint.opacity(0.6))
@@ -86,19 +90,57 @@ struct AppToolbar: View {
         } label: {
             Image(systemName: "ellipsis.circle")
                 .font(.system(size: 14))
+                .foregroundStyle(BrandColor.muted)
+                .frame(width: 28, height: 28)
+                .background(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(overflowHover ? BrandColor.faint.opacity(0.25) : .clear)
+                )
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
         .fixedSize()
-        .foregroundStyle(BrandColor.muted)
+        .onHover { overflowHover = $0 }
         .help("Weitere Optionen")
+        .accessibilityLabel("Weitere Optionen")
+    }
+}
+
+/// Ikon-Knopf der Toolbar mit dezentem Hover-Highlight (rundet die Fläche auf
+/// und tönt sie) — gibt den sonst reaktionslosen `.plain`-Buttons natives
+/// Feedback. Tooltip und VoiceOver-Label getrennt gesetzt.
+private struct ToolbarIconButton: View {
+    let systemName: String
+    let help: String
+    let accessibilityLabel: String
+    let action: () -> Void
+
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 14))
+                .foregroundStyle(BrandColor.muted)
+                .frame(width: 28, height: 28)
+                .background(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(hovering ? BrandColor.faint.opacity(0.25) : .clear)
+                )
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help(help)
+        .accessibilityLabel(accessibilityLabel)
     }
 }
 
 /// Schlanke Sync-Anzeige (Status + offene Konflikte) für die App-Toolbar.
+/// Der Hover-Tooltip nennt den Zeitpunkt der letzten erfolgreichen Synchronisation.
 struct SyncStatusLabel: View {
     let status: SyncEngine.Status
     let conflicts: Int
+    let lastSyncedAt: Date?
 
     var body: some View {
         HStack(spacing: 6) {
@@ -121,6 +163,18 @@ struct SyncStatusLabel: View {
         }
         .font(BrandFont.sans(11))
         .foregroundStyle(BrandColor.muted)
+        .help(tooltip)
+    }
+
+    /// „Zuletzt synchronisiert“ als relative Zeit, sonst der aktuelle Zustand.
+    private var tooltip: String {
+        if conflicts > 0 { return "Ungelöste Konflikte — im Editor auflösen" }
+        if let last = lastSyncedAt {
+            let rel = RelativeDateTimeFormatter()
+            rel.locale = Locale(identifier: "de")
+            return "Zuletzt synchronisiert \(rel.localizedString(for: last, relativeTo: Date()))"
+        }
+        return status == .offline ? "Offline — keine Verbindung" : "Noch nicht synchronisiert"
     }
 }
 

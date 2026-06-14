@@ -27,10 +27,21 @@ struct LoginView: View {
         ZStack {
             BrandColor.bg.ignoresSafeArea()
 
-            VStack(spacing: 22) {
-                header
+            VStack(spacing: 0) {
+                Spacer(minLength: 24)
+                card
+                Spacer(minLength: 24)
+            }
+        }
+        .frame(minWidth: 520, minHeight: 460)
+    }
 
-                VStack(alignment: .leading, spacing: 14) {
+    /// Anmeldekarte — auf der warmen Fläche zentriert, mit weichem Schatten.
+    private var card: some View {
+        VStack(spacing: 22) {
+            header
+
+            VStack(alignment: .leading, spacing: 14) {
                     field(title: "Server-Adresse") {
                         TextField("https://…", text: $serverURL)
                             .textFieldStyle(.roundedBorder)
@@ -77,9 +88,17 @@ struct LoginView: View {
                 .tint(BrandColor.primary)
                 .disabled(!canSubmit)
             }
-            .padding(40)
-        }
-        .frame(minWidth: 520, minHeight: 460)
+            .padding(36)
+            .frame(maxWidth: 420)
+            .background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(BrandColor.surface)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .strokeBorder(BrandColor.faint.opacity(0.4))
+            )
+            .shadow(color: .black.opacity(0.12), radius: 24, y: 8)
     }
 
     private var header: some View {
