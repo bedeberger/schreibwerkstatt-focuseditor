@@ -48,6 +48,7 @@ struct SettingsView: View {
 // MARK: - Allgemein (Server + Lieblingsbuch)
 
 private struct GeneralSettingsTab: View {
+    @EnvironmentObject private var core: AppCore
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var library: LibraryStore
     @EnvironmentObject private var loc: LocalizationController
@@ -144,6 +145,10 @@ private struct GeneralSettingsTab: View {
         serverDraft = url.absoluteString
         // Token ist serverspezifisch → sauberer Re-Login am neuen Server.
         auth.signOut()
+        // Lokalen Spiegel, Sync-Zustand und Buchauswahl auf den Namespace des
+        // neuen Servers umschalten — sonst pollt der Sync weiter die Buch-IDs des
+        // alten Servers (→ `NO_BOOK_ACCESS`). URL ist oben bereits gesetzt.
+        Task { await core.switchServer() }
     }
 }
 

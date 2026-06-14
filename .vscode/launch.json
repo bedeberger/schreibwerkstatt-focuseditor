@@ -1,0 +1,19 @@
+{
+  // Run & Debug (▶ / F5) — baut Debug und startet das Binary aus der .app
+  // unter dem LLDB-Debugger (Breakpoints in Swift funktionieren).
+  //
+  // Das Binary liegt im gepinnten -derivedDataPath ./build (s. tasks.json).
+  // Wir starten die ausführbare Datei IM .app-Bundle, nicht das Bundle selbst,
+  // damit LLDB attachen kann.
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "lldb-dap",
+      "request": "launch",
+      "name": "Focuseditor (Debug)",
+      "program": "${workspaceFolder}/build/Build/Products/Debug/Focuseditor.app/Contents/MacOS/Focuseditor",
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": "Build (Debug)"
+    }
+  ]
+}

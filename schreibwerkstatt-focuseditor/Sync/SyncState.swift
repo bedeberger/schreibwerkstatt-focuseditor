@@ -47,27 +47,38 @@ struct SyncState: Codable, Sendable {
 /// `serverBaseHtml`) groß wird. FIFO-Serialität garantiert Last-Write-Wins.
 @MainActor
 final class SyncStateStore {
-    private let url: URL
+    /// `var`, weil ein Server-Wechsel den Pfad auf den neuen Namespace umlenkt.
+    private var url: URL
+    private let filename: String
     private(set) var state: SyncState
     /// Serielle I/O-Queue: encode + atomic write off-main, in Aufruf-Reihenfolge.
     private let ioQueue = DispatchQueue(label: "ch.schreibwerkstatt.focuseditor.syncstate.io")
 
     init(filename: String = "syncstate.json") {
-        let fm = FileManager.default
-        let base = (try? fm.url(for: .applicationSupportDirectory,
-                                in: .userDomainMask,
-                                appropriateFor: nil,
-                                create: true))
-            ?? fm.temporaryDirectory
-        let dir = base.appendingPathComponent("schreibwerkstatt-focuseditor", isDirectory: true)
-        try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
-        self.url = dir.appendingPathComponent(filename)
+        self.filename = filename
+        AppSupport.migrateLegacyFileIfNeeded(named: filename)
+        self.url = AppSupport.serverDir().appendingPathComponent(filename)
 
         if let data = try? Data(contentsOf: url),
            let loaded = try? JSONDecoder().decode(SyncState.self, from: data) {
             self.state = loaded
         } else {
             self.state = SyncState()
+        }
+    }
+
+    /// Server-Wechsel: Pfad auf den Namespace des aktuellen Servers umlenken und
+    /// den Zustand (Buch-IDs/Cursor/Basen) des neuen Servers laden. Verwirft den
+    /// In-Memory-Zustand des alten Servers, ohne dessen Datei zu löschen
+    /// (Rückwechsel behält den Cursor).
+    func reloadForCurrentServer() {
+        AppSupport.migrateLegacyFileIfNeeded(named: filename)
+        url = AppSupport.serverDir().appendingPathComponent(filename)
+        if let data = try? Data(contentsOf: url),
+           let loaded = try? JSONDecoder().decode(SyncState.self, from: data) {
+            state = loaded
+        } else {
+            state = SyncState()
         }
     }
 

@@ -31,7 +31,12 @@ final class AppCore: ObservableObject {
     /// bleiben der Offline-Fallback.
     let i18n: I18nBundleStore
 
+    /// Server-Namespace, auf den die Stores aktuell zeigen. Erkennt einen Wechsel
+    /// (Settings ODER URL-Edit im Login) gegen `ServerNamespace.currentSlug`.
+    private var boundSlug: String
+
     init() {
+        self.boundSlug = ServerNamespace.currentSlug
         let auth = AuthStore()
         let store: any LocalStore
         do {
@@ -59,6 +64,34 @@ final class AppCore: ObservableObject {
                               shouldSync: { auth.state == .signedIn })
         sync.editor = bridge   // SyncEngine ↔ Editor-Kopplung (schwach gehalten)
         self.sync = sync
+    }
+
+    /// Server-Wechsel (in-place): den lokalen Spiegel, den Sync-Zustand und die
+    /// Buchauswahl auf den Namespace des NEUEN Servers umschalten. Ohne das pollt
+    /// der Client weiter die Buch-IDs des alten Servers (→ `NO_BOOK_ACCESS`-Flut).
+    /// Voraussetzung: `ServerConfig.baseURLString` zeigt bereits auf den neuen
+    /// Server (der Aufrufer setzt URL + meldet ab, bevor er das hier ruft).
+    ///
+    /// Objekt-Identitäten bleiben erhalten (Store/Sync/Library tauschen nur ihre
+    /// zugrundeliegenden Dateien) → Bridge- und Controller-Bindungen bleiben gültig.
+    func switchServer() async {
+        do {
+            try await store.switchToCurrentServer()
+        } catch {
+            Logger(subsystem: "ch.schreibwerkstatt.focuseditor", category: "store")
+                .error("Store-Wechsel auf neuen Server fehlgeschlagen: \(error.localizedDescription, privacy: .public)")
+        }
+        sync.reloadForCurrentServer()
+        library.reloadForCurrentServer()
+        boundSlug = ServerNamespace.currentSlug
+    }
+
+    /// Schaltet nur um, wenn sich der Server-Namespace seit dem letzten Binden
+    /// geändert hat. Deckt den Login-Pfad ab (URL im Login-Screen editiert, dann
+    /// angemeldet) und ist nach einem direkten `switchServer()` ein No-op.
+    func switchServerIfNeeded() async {
+        guard boundSlug != ServerNamespace.currentSlug else { return }
+        await switchServer()
     }
 
     /// Beim App-Start: Token prüfen, dann Sync hochfahren.

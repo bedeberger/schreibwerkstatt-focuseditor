@@ -88,6 +88,11 @@ private struct EditorHostView: View {
         .onChange(of: autoHideToolbar) { _, on in
             if !on { hideTask?.cancel(); toolbarRevealed = true }
         }
+        // Buchwechsel: die LibraryStore schliesst die offene Seite und signalisiert
+        // hier, den Seiten-Picker zu öffnen (Seite des neuen Buchs wählen).
+        .onChange(of: library.pickerOpenRequest) { _, _ in
+            pickerOpen = true
+        }
     }
 
     /// Editor + Toolbar im Ready-Zustand. Zwei Layouts:

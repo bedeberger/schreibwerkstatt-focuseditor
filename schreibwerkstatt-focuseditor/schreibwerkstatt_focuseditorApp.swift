@@ -64,6 +64,11 @@ struct schreibwerkstatt_focuseditorApp: App {
                 .onReceive(core.auth.$state) { state in
                     if state == .signedIn {
                         Task {
+                            // Falls die Server-URL im Login geändert wurde: Stores
+                            // auf den neuen Namespace umschalten, BEVOR der Sync
+                            // (bzw. die Server-Seeds) loslaufen — sonst pollt er die
+                            // Buch-IDs des alten Servers (→ `NO_BOOK_ACCESS`).
+                            await core.switchServerIfNeeded()
                             await focus.seedFromServerIfNeeded()
                             await loc.seedFromServerIfNeeded()
                         }

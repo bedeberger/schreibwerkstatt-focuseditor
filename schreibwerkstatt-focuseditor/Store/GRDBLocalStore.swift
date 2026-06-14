@@ -16,14 +16,31 @@ import GRDB
 
 @MainActor
 final class GRDBLocalStore: LocalStore {
-    private let dbQueue: DatabaseQueue
+    /// `var`, weil ein Server-Wechsel die zugrundeliegende DB in-place tauscht
+    /// (Objekt-Identität bleibt erhalten → die Bridge-Referenz bleibt gültig).
+    private var dbQueue: DatabaseQueue
+    /// Fester Pfad-Override (Tests). `nil` → Per-Server-Standardort.
+    private let fixedURL: URL?
 
     /// Öffnet (oder legt an) die SQLite-Datei und führt die Migrationen aus.
-    /// `url == nil` → Standardort im Application-Support-Verzeichnis.
+    /// `url == nil` → Per-Server-Standardort im Application-Support-Verzeichnis.
     init(url: URL? = nil) throws {
+        self.fixedURL = url
         let dbURL = try url ?? Self.defaultURL()
         dbQueue = try DatabaseQueue(path: dbURL.path)
         try Self.migrator.migrate(dbQueue)
+    }
+
+    /// Wechselt den Spiegel auf den aktuell konfigurierten Server (Per-Server-
+    /// Namespace). In-Place: die alte `DatabaseQueue` wird ersetzt (und beim
+    /// Freigeben geschlossen), die Objekt-Identität bleibt erhalten. Bei festem
+    /// Pfad-Override (Tests) ein No-op.
+    func switchToCurrentServer() async throws {
+        guard fixedURL == nil else { return }
+        let dbURL = try Self.defaultURL()
+        let newQueue = try DatabaseQueue(path: dbURL.path)
+        try Self.migrator.migrate(newQueue)
+        dbQueue = newQueue
     }
 
     // MARK: - Schema
@@ -161,16 +178,12 @@ final class GRDBLocalStore: LocalStore {
         Date().timeIntervalSince1970 * 1000
     }
 
-    /// Standard-DB-Pfad: Application Support / schreibwerkstatt-focuseditor / localstore.sqlite.
+    /// Standard-DB-Pfad: Application Support / schreibwerkstatt-focuseditor /
+    /// servers/<slug>/localstore.sqlite (Per-Server-Namespace). Migriert eine
+    /// evtl. noch global abgelegte Alt-DB einmalig in den aktuellen Namespace.
     private static func defaultURL() throws -> URL {
-        let fm = FileManager.default
-        let base = try fm.url(for: .applicationSupportDirectory,
-                              in: .userDomainMask,
-                              appropriateFor: nil,
-                              create: true)
-        let dir = base.appendingPathComponent("schreibwerkstatt-focuseditor", isDirectory: true)
-        try fm.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir.appendingPathComponent("localstore.sqlite")
+        AppSupport.migrateLegacyFileIfNeeded(named: "localstore.sqlite")
+        return AppSupport.serverDir().appendingPathComponent("localstore.sqlite")
     }
 }
 

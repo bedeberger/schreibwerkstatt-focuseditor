@@ -137,6 +137,25 @@ final class SyncEngine: ObservableObject {
         reachability.stop()
     }
 
+    /// Server-Wechsel: den persistenten Sync-Zustand (Buch-IDs/Cursor/Basen) auf
+    /// den Namespace des aktuellen Servers umladen und alle transienten Spuren des
+    /// alten Servers verwerfen. Ohne das würde der Loop weiter die Buch-IDs des
+    /// alten Servers pollen (→ `NO_BOOK_ACCESS` am neuen Server). Den Poll-Loop
+    /// danach passend neu aufsetzen.
+    func reloadForCurrentServer() {
+        stopPolling()
+        stateStore.reloadForCurrentServer()
+        conflicts = []
+        pendingCount = 0
+        lastReconcileAt = nil
+        lastError = nil
+        status = .idle
+        if isActive {
+            if autoPollEnabled { requestSync() }
+            startPolling()
+        }
+    }
+
     /// Vom Scene-Phasen-Wechsel getrieben: aktiv → sofortiger Tick + 5 s-Poll;
     /// inaktiv/Hintergrund → Poll pausieren (CLAUDE.md: nur solange Fenster aktiv).
     func setActive(_ active: Bool) {

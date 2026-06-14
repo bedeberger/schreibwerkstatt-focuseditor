@@ -76,6 +76,7 @@ Bridge-Nachrichten **JS → Swift** (`WKScriptMessageHandlerWithReply`, je `{ op
 Bridge-Kanal **Swift → JS** (`callAsyncJavaScript` in `contentWorld: .page`): Die Facade stellt einen Event-Bus `window.__focusBridge.on(event, cb)` / `_receive(event, payload)` bereit. Swift sendet:
 - `serverUpdate { pageId, html, baseUpdatedAt }` → saubere offene Seite wurde serverseitig aktualisiert → still neu laden.
 - `openPage { pageId, html, baseUpdatedAt }` → nativer Picker hat eine Seite gewählt → im Editor öffnen.
+- `closePage {}` → Buchwechsel: offene Seite schliessen → der Editor-Glue sichert den aktuellen Stand (local-first) und leert die Schreibfläche, damit der Text des alten Buchs nicht stehenbleibt. Der Swift-Kern öffnet danach den Seiten-Picker (`LibraryStore.selectBook` bei echtem Wechsel → `pickerOpenRequest`).
 - `focusGranularity { granularity }` → Fokus-Stufe live umgeschaltet (CSS-Klasse `focus-mode--<value>`).
 - `editorTypography { … }` → Typografie live umgeschaltet; der Boot-Glue setzt CSS-Custom-Properties auf `:root` + injiziert EIN `<style id="sw-native-typography">`, das `.focus-editor__content` überschreibt (Override-Schicht über dem unveränderten Editor-CSS — kein Fork).
 

@@ -28,6 +28,10 @@ final class LibraryStore: ObservableObject {
     /// Aktuell im Editor geöffnete Seite (von der Bridge gemeldet bzw. per Picker
     /// gewählt) — treibt die Seiten-Anzeige in der Toolbar.
     @Published private(set) var openPageId: Int?
+    /// Zähler, der bei einem echten Buchwechsel hochzählt — die View beobachtet
+    /// ihn und öffnet den Seiten-Picker (damit der Nutzer direkt eine Seite des
+    /// neuen Buchs wählt). Reines Event-Signal, kein Zustand.
+    @Published private(set) var pickerOpenRequest = 0
     @Published private(set) var isLoadingBooks = false
     @Published private(set) var isLoadingPages = false
     @Published var lastError: String?
@@ -37,14 +41,20 @@ final class LibraryStore: ObservableObject {
     private let bridge: EditorBridge
     private let log = Logger(subsystem: "ch.schreibwerkstatt.focuseditor", category: "library")
 
-    private let defaultsKey = "library.activeBookId"
+    /// Aktives Buch ist server-spezifisch (eine Buch-ID gilt nur am Server, der
+    /// sie vergeben hat) → Key pro Server-Namespace. Sonst wählt der Client am
+    /// neuen Server eine Buch-ID des alten (→ `NO_BOOK_ACCESS`).
+    private var defaultsKey: String { "library.activeBookId.\(ServerNamespace.currentSlug)" }
+    private static let legacyDefaultsKey = "library.activeBookId"
 
     init(content: ContentAPI, store: any LocalStore, bridge: EditorBridge) {
         self.content = content
         self.store = store
         self.bridge = bridge
+        // Alt-Key (global) einmalig in den Namespace des aktuellen Servers ziehen.
+        Self.migrateLegacyBookKeyIfNeeded()
         // Aktives Buch wiederherstellen (0 = nicht gesetzt).
-        let saved = UserDefaults.standard.integer(forKey: defaultsKey)
+        let saved = UserDefaults.standard.integer(forKey: "library.activeBookId.\(ServerNamespace.currentSlug)")
         self.activeBookId = saved == 0 ? nil : saved
         // Offene Seite vom Editor übernehmen (per Picker geöffnet oder beim Boot
         // wiederhergestellt) — hält die Toolbar-Anzeige aktuell.
@@ -100,11 +110,30 @@ final class LibraryStore: ObservableObject {
     }
 
     /// Buch wählen: persistieren + Seitenliste neu laden.
+    ///
+    /// Bei einem echten Wechsel (vorher war schon ein Buch aktiv) wird die offene
+    /// Seite zuerst geschlossen — der Editor soll nicht den Text des alten Buchs
+    /// weiterzeigen — und anschliessend der Seiten-Picker geöffnet, damit der
+    /// Nutzer direkt eine Seite des neuen Buchs wählt. Die initiale Auswahl beim
+    /// Start (vorher kein Buch aktiv) lässt den Editor seine erste Seite normal
+    /// laden, ohne Picker-Popup.
     func selectBook(_ id: Int) {
         guard id != activeBookId else { return }
+        let isSwitch = activeBookId != nil
         activeBookId = id
         UserDefaults.standard.set(id, forKey: defaultsKey)
-        Task { await refreshPages() }
+        guard isSwitch else {
+            Task { await refreshPages() }
+            return
+        }
+        // Offene Seite sofort schliessen (Toolbar leert sich), dann den Editor
+        // leeren und den Picker mit den Seiten des neuen Buchs öffnen.
+        openPageId = nil
+        Task {
+            await bridge.closePage()
+            await refreshPages()
+            pickerOpenRequest &+= 1
+        }
     }
 
     /// Seitenliste des aktiven Buchs aktualisieren (Server-Tree, sonst lokal).
@@ -144,5 +173,34 @@ final class LibraryStore: ObservableObject {
             let ok = await bridge.openPage(pageId: String(row.id))
             if !ok { log.notice("openPage ohne WebView — Editor noch nicht bereit") }
         }
+    }
+
+    // MARK: - Server-Wechsel
+
+    /// Server-Wechsel: Buch-/Seiten-Zustand des alten Servers verwerfen, das
+    /// aktive Buch aus dem Namespace des neuen Servers laden und die Bücherliste
+    /// neu ziehen. So zeigt der Picker keine Bücher des alten Servers mehr.
+    func reloadForCurrentServer() {
+        books = []
+        pages = []
+        openPageId = nil
+        lastError = nil
+        let saved = UserDefaults.standard.integer(forKey: defaultsKey)
+        activeBookId = saved == 0 ? nil : saved
+        Task { await loadBooks() }
+    }
+
+    /// Einmal-Migration: den globalen Alt-Key in den Namespace des aktuell
+    /// konfigurierten Servers übertragen, falls dort noch nichts steht. Danach den
+    /// Alt-Key entfernen, damit er nicht erneut auf einen anderen Server „leakt".
+    private static func migrateLegacyBookKeyIfNeeded() {
+        let defaults = UserDefaults.standard
+        let legacy = defaults.integer(forKey: legacyDefaultsKey)
+        guard legacy != 0 else { return }
+        let targetKey = "library.activeBookId.\(ServerNamespace.currentSlug)"
+        if defaults.integer(forKey: targetKey) == 0 {
+            defaults.set(legacy, forKey: targetKey)
+        }
+        defaults.removeObject(forKey: legacyDefaultsKey)
     }
 }

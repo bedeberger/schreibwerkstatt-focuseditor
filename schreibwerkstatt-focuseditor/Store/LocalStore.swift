@@ -78,6 +78,13 @@ protocol LocalStore: AnyObject {
     /// Räumt einen evtl. vorhandenen Outbox-Eintrag mit weg. Der Aufrufer stellt
     /// sicher, dass keine ungepushte/ungespeicherte Änderung verloren geht.
     func deletePage(id: String) async throws
+
+    /// Wechselt den persistenten Spiegel auf den aktuell konfigurierten Server
+    /// (Per-Server-Namespace). In-Place: die Objekt-Identität bleibt erhalten,
+    /// nur die zugrundeliegende Datei wechselt — bestehende Referenzen (z. B. die
+    /// Bridge) bleiben gültig. So pollt der Sync nach einem Server-Wechsel nicht
+    /// mehr die Buch-IDs des alten Servers.
+    func switchToCurrentServer() async throws
 }
 
 /// Titel-Ableitung aus dem HTML — von allen LocalStore-Implementierungen
@@ -118,18 +125,21 @@ final class InMemoryLocalStore: LocalStore {
     private var pages: [String: StoredPage] = [:]
     private var outbox: [OutboxEntry] = []
 
-    private let snapshotURL: URL
+    private var snapshotURL: URL
 
     init() {
-        let fm = FileManager.default
-        let base = (try? fm.url(for: .applicationSupportDirectory,
-                                in: .userDomainMask,
-                                appropriateFor: nil,
-                                create: true))
-            ?? fm.temporaryDirectory
-        let dir = base.appendingPathComponent("schreibwerkstatt-focuseditor", isDirectory: true)
-        try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
-        self.snapshotURL = dir.appendingPathComponent("localstore.json")
+        AppSupport.migrateLegacyFileIfNeeded(named: "localstore.json")
+        self.snapshotURL = AppSupport.serverDir().appendingPathComponent("localstore.json")
+        loadSnapshot()
+    }
+
+    /// Server-Wechsel: in-place auf den Namespace des aktuellen Servers
+    /// umschalten (Speicher leeren + Snapshot des neuen Servers laden).
+    func switchToCurrentServer() async throws {
+        AppSupport.migrateLegacyFileIfNeeded(named: "localstore.json")
+        snapshotURL = AppSupport.serverDir().appendingPathComponent("localstore.json")
+        pages = [:]
+        outbox = []
         loadSnapshot()
     }
 

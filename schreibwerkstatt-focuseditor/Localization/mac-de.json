@@ -169,6 +169,7 @@
   "toolbar.tip.conflicts": "Ungelöste Konflikte — im Editor auflösen",
   "toolbar.tip.lastSynced": "Zuletzt synchronisiert {rel}",
   "toolbar.tip.offline": "Offline — keine Verbindung",
+  "toolbar.tip.serverUnreachable": "Server nicht erreichbar — lokale Änderungen sind sicher gespeichert und werden synchronisiert, sobald der Server wieder antwortet",
   "toolbar.tip.notSynced": "Noch nicht synchronisiert",
 
   "shortcuts.section.app": "App & Fenster",

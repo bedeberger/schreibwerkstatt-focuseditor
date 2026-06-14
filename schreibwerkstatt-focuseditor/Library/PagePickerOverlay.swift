@@ -38,6 +38,52 @@ struct PagePickerOverlay: View {
         }
     }
 
+    /// Eine Seitenzeile samt ihrem flachen Index in `filtered` — der Index ist die
+    /// Brücke zur Tastatur-/Hover-Auswahl (`selected`) und zum Auto-Scroll-`.id`.
+    private struct IndexedRow: Identifiable {
+        let index: Int
+        let row: PagePickerRow
+        var id: Int { row.id }
+    }
+
+    /// Ein Kapitelblock: zusammenhängender Lauf gleicher `chapterName` in der
+    /// depth-first-Reihenfolge (Top-Level-Seiten → `header == nil`, kein Titel).
+    private struct PickerGroup: Identifiable {
+        let id: Int          // erster Index im Lauf (stabil pro Filterung)
+        let header: String?
+        let depth: Int
+        let rows: [IndexedRow]
+    }
+
+    /// Gruppiert `filtered` in Kapitelblöcke. Da `pickerRows` depth-first abflacht
+    /// (alle Seiten eines Kapitels stehen am Stück), genügt das Aufbrechen bei
+    /// jedem Wechsel des Kapitelnamens — Unterkapitel werden zu eigenen Blöcken,
+    /// ihre `depth` rückt Header + Zeilen ein.
+    private var groups: [PickerGroup] {
+        var result: [PickerGroup] = []
+        var current: [IndexedRow] = []
+        var currentHeader: String?
+        var groupStart = 0
+
+        func flush() {
+            guard !current.isEmpty else { return }
+            result.append(PickerGroup(id: groupStart,
+                                      header: currentHeader,
+                                      depth: current.first?.row.depth ?? 0,
+                                      rows: current))
+            current = []
+        }
+
+        for (index, row) in filtered.enumerated() {
+            let header = (row.chapterName?.isEmpty ?? true) ? nil : row.chapterName
+            if !current.isEmpty && header != currentHeader { flush() }
+            if current.isEmpty { currentHeader = header; groupStart = index }
+            current.append(IndexedRow(index: index, row: row))
+        }
+        flush()
+        return result
+    }
+
     var body: some View {
         ZStack {
             // Abdunkelnder Hintergrund — Klick schliesst.
@@ -61,7 +107,7 @@ struct PagePickerOverlay: View {
         }
         .onExitCommand { close() }               // ⎋
         .onAppear {
-            searchFocused = true
+            focusSearchField()
             installKeyMonitor()
             Task { await library.refreshPages() } // beim Öffnen frisch ziehen
         }
@@ -181,6 +227,17 @@ struct PagePickerOverlay: View {
     }
 
     // MARK: Tastatur
+
+    /// Holt den Tastatur-Fokus aufs Suchfeld. Der Editor-`WKWebView` klammert sich
+    /// an den First Responder des Fensters; setzt man `searchFocused` nur synchron
+    /// im `onAppear`, gewinnt die WebView und man tippt weiter auf der Seite statt
+    /// ins Feld. Darum: WebView-First-Responder zuerst lösen (`makeFirstResponder(nil)`),
+    /// dann den Fokus DEFERRED setzen — das Suchfeld ist erst im nächsten Runloop
+    /// fertig in der Responder-Kette.
+    private func focusSearchField() {
+        NSApp.keyWindow?.makeFirstResponder(nil)
+        DispatchQueue.main.async { searchFocused = true }
+    }
 
     /// Fängt ↑/↓/⏎ ab, solange das Overlay offen ist. Das Suchfeld behält den
     /// Fokus fürs Tippen; die Pfeiltasten steuern die Auswahl statt den Cursor.

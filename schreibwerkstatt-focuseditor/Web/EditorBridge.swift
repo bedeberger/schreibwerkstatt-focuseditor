@@ -29,6 +29,7 @@
 //  Events (Swift → JS, via `__focusBridge._receive(event, payload)`):
 //    • serverUpdate { pageId, html, baseUpdatedAt }  (offene Seite serverseitig aktualisiert)
 //    • openPage     { pageId, html?, baseUpdatedAt? } (nativer Picker öffnet Seite)
+//    • closePage    {}                               (Buchwechsel: offene Seite schliessen, Editor leeren)
 //    • focusGranularity { granularity }              (Fokus-Stufe live umgeschaltet)
 //
 //  Erweiterung: Braucht der Editor eine neue Root-Methode, wird sie ZUERST hier
@@ -381,6 +382,26 @@ final class EditorBridge: NSObject, WKScriptMessageHandlerWithReply, EditorCoord
         } catch {
             log.error("openPage(\(pageId, privacy: .public)) fehlgeschlagen: \(error.localizedDescription, privacy: .public)")
             return false
+        }
+    }
+
+    /// Schliesst die aktuell offene Seite im Editor (`closePage`-Event) — beim
+    /// Buchwechsel: der Editor-Glue sichert zuerst den aktuellen Stand
+    /// (local-first) und leert dann die Schreibfläche, damit der Text des alten
+    /// Buchs nicht stehenbleibt. Setzt die offene Seite zurück (Toolbar leert
+    /// sich). No-op ohne WebView; Fehler werden nur geloggt (kein Datenverlust —
+    /// der Stand wurde JS-seitig vor dem Leeren gesichert).
+    func closePage() async {
+        guard let webView else { return }
+        openPageId = nil
+        do {
+            _ = try await webView.callAsyncJavaScript(
+                "window.__focusBridge._receive('closePage', {});",
+                arguments: [:],
+                in: nil,
+                contentWorld: .page)
+        } catch {
+            log.error("closePage fehlgeschlagen: \(error.localizedDescription, privacy: .public)")
         }
     }
 

@@ -172,12 +172,58 @@ enum WebAssets {
               left: auto !important;
               transform: none !important;
             }
+            /* Ruhige Leerfläche, wenn keine Seite offen ist (geschlossen / Boot
+               ohne Seite). Liegt über der geleerten Schreibfläche und nimmt ihr
+               jede Ablenkung: ein sanfter Verlauf in der Markenfläche + ein
+               dezenter Hinweis, wie man eine Seite öffnet. Theme-treu über die
+               Editor-CSS-Variablen (Light/Dark). Eingeblendet via body.sw-no-page. */
+            #sw-empty {
+              position: fixed; inset: 0; z-index: 30;
+              display: none;
+              flex-direction: column; align-items: center; justify-content: center;
+              gap: 16px; padding: 48px; text-align: center;
+              background:
+                radial-gradient(135% 105% at 50% 14%,
+                  color-mix(in srgb, var(--color-text, #1f1c18) 5%, transparent),
+                  transparent 62%),
+                var(--color-bg, #faf7f2);
+              -webkit-user-select: none; user-select: none; cursor: default;
+              animation: sw-empty-in .45s ease both;
+            }
+            body.sw-no-page #sw-empty { display: flex; }
+            @keyframes sw-empty-in { from { opacity: 0 } to { opacity: 1 } }
+            #sw-empty .sw-empty__mark {
+              width: 46px; height: 46px;
+              color: var(--color-text, #1f1c18); opacity: .26;
+            }
+            #sw-empty .sw-empty__title {
+              margin: 0; font: 400 19px/1.4 var(--sw-font-family, ui-serif, Georgia, serif);
+              color: var(--color-text, #1f1c18); opacity: .72;
+            }
+            #sw-empty .sw-empty__hint {
+              margin: 0; font: 13px/1.5 -apple-system, system-ui, sans-serif;
+              color: var(--color-text, #1f1c18); opacity: .42;
+            }
+            #sw-empty kbd {
+              font: inherit; padding: 1px 7px; border-radius: 5px;
+              background: color-mix(in srgb, var(--color-text, #1f1c18) 11%, transparent);
+            }
           </style>
         </head>
         <body>
           <!-- Mount-Punkt für den Standalone-Focus-Editor. -->
           <div id="mount"></div>
           <div id="boot-status">Lade Editor…</div>
+
+          <!-- Ruhige Leerfläche (keine Seite offen). Per body.sw-no-page eingeblendet. -->
+          <div id="sw-empty" aria-hidden="true">
+            <svg class="sw-empty__mark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M6 3 H13 L19 9 V21 H6 Z"/>
+              <path d="M13 3 V9 H19"/>
+            </svg>
+            <p class="sw-empty__title">Keine Seite geöffnet</p>
+            <p class="sw-empty__hint">Eine Seite öffnen mit <kbd>⌘O</kbd></p>
+          </div>
 
           <script type="module">
             // Boot der nativen Schale: adaptiert die WKWebView-Bridge (window.__focusBridge:
@@ -196,6 +242,14 @@ enum WebAssets {
               // bookId an den Server, der daraus die Locale (de-CH) auflöst.
               let currentPageId = null;
               let currentBookId = null;
+              // Hatte der Boot eine echte Seite zu laden? Wenn nein (leeres/
+              // ungesynctes Buch), startet die App in der ruhigen Leerfläche
+              // statt mit einer leeren Schreibfläche.
+              let bootHadPage = false;
+
+              // Ruhige Leerfläche ein-/ausblenden (keine Seite offen).
+              const showEmpty = () => document.body.classList.add('sw-no-page');
+              const hideEmpty = () => document.body.classList.remove('sw-no-page');
 
               // Offene Seite + Dirty-Flag an den Swift-Kern melden (`editorState`).
               // Treibt die Seiten-Anzeige in der Toolbar UND die Sync-Logik:
@@ -235,14 +289,20 @@ enum WebAssets {
                     bases.set(String(page.id), page.updatedAt ?? null);
                     currentPageId = String(page.id);
                     currentBookId = (page.bookId != null) ? Number(page.bookId) : null;
+                    bootHadPage = true;
                     return { id: page.id, name: page.pageName || page.title || 'Seite', html: page.html || '<p><br></p>' };
                   }
                   bases.set('default', null);
                   currentPageId = 'default';
                   currentBookId = null;
+                  bootHadPage = false;
                   return { id: 'default', name: 'Neue Seite', html: '<p><br></p>' };
                 },
                 savePage: async ({ id, html }) => {
+                  // „Geschlossene" (leere) Seite nach einem Buchwechsel nie
+                  // persistieren — sonst legte ein Autosave-Tick einen Junk-
+                  // Eintrag mit leerer id an.
+                  if (id == null || id === '') return null;
                   const base = bases.get(String(id)) ?? null;
                   const res = await fb.save(id, html, base);
                   if (res && res.updatedAt != null) bases.set(String(id), res.updatedAt);
@@ -316,6 +376,19 @@ enum WebAssets {
               fb.on('serverUpdate', (p) => {
                 if (!p || p.pageId == null) return;
                 applyPage(p.pageId, { save: false });
+              });
+              // Buchwechsel → offene Seite schliessen: aktuellen Stand sichern
+              // (local-first) und die Schreibfläche leeren, damit der Text des
+              // alten Buchs nicht stehenbleibt. Swift öffnet danach den Picker.
+              fb.on('closePage', async () => {
+                try { await window.__standalone.save(); } catch (_) {}
+                currentPageId = null;
+                currentBookId = null;
+                try {
+                  window.__standalone.setPage({ id: '', name: '', html: '<p><br></p>' });
+                } catch (_) {}
+                reportEditorState(null, false);
+                try { window.__countStats && window.__countStats(); } catch (_) {}
               });
 
               // ── Fokus-Granularität live umschalten (Swift → JS) ─────────────

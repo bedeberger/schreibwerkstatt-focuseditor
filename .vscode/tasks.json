@@ -1,51 +1,106 @@
 {
   // VS-Code-Tasks für den macOS-Build ohne Xcode-GUI.
   // Aufruf: ⌘⇧B (Default-Build) bzw. Terminal → Run Task…
+  //
+  // Hinweis: KEIN „Bundle Editor"-Step mehr — der Editor-Code wird zur Laufzeit
+  // per OTA gezogen (s. CLAUDE.md „Editor-Bundle (OTA)"). Es gibt keinen
+  // Build-Step und kein web/-Verzeichnis.
+  //
+  // Alle Builds pinnen -derivedDataPath auf ./build, damit launch.json das
+  // fertige Binary deterministisch findet (statt im ~/Library-DerivedData).
   "version": "2.0.0",
   "tasks": [
     {
-      // Editor-Bundle aus dem Hauptrepo ziehen (focus/ + shared/ → Resources/web/)
-      "label": "Bundle Editor",
-      "type": "shell",
-      "command": "node scripts/bundle-editor.mjs",
-      "problemMatcher": [],
-      "presentation": { "reveal": "always", "panel": "shared", "clear": true }
-    },
-    {
-      // Debug-Build. Hängt am Bundle-Step, damit Resources/web/ frisch ist.
+      // Debug-Build (Default ⌘⇧B).
       "label": "Build (Debug)",
       "type": "shell",
-      "command": "xcodebuild -scheme schreibwerkstatt-focuseditor -configuration Debug build",
-      "dependsOn": "Bundle Editor",
+      "command": "xcodebuild -scheme schreibwerkstatt-focuseditor -configuration Debug -derivedDataPath build build",
       "group": { "kind": "build", "isDefault": true },
-      "problemMatcher": "$gcc",
+      "problemMatcher": ["$swiftc"],
       "presentation": { "reveal": "always", "panel": "shared", "clear": true }
     },
     {
       // Release-Build.
       "label": "Build (Release)",
       "type": "shell",
-      "command": "xcodebuild -scheme schreibwerkstatt-focuseditor -configuration Release build",
-      "dependsOn": "Bundle Editor",
+      "command": "xcodebuild -scheme schreibwerkstatt-focuseditor -configuration Release -derivedDataPath build build",
       "group": "build",
-      "problemMatcher": "$gcc",
+      "problemMatcher": ["$swiftc"],
       "presentation": { "reveal": "always", "panel": "shared", "clear": true }
     },
     {
-      // Bauen und die fertige .app starten — der Run-Knopf-Ersatz für Xcode.
+      // Bauen und die fertige .app starten — der Run-Knopf-Ersatz für Xcode,
+      // OHNE Debugger. Für Debugging (Breakpoints) stattdessen Run & Debug (F5).
       "label": "Build & Run",
       "type": "shell",
-      "command": "xcodebuild -scheme schreibwerkstatt-focuseditor -configuration Debug build && open \"$(xcodebuild -scheme schreibwerkstatt-focuseditor -configuration Debug -showBuildSettings 2>/dev/null | awk '/ BUILT_PRODUCTS_DIR /{d=$3} / FULL_PRODUCT_NAME /{n=$3} END{print d\"/\"n}')\"",
-      "dependsOn": "Bundle Editor",
-      "group": "build",
-      "problemMatcher": "$gcc",
+      "command": "open build/Build/Products/Debug/Focuseditor.app",
+      "dependsOn": "Build (Debug)",
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "shared", "clear": true }
+    },
+    {
+      // Schnelle Offline-Unit-Tests (kein Server nötig) — Default-Test-Task
+      // (⇧⌘P → „Tasks: Run Test Task"). SyncIntegrationTests übersprungen.
+      "label": "Run Tests (Offline)",
+      "type": "shell",
+      "command": "xcodebuild -scheme schreibwerkstatt-focuseditor -configuration Debug -derivedDataPath build -skip-testing:schreibwerkstatt-focuseditorTests/SyncIntegrationTests test",
+      "group": { "kind": "test", "isDefault": true },
+      "problemMatcher": [
+        "$swiftc",
+        {
+          // XCTest-Assert-Fehler: „/pfad/File.swift:42: error: -[Suite test] : …"
+          "owner": "xctest",
+          "source": "xctest",
+          "fileLocation": "absolute",
+          "pattern": {
+            "regexp": "^(.+\\.swift):(\\d+):\\s+(error|warning):\\s+(.+)$",
+            "file": 1,
+            "line": 2,
+            "severity": 3,
+            "message": 4
+          }
+        }
+      ],
+      "presentation": { "reveal": "always", "panel": "shared", "clear": true }
+    },
+    {
+      // Alle Tests inkl. SyncIntegrationTests. Braucht laufenden Dev-Server
+      // + SW_E2E_*-Env im Scheme (s. Memory „xctest-integration-target").
+      "label": "Run Tests (alle inkl. Integration)",
+      "type": "shell",
+      "command": "xcodebuild -scheme schreibwerkstatt-focuseditor -configuration Debug -derivedDataPath build test",
+      "group": "test",
+      "problemMatcher": [
+        "$swiftc",
+        {
+          // XCTest-Assert-Fehler: „/pfad/File.swift:42: error: -[Suite test] : …"
+          "owner": "xctest",
+          "source": "xctest",
+          "fileLocation": "absolute",
+          "pattern": {
+            "regexp": "^(.+\\.swift):(\\d+):\\s+(error|warning):\\s+(.+)$",
+            "file": 1,
+            "line": 2,
+            "severity": 3,
+            "message": 4
+          }
+        }
+      ],
+      "presentation": { "reveal": "always", "panel": "shared", "clear": true }
+    },
+    {
+      // Release bauen und nach /Applications installieren (lokal signiert).
+      "label": "Build & Install (→ /Applications)",
+      "type": "shell",
+      "command": "./scripts/build-and-install.sh",
+      "problemMatcher": ["$swiftc"],
       "presentation": { "reveal": "always", "panel": "shared", "clear": true }
     },
     {
       // Build-Artefakte aufräumen.
       "label": "Clean",
       "type": "shell",
-      "command": "xcodebuild -scheme schreibwerkstatt-focuseditor clean",
+      "command": "xcodebuild -scheme schreibwerkstatt-focuseditor -derivedDataPath build clean && rm -rf build",
       "problemMatcher": [],
       "presentation": { "reveal": "always", "panel": "shared", "clear": true }
     }

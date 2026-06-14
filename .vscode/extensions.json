@@ -1,0 +1,7 @@
+{
+  // Von VS Code beim Öffnen des Workspaces als „empfohlen" angezeigt.
+  "recommendations": [
+    "swiftlang.swift-vscode",
+    "llvm-vs-code-extensions.lldb-dap"
+  ]
+}
