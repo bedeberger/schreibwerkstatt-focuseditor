@@ -44,6 +44,12 @@ final class EditorBundleStore: ObservableObject {
     private let fileManager = FileManager.default
     private let cacheDir: URL
     private let metaURL: URL
+    /// Verzeichnis für ein im Hintergrund gezogenes, noch NICHT aktiviertes
+    /// Bundle. Wird erst beim nächsten Start (in `init`, vor dem WebView-Load)
+    /// in den Live-Cache promotet — so wird der live gelesene `cacheDir` NIE
+    /// mitten in einer Session getauscht (Datenverlust-/Konsistenz-Schutz).
+    private let pendingDir: URL
+    private let pendingMetaURL: URL
     private let bundlePath = "/content/editor-bundle.zip"
 
     /// Verhindert parallele Refreshes (mehrfaches `ensureReady` aus der View).
@@ -60,7 +66,22 @@ final class EditorBundleStore: ObservableObject {
         try? fileManager.createDirectory(at: dir, withIntermediateDirectories: true)
         self.cacheDir = dir.appendingPathComponent("web-cache", isDirectory: true)
         self.metaURL = dir.appendingPathComponent("web-cache.meta.json")
-        if hasCache { state = .ready }
+        self.pendingDir = dir.appendingPathComponent("web-cache.pending", isDirectory: true)
+        self.pendingMetaURL = dir.appendingPathComponent("web-cache.pending.meta.json")
+
+        // Ein im Vorlauf (letzte Session) gezogenes Bundle JETZT aktivieren —
+        // synchron, BEVOR irgendeine WebView den Cache liest. `init` läuft vor
+        // dem ersten View-Body, daher ist der Swap hier kollisionsfrei (während
+        // einer Session wird der Live-Cache nie getauscht → kein Hot-Swap).
+        promotePendingIfReady()
+        if hasCache {
+            // App-seitiges Boot-Glue (index.html) kann sich mit einem App-Update
+            // geändert haben — hier (vor dem WebView-Load) aus dem Manifest neu
+            // erzeugen, nicht mehr im Hintergrund-Refresh (der den Live-Cache
+            // sonst während der Session mutieren würde).
+            regenerateIndexHTMLFromCache()
+            state = .ready
+        }
         sourceCommit = loadMeta()?.sourceCommit
     }
 
@@ -103,12 +124,19 @@ final class EditorBundleStore: ObservableObject {
     func clearEditorCache() async {
         try? fileManager.removeItem(at: cacheDir)
         try? fileManager.removeItem(at: metaURL)
+        // Auch ein evtl. vorbereitetes (noch nicht aktiviertes) Bundle verwerfen,
+        // sonst würde der frische Erst-Download es nicht ersetzen.
+        try? fileManager.removeItem(at: pendingDir)
+        try? fileManager.removeItem(at: pendingMetaURL)
         sourceCommit = nil
         state = .idle
         await ensureReady()
     }
 
-    /// Lädt das Bundle konditional (ETag) und tauscht den Cache atomar.
+    /// Lädt das Bundle konditional (ETag). Bei vorhandenem Live-Cache wird ein
+    /// neues Bundle nur ins `pendingDir` VORBEREITET und beim nächsten Start
+    /// aktiviert (kein Hot-Swap mitten in der Session); ohne Cache geht der
+    /// Erst-Download direkt in den Live-Cache.
     /// `silent`: ein vorhandener Cache bleibt bei Fehlern unangetastet und der
     /// Zustand fällt nicht auf `.failed` (Hintergrund-Refresh).
     func refresh(silent: Bool) async {
@@ -119,21 +147,32 @@ final class EditorBundleStore: ObservableObject {
         if !silent && !hasCache { state = .refreshing }
 
         do {
-            let res = try await api.getRaw(bundlePath, ifNoneMatch: loadMeta()?.etag)
+            // Konditional gegen den EFFEKTIVEN Stand: liegt bereits ein
+            // vorbereitetes Bundle im pendingDir, dessen ETag verwenden (sonst
+            // würde dasselbe Update jede Session erneut gezogen). Sonst der
+            // Live-Cache-ETag.
+            let effectiveETag = (loadMeta(at: pendingMetaURL) ?? loadMeta())?.etag
+            let res = try await api.getRaw(bundlePath, ifNoneMatch: effectiveETag)
 
             if res.notModified {
-                // Bundle unverändert — aber das index.html ist Client-Glue und
-                // kann sich mit einem App-Update geändert haben (z. B. Theme-
-                // Brücke). Aus dem gecachten Manifest neu erzeugen, damit solche
-                // Änderungen nicht erst beim nächsten Server-Bundle greifen.
-                if hasCache { regenerateIndexHTMLFromCache() }
+                // Bundle unverändert. Den Live-Cache NICHT anfassen — die
+                // index.html-Glue-Regeneration passiert beim Start (s. `init`),
+                // nicht mitten in der Session.
                 state = hasCache ? .ready : .failed("Server meldet 304, aber kein lokaler Cache.")
                 return
             }
 
-            try installBundle(zip: res.data, etag: res.etag)
-            sourceCommit = loadMeta()?.sourceCommit
-            state = .ready
+            if hasCache {
+                // Live-Cache läuft → neues Bundle nur VORBEREITEN (pendingDir).
+                // Es wird beim nächsten Start aktiviert (kein Hot-Swap).
+                try installBundle(zip: res.data, etag: res.etag, into: pendingDir, metaURL: pendingMetaURL)
+                state = .ready   // weiterhin der bestehende Live-Cache
+            } else {
+                // Erst-Download (keine WebView liest noch) → direkt in den Cache.
+                try installBundle(zip: res.data, etag: res.etag, into: cacheDir, metaURL: metaURL)
+                sourceCommit = loadMeta()?.sourceCommit
+                state = .ready
+            }
         } catch {
             if hasCache {
                 state = .ready   // Offline/Fehler: am vorhandenen Bundle festhalten
@@ -146,13 +185,14 @@ final class EditorBundleStore: ObservableObject {
     // MARK: - Installation
 
     /// Entpackt das ZIP in ein Staging-Verzeichnis, schreibt index.html aus dem
-    /// Manifest und tauscht den Live-Cache atomar.
-    private func installBundle(zip: Data, etag: String?) throws {
+    /// Manifest und tauscht `target` (Live-Cache ODER pendingDir) atomar. Die
+    /// zugehörige Meta (ETag/Commit) wird nach `metaURL` geschrieben.
+    private func installBundle(zip: Data, etag: String?, into target: URL, metaURL: URL) throws {
         let entries = try MiniZip.entries(in: zip)
         guard !entries.isEmpty else { throw MiniZipError.malformed("leeres Bundle") }
 
-        // Staging neben dem Cache (gleicher Volume → atomarer Replace möglich).
-        let staging = cacheDir.deletingLastPathComponent()
+        // Staging neben dem Ziel (gleicher Volume → atomarer Replace möglich).
+        let staging = target.deletingLastPathComponent()
             .appendingPathComponent("web-cache.staging-\(UUID().uuidString)", isDirectory: true)
         try? fileManager.removeItem(at: staging)
         try fileManager.createDirectory(at: staging, withIntermediateDirectories: true)
@@ -178,8 +218,34 @@ final class EditorBundleStore: ObservableObject {
         let html = WebAssets.indexHTML(cssFiles: css, sourceCommit: commit)
         try Data(html.utf8).write(to: staging.appendingPathComponent("index.html"))
 
-        try swapIntoPlace(staging: staging)
-        saveMeta(BundleMeta(etag: etag, sourceCommit: commit))
+        try swapIntoPlace(staging: staging, target: target)
+        saveMeta(BundleMeta(etag: etag, sourceCommit: commit), to: metaURL)
+    }
+
+    /// Aktiviert beim Start ein im Vorlauf gezogenes Bundle: ersetzt den
+    /// Live-Cache atomar durch `pendingDir` und übernimmt dessen Meta. Wird nur
+    /// aus `init` aufgerufen (vor jedem WebView-Load) — nie während einer Session.
+    private func promotePendingIfReady() {
+        guard fileManager.fileExists(atPath: pendingDir.path) else { return }
+        // Nur ein vollständiges Bundle aktivieren (index.html als Marker); ein
+        // halb geschriebenes pending verwerfen statt einen kaputten Cache zu setzen.
+        guard fileManager.fileExists(atPath: pendingDir.appendingPathComponent("index.html").path) else {
+            try? fileManager.removeItem(at: pendingDir)
+            try? fileManager.removeItem(at: pendingMetaURL)
+            return
+        }
+        do {
+            try swapIntoPlace(staging: pendingDir, target: cacheDir)
+            // Pending-Meta wird zur neuen Live-Meta.
+            try? fileManager.removeItem(at: metaURL)
+            if fileManager.fileExists(atPath: pendingMetaURL.path) {
+                try? fileManager.moveItem(at: pendingMetaURL, to: metaURL)
+            }
+        } catch {
+            // Promotion fehlgeschlagen → pending verwerfen, am Live-Cache festhalten.
+            try? fileManager.removeItem(at: pendingDir)
+            try? fileManager.removeItem(at: pendingMetaURL)
+        }
     }
 
     /// Erzeugt das Client-glue `index.html` aus dem bereits gecachten Manifest
@@ -197,12 +263,14 @@ final class EditorBundleStore: ObservableObject {
         try? Data(html.utf8).write(to: indexURL, options: .atomic)
     }
 
-    /// Ersetzt den Live-Cache atomar durch das Staging-Verzeichnis.
-    private func swapIntoPlace(staging: URL) throws {
-        if fileManager.fileExists(atPath: cacheDir.path) {
-            _ = try fileManager.replaceItemAt(cacheDir, withItemAt: staging)
+    /// Ersetzt `target` atomar durch das Staging-Verzeichnis (Quelle wird dabei
+    /// verbraucht/entfernt). `target` ist der Live-Cache (Erst-Download/Promotion)
+    /// oder das pendingDir (Hintergrund-Refresh).
+    private func swapIntoPlace(staging: URL, target: URL) throws {
+        if fileManager.fileExists(atPath: target.path) {
+            _ = try fileManager.replaceItemAt(target, withItemAt: staging)
         } else {
-            try fileManager.moveItem(at: staging, to: cacheDir)
+            try fileManager.moveItem(at: staging, to: target)
         }
     }
 
@@ -219,14 +287,22 @@ final class EditorBundleStore: ObservableObject {
         let sourceCommit: String?
     }
 
+    /// Live-Cache-Meta (an `hasCache` gekoppelt, damit kein verwaister Stand
+    /// gelesen wird, wenn der Cache fehlt).
     private func loadMeta() -> BundleMeta? {
-        guard hasCache, let data = try? Data(contentsOf: metaURL) else { return nil }
+        guard hasCache else { return nil }
+        return loadMeta(at: metaURL)
+    }
+
+    /// Meta von einem beliebigen Ort lesen (z. B. `pendingMetaURL`) — ungated.
+    private func loadMeta(at url: URL) -> BundleMeta? {
+        guard let data = try? Data(contentsOf: url) else { return nil }
         return try? JSONDecoder().decode(BundleMeta.self, from: data)
     }
 
-    private func saveMeta(_ meta: BundleMeta) {
+    private func saveMeta(_ meta: BundleMeta, to url: URL) {
         guard let data = try? JSONEncoder().encode(meta) else { return }
-        try? data.write(to: metaURL, options: .atomic)
+        try? data.write(to: url, options: .atomic)
     }
 
     private static func describe(_ error: Error) -> String {

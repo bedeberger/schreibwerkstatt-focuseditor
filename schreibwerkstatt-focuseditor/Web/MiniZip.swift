@@ -117,12 +117,22 @@ enum MiniZip {
     /// Raw-DEFLATE-Dekompression in einen Puffer bekannter Größe.
     private static func inflate(_ comp: Data, expectedSize: Int) throws -> Data {
         if expectedSize == 0 { return Data() }
+        // Komprimierte Bytes erwartet, aber `comp` ist leer (manipuliertes/korruptes
+        // ZIP: rawSize>0, compSize=0) → sauber werfen statt `baseAddress!` zu
+        // force-unwrappen (das würde crashen).
+        guard !comp.isEmpty else {
+            throw MiniZipError.inflateFailed("keine komprimierten Daten, aber \(expectedSize) Byte erwartet")
+        }
         var dst = Data(count: expectedSize)
         let written = dst.withUnsafeMutableBytes { dstRaw -> Int in
             comp.withUnsafeBytes { srcRaw -> Int in
-                compression_decode_buffer(
-                    dstRaw.bindMemory(to: UInt8.self).baseAddress!, expectedSize,
-                    srcRaw.bindMemory(to: UInt8.self).baseAddress!, comp.count,
+                guard let dstBase = dstRaw.bindMemory(to: UInt8.self).baseAddress,
+                      let srcBase = srcRaw.bindMemory(to: UInt8.self).baseAddress else {
+                    return 0
+                }
+                return compression_decode_buffer(
+                    dstBase, expectedSize,
+                    srcBase, comp.count,
                     nil, COMPRESSION_ZLIB)
             }
         }

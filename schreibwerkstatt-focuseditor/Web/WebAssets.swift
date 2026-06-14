@@ -50,6 +50,10 @@ enum WebAssets {
         list: (bookId) => call('list', bookId == null ? {} : { bookId }),
         log:  (message, level) => call('log', { message: String(message), level: level || 'info' }),
 
+        // Zuletzt geöffnete Seite (gerätelokal, pro Server) — Boot-Restore.
+        // loadPage bevorzugt sie, fällt sonst auf die erste Seite zurück.
+        lastOpenPage: () => call('lastOpenPage', {}),
+
         // Editor meldet offene Seite + Dirty-Flag an Swift (Open-Page-Reload/-Schutz).
         reportState: (pageId, dirty) =>
           call('editorState', { pageId: pageId == null ? null : String(pageId), dirty: !!dirty }),
@@ -125,9 +129,21 @@ enum WebAssets {
     /// Spiegelt die frühere Generierung in scripts/bundle-editor.mjs; bei
     /// Änderungen am Boot beide Stellen synchron halten (oder bundle-editor.mjs
     /// als reine Build-Referenz endgültig zurückbauen).
+    /// Escaped einen String für die Verwendung in einem doppelt-gequoteten
+    /// HTML-Attribut. Die CSS-Pfade stammen aus dem OTA-Bundle-Manifest
+    /// (Trust-Grenze) — ein Pfad mit `"`/`<`/`>`/`&` würde sonst aus dem
+    /// href-Attribut ausbrechen und Markup ins Boot-HTML injizieren, das mit
+    /// Bridge-Zugriff im Page-World läuft.
+    private static func htmlAttributeEscaped(_ s: String) -> String {
+        s.replacingOccurrences(of: "&", with: "&amp;")
+            .replacingOccurrences(of: "\"", with: "&quot;")
+            .replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;")
+    }
+
     static func indexHTML(cssFiles: [String], sourceCommit: String) -> String {
         let links = cssFiles
-            .map { "  <link rel=\"stylesheet\" href=\"\($0)\">" }
+            .map { "  <link rel=\"stylesheet\" href=\"\(htmlAttributeEscaped($0))\">" }
             .joined(separator: "\n")
         return """
         <!doctype html>
@@ -216,8 +232,8 @@ enum WebAssets {
           <div id="boot-status">Lade Editor…</div>
 
           <!-- Ruhige Leerfläche (keine Seite offen). Per body.sw-no-page eingeblendet. -->
-          <div id="sw-empty" aria-hidden="true">
-            <svg class="sw-empty__mark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+          <div id="sw-empty">
+            <svg class="sw-empty__mark" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
               <path d="M6 3 H13 L19 9 V21 H6 Z"/>
               <path d="M13 3 V9 H19"/>
             </svg>
@@ -281,8 +297,21 @@ enum WebAssets {
                 loadPage: async () => {
                   let pages = [];
                   try { pages = await fb.list(); } catch (_) {}
-                  const first = Array.isArray(pages) && pages.length ? pages[0] : null;
-                  const id = first ? first.id : 'default';
+                  // Zuletzt geöffnete Seite bevorzugen (gerätelokal gemerkt) —
+                  // nur, wenn sie noch in der Liste steht (sonst gelöscht/anderes
+                  // Buch). Sonst die erste Seite wie bisher.
+                  let id = null;
+                  try {
+                    const last = await fb.lastOpenPage();
+                    if (last && last.pageId != null) {
+                      const lid = String(last.pageId);
+                      if (Array.isArray(pages) && pages.some((p) => String(p.id) === lid)) id = lid;
+                    }
+                  } catch (_) {}
+                  if (id == null) {
+                    const first = Array.isArray(pages) && pages.length ? pages[0] : null;
+                    id = first ? first.id : 'default';
+                  }
                   let page = null;
                   try { page = await fb.load(id); } catch (_) {}
                   if (page) {
@@ -327,8 +356,16 @@ enum WebAssets {
               fb.log?.('Standalone-Focus gemountet');
 
               // Initial geöffnete Seite (loadPage) an Swift melden → Toolbar-Titel
-              // steht ab Boot, nicht erst nach dem ersten Picker-Wechsel.
-              reportEditorState(currentPageId, false);
+              // steht ab Boot, nicht erst nach dem ersten Picker-Wechsel. Ohne
+              // echte Seite (leeres/ungesynctes Buch) startet die App in der
+              // ruhigen Leerfläche statt mit einer leeren Schreibfläche.
+              if (bootHadPage) {
+                reportEditorState(currentPageId, false);
+              } else {
+                currentPageId = null;
+                showEmpty();
+                reportEditorState(null, false);
+              }
               // Tastatureingaben markieren die offene Seite dirty (Datenverlust-
               // Schutz im Sync). Listener am Mount-Container (überlebt setPage,
               // das den Content-Knoten austauscht); 'input' bubbelt aus dem
@@ -349,6 +386,7 @@ enum WebAssets {
                 // (local-first): setPage verwirft den Autosave-Timer, sonst
                 // gingen offene Änderungen der bisherigen Seite verloren.
                 if (save) { try { await window.__standalone.save(); } catch (_) {} }
+                hideEmpty();   // wieder eine Seite offen → ruhige Leerfläche weg
                 let page = null;
                 try { page = await fb.load(String(pageId)); } catch (_) {}
                 bases.set(String(pageId), page ? (page.updatedAt ?? null) : null);
@@ -377,9 +415,10 @@ enum WebAssets {
                 if (!p || p.pageId == null) return;
                 applyPage(p.pageId, { save: false });
               });
-              // Buchwechsel → offene Seite schliessen: aktuellen Stand sichern
-              // (local-first) und die Schreibfläche leeren, damit der Text des
-              // alten Buchs nicht stehenbleibt. Swift öffnet danach den Picker.
+              // Seite schliessen (Buchwechsel ODER bewusst über die Toolbar):
+              // aktuellen Stand sichern (local-first), die Schreibfläche leeren
+              // und die ruhige Leerfläche einblenden. Swift öffnet danach den
+              // Picker. Kein Datenverlust — der Stand wurde vorher gespeichert.
               fb.on('closePage', async () => {
                 try { await window.__standalone.save(); } catch (_) {}
                 currentPageId = null;
@@ -387,18 +426,26 @@ enum WebAssets {
                 try {
                   window.__standalone.setPage({ id: '', name: '', html: '<p><br></p>' });
                 } catch (_) {}
+                showEmpty();
                 reportEditorState(null, false);
                 try { window.__countStats && window.__countStats(); } catch (_) {}
               });
 
               // ── Fokus-Granularität live umschalten (Swift → JS) ─────────────
-              // Spiegelt das Verhalten der SPA (editor-focus-card.js $watch):
-              // Host-Feld setzen, CSS-Klasse tauschen, Fokus-Overlay neu rechnen.
-              // Die Engine liest focusGranularity sonst nur beim enterFocusMode.
+              // Bevorzugt den öffentlichen Standalone-Hook `setGranularity` (ab
+              // dem Bundle, das ihn mitliefert) — er kapselt Klassentausch +
+              // Overlay-Recompute in der Engine. Fallback (älteres gecachtes
+              // Bundle ohne den Hook): das Verhalten lokal nachbilden, inkl. des
+              // internen `_focusUpdateActive`-Aufrufs. Greift erst, bis der OTA-
+              // Refresh den Hook nachzieht.
               function applyGranularity(g) {
+                const handle = window.__standalone;
+                if (handle && typeof handle.setGranularity === 'function') {
+                  handle.setGranularity(g);
+                  return;
+                }
                 const valid = ['paragraph', 'sentence', 'window-3', 'typewriter-only'];
                 const gran = valid.indexOf(g) >= 0 ? g : 'paragraph';
-                const handle = window.__standalone;
                 if (handle && handle.host) handle.host.focusGranularity = gran;
                 const focusEl = document.querySelector('.focus-editor');
                 if (focusEl) {
@@ -460,11 +507,15 @@ enum WebAssets {
                     '  background: var(--sw-paper-bg) !important;',
                     '  color: var(--sw-paper-text) !important;',
                     '}',
-                    // Fokus-Abdunklung: spiegelt den Selektor aus focus-mode.css
-                    // (nicht-aktive Blöcke im Fokus-Modus, ausser typewriter-only)
-                    // und überschreibt nur, wenn data-sw-dim="custom" gesetzt ist.
-                    ':root[data-sw-dim="custom"] .focus-editor.is-active:not(.focus-mode--typewriter-only) .focus-editor__content :is(p,h1,h2,h3,h4,h5,h6,blockquote,li,pre):not(.focus-paragraph-active):not(.focus-paragraph-near) {',
-                    '  opacity: var(--sw-focus-dim) !important;',
+                    // Fokus-Abdunklung: überschreibt NUR die Variable, die der
+                    // Editor selbst liest (focus-mode.css: `--focus-dim-opacity`
+                    // auf .focus-editor, ausgewertet an den gedimmten Blöcken) —
+                    // statt den Dim-Selektor zu replizieren. Ändert das Hauptrepo
+                    // welche Blöcke dimmen, folgt der Override automatisch (keine
+                    // Kopplung an CSS-Interna). Spezifität (0,2,0) schlägt die
+                    // Basisregel .focus-editor (0,1,0); greift nur bei data-sw-dim.
+                    ':root[data-sw-dim="custom"] .focus-editor {',
+                    '  --focus-dim-opacity: var(--sw-focus-dim) !important;',
                     '}',
                   ].join('\\n');
                   document.head.appendChild(style);
@@ -511,18 +562,11 @@ enum WebAssets {
                   const mod = await import('./js/cards/editor-spellcheck/controller.js');
                   const root = document.querySelector('.focus-editor__content');
                   if (mod && typeof mod.createSpellcheckController === 'function' && root) {
-                    const I18N = {
-                      'spellcheck.popover.ignore': 'Ignorieren',
-                      'spellcheck.popover.add_to_dict': 'Zum Wörterbuch',
-                      'spellcheck.popover.no_suggestions': 'Keine Vorschläge',
-                      'spellcheck.popover.rule_info': 'Regel-Info',
-                      'spellcheck.status.active': 'LanguageTool aktiv',
-                      'spellcheck.status.disabled': 'LanguageTool deaktiviert',
-                      'spellcheck.status.error': 'LanguageTool-Fehler',
-                      'spellcheck.status.matches': '{n} Hinweise',
-                      'spellcheck.status.no_matches': 'Keine Hinweise',
-                      'spellcheck.extension_conflict.title': 'LanguageTool-Browser-Extension erkannt',
-                    };
+                    // Popover-/Status-Strings kommen lokalisiert (de/en) über die
+                    // Bridge (cfg.i18n, aus t()) — kein hartkodierter UI-String.
+                    // Fallback auf den rohen Key, falls der Controller einen Key
+                    // anfragt, den die Bridge (noch) nicht liefert.
+                    const I18N = (cfg && cfg.i18n) || {};
                     const ctl = mod.createSpellcheckController({
                       root,
                       scrollContainer: root,            // .focus-editor__content ist Root UND Scroller

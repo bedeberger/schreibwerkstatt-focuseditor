@@ -133,6 +133,17 @@
   "spell.lang.it": "Italian",
   "spell.lang.enGB": "English (UK)",
 
+  "spell.popover.ignore": "Ignore",
+  "spell.popover.addToDict": "Add to dictionary",
+  "spell.popover.noSuggestions": "No suggestions",
+  "spell.popover.ruleInfo": "Rule info",
+  "spell.status.active": "LanguageTool active",
+  "spell.status.disabled": "LanguageTool disabled",
+  "spell.status.error": "LanguageTool error",
+  "spell.status.matches": "{n} hints",
+  "spell.status.noMatches": "No hints",
+  "spell.extensionConflict.title": "LanguageTool browser extension detected",
+
   "settings.account.signinSection": "Sign-in",
   "settings.account.server": "Server",
   "settings.account.status": "Status",
@@ -154,6 +165,8 @@
 
   "toolbar.openPageHelp": "Open page (⌘O)",
   "toolbar.openPage": "Open page",
+  "toolbar.closePage": "Close page",
+  "toolbar.closePageHelp": "Close page — return to the calm canvas",
   "toolbar.appearance": "Appearance",
   "toolbar.moreOptions": "More options",
   "toolbar.settings": "Settings …",
@@ -202,6 +215,7 @@
   "picker.noBookSelected": "No book selected",
   "picker.noPages": "No pages",
   "picker.untitled": "Untitled",
+  "picker.openBadge": "open",
 
   "menu.about": "About schreibwerkstatt-focuseditor",
   "menu.appearance": "Appearance",

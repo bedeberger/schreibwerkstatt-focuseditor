@@ -28,9 +28,9 @@ final class LibraryStore: ObservableObject {
     /// Aktuell im Editor geöffnete Seite (von der Bridge gemeldet bzw. per Picker
     /// gewählt) — treibt die Seiten-Anzeige in der Toolbar.
     @Published private(set) var openPageId: Int?
-    /// Zähler, der bei einem echten Buchwechsel hochzählt — die View beobachtet
-    /// ihn und öffnet den Seiten-Picker (damit der Nutzer direkt eine Seite des
-    /// neuen Buchs wählt). Reines Event-Signal, kein Zustand.
+    /// Zähler, der hochzählt, wenn die View den Seiten-Picker öffnen soll —
+    /// beim echten Buchwechsel und beim bewussten Schliessen der Seite (damit der
+    /// Nutzer direkt die nächste Seite wählt). Reines Event-Signal, kein Zustand.
     @Published private(set) var pickerOpenRequest = 0
     @Published private(set) var isLoadingBooks = false
     @Published private(set) var isLoadingPages = false
@@ -172,6 +172,20 @@ final class LibraryStore: ObservableObject {
         Task {
             let ok = await bridge.openPage(pageId: String(row.id))
             if !ok { log.notice("openPage ohne WebView — Editor noch nicht bereit") }
+        }
+    }
+
+    /// Schliesst die offene Seite (Toolbar-Aktion „Seite schliessen"). Die WebView
+    /// sichert lokal (local-first), leert die Schreibfläche und zeigt die ruhige
+    /// Leerfläche; danach öffnen wir den Picker, damit der Nutzer direkt die
+    /// nächste Seite wählen kann. Kein Datenverlust — der Stand wurde vor dem
+    /// Leeren gespeichert.
+    func closePage() {
+        guard openPageId != nil else { return }
+        openPageId = nil          // Toolbar sofort leeren
+        Task {
+            await bridge.closePage()
+            pickerOpenRequest &+= 1
         }
     }
 

@@ -29,7 +29,7 @@
 //  Events (Swift → JS, via `__focusBridge._receive(event, payload)`):
 //    • serverUpdate { pageId, html, baseUpdatedAt }  (offene Seite serverseitig aktualisiert)
 //    • openPage     { pageId, html?, baseUpdatedAt? } (nativer Picker öffnet Seite)
-//    • closePage    {}                               (Buchwechsel: offene Seite schliessen, Editor leeren)
+//    • closePage    {}                               (offene Seite schliessen → ruhige Leerfläche; Buchwechsel oder Toolbar)
 //    • focusGranularity { granularity }              (Fokus-Stufe live umgeschaltet)
 //
 //  Erweiterung: Braucht der Editor eine neue Root-Methode, wird sie ZUERST hier
@@ -46,6 +46,11 @@ final class EditorBridge: NSObject, WKScriptMessageHandlerWithReply, EditorCoord
     /// `window.webkit.messageHandlers.swBridge.postMessage(...)`.
     /// Single Source of Truth in `WebAssets` (dependency-frei, testbar).
     static let handlerName = WebAssets.handlerName
+
+    /// UserDefaults-Key für die zuletzt geöffnete Seite — pro Server-Namespace
+    /// (eine Seiten-ID gilt nur am Server, der sie vergeben hat; sonst öffnete der
+    /// Client am neuen Server eine Seite des alten). Analog zu `LibraryStore`.
+    static var lastOpenPageKey: String { "editor.lastOpenPageId.\(ServerNamespace.currentSlug)" }
 
     private let store: any LocalStore
     /// HTTP-Client für den LanguageTool-/Wörterbuch-Proxy. Optional, damit die
@@ -177,8 +182,18 @@ final class EditorBridge: NSObject, WKScriptMessageHandlerWithReply, EditorCoord
             if let pageId = openPageId {
                 let dirty = (params["dirty"] as? Bool) ?? false
                 if dirty { dirtyPages.insert(pageId) } else { dirtyPages.remove(pageId) }
+                // Zuletzt geöffnete Seite gerätelokal merken (Boot-Restore via
+                // `lastOpenPage`). Nur echte Seiten — `nil`/„default" nie merken,
+                // damit eine geschlossene/leere Fläche die Erinnerung nicht löscht.
+                UserDefaults.standard.set(pageId, forKey: Self.lastOpenPageKey)
             }
             return nil
+
+        case "lastOpenPage":
+            // Boot-Pull: zuletzt geöffnete Seite (gerätelokal, pro Server). Der
+            // Editor-Glue bevorzugt sie in `loadPage`, fällt sonst auf die erste
+            // Seite zurück. `nil`, wenn noch nie eine Seite geöffnet wurde.
+            return ["pageId": UserDefaults.standard.string(forKey: Self.lastOpenPageKey) as Any]
 
         case "focusGranularity":
             // Boot-Pull: der Editor liest die lokale Fokus-Stufe beim Mounten.
@@ -245,7 +260,13 @@ final class EditorBridge: NSObject, WKScriptMessageHandlerWithReply, EditorCoord
            pending.contains(where: { $0.pageId == pageId }) {
             return try? await store.page(id: pageId)
         }
-        guard let resp = try? await api.send("/content/pages/\(pageId)",
+        // pageId kommt aus der (nicht vertrauenswürdigen) WebView → für den
+        // URL-Pfad kodieren. Ohne Encoding könnten `/`, `?`, `#`, `..` o. Ä. den
+        // Pfad verbiegen oder `URL(string:)` scheitern lassen.
+        guard let encodedId = pageId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
+            return try? await store.page(id: pageId)
+        }
+        guard let resp = try? await api.send("/content/pages/\(encodedId)",
                                              method: .GET,
                                              decode: PushResponse.self),
               let html = resp.html else {
@@ -273,19 +294,40 @@ final class EditorBridge: NSObject, WKScriptMessageHandlerWithReply, EditorCoord
         // Prüfung pro Gerät abschalten (greift beim nächsten Editor-Boot; ein
         // Live-Aus wirkt zusätzlich über `languagetoolCheck`).
         let localOn = SpellcheckPrefs.localEnabled
-        guard let api else { return ["enabled": false, "debounceMs": 1500] }
+        let i18n = Self.spellcheckI18n()
+        guard let api else { return ["enabled": false, "debounceMs": 1500, "i18n": i18n] }
         do {
             let cfg = try await api.send("/config", decode: ConfigDTO.self)
             let serverEnabled = cfg.languagetool?.enabled ?? false
             let debounce = cfg.languagetool?.debounceMs ?? 1500
             ltConfig = (serverEnabled, debounce)
-            return ["enabled": serverEnabled && localOn, "debounceMs": debounce]
+            return ["enabled": serverEnabled && localOn, "debounceMs": debounce, "i18n": i18n]
         } catch {
             if let cached = ltConfig {
-                return ["enabled": cached.enabled && localOn, "debounceMs": cached.debounceMs]
+                return ["enabled": cached.enabled && localOn, "debounceMs": cached.debounceMs, "i18n": i18n]
             }
-            return ["enabled": false, "debounceMs": 1500]
+            return ["enabled": false, "debounceMs": 1500, "i18n": i18n]
         }
+    }
+
+    /// Lokalisierte Popover-/Status-Strings für den Spellcheck-Controller.
+    /// Schlüssel = die i18n-Keys, die der unveränderte Controller (Hauptrepo)
+    /// anfragt; Werte aus den gebündelten Katalogen via `t()` (de/en). Über die
+    /// Bridge geliefert statt ins gecachte `index.html` gebacken → ein lokaler
+    /// Sprachwechsel greift sofort, nicht erst beim nächsten Bundle-Refresh.
+    private static func spellcheckI18n() -> [String: String] {
+        [
+            "spellcheck.popover.ignore": t("spell.popover.ignore"),
+            "spellcheck.popover.add_to_dict": t("spell.popover.addToDict"),
+            "spellcheck.popover.no_suggestions": t("spell.popover.noSuggestions"),
+            "spellcheck.popover.rule_info": t("spell.popover.ruleInfo"),
+            "spellcheck.status.active": t("spell.status.active"),
+            "spellcheck.status.disabled": t("spell.status.disabled"),
+            "spellcheck.status.error": t("spell.status.error"),
+            "spellcheck.status.matches": t("spell.status.matches"),
+            "spellcheck.status.no_matches": t("spell.status.noMatches"),
+            "spellcheck.extension_conflict.title": t("spell.extensionConflict.title"),
+        ]
     }
 
     /// Liest die serverseitige Fokus-Granularität aus `/config`
@@ -386,9 +428,9 @@ final class EditorBridge: NSObject, WKScriptMessageHandlerWithReply, EditorCoord
     }
 
     /// Schliesst die aktuell offene Seite im Editor (`closePage`-Event) — beim
-    /// Buchwechsel: der Editor-Glue sichert zuerst den aktuellen Stand
-    /// (local-first) und leert dann die Schreibfläche, damit der Text des alten
-    /// Buchs nicht stehenbleibt. Setzt die offene Seite zurück (Toolbar leert
+    /// Buchwechsel ODER bewusst über die Toolbar. Der Editor-Glue sichert zuerst
+    /// den aktuellen Stand (local-first), leert dann die Schreibfläche und blendet
+    /// eine ruhige Leerfläche ein. Setzt die offene Seite zurück (Toolbar leert
     /// sich). No-op ohne WebView; Fehler werden nur geloggt (kein Datenverlust —
     /// der Stand wurde JS-seitig vor dem Leeren gesichert).
     func closePage() async {

@@ -109,9 +109,13 @@ struct PagePickerOverlay: View {
         .onAppear {
             focusSearchField()
             installKeyMonitor()
+            selectOpenPage()                      // falls Seiten schon im Cache stehen
             Task { await library.refreshPages() } // beim Öffnen frisch ziehen
         }
         .onDisappear { removeKeyMonitor() }
+        .onChange(of: library.pages) { _, _ in          // async nachgeladen → springen
+            selectOpenPage()
+        }
         .onChange(of: query) { _, _ in                  // neue Suche → oben anfangen
             selected = 0
             scrollTarget = 0
@@ -154,12 +158,20 @@ struct PagePickerOverlay: View {
         } else {
             ScrollViewReader { proxy in
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 0) {
-                        ForEach(Array(filtered.enumerated()), id: \.element.id) { index, row in
-                            rowButton(row, isSelected: index == selected)
-                                .id(index)
-                                .onHover { if $0 { selected = index } }
-                            Divider().opacity(0.4)
+                    LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
+                        ForEach(groups) { group in
+                            Section {
+                                ForEach(group.rows) { entry in
+                                    rowButton(entry.row, isSelected: entry.index == selected)
+                                        .id(entry.index)
+                                        .onHover { if $0 { selected = entry.index } }
+                                    Divider().opacity(0.4)
+                                }
+                            } header: {
+                                if let title = group.header {
+                                    chapterHeader(title, depth: group.depth)
+                                }
+                            }
                         }
                     }
                 }
@@ -173,17 +185,41 @@ struct PagePickerOverlay: View {
         }
     }
 
+    /// Pinned Kapitel-Überschrift — gruppiert die Seiten darunter, statt den
+    /// Kapitelnamen auf jeder Zeile zu wiederholen. Bleibt beim Scrollen oben
+    /// kleben, damit auch mitten im Kapitel klar ist, wo man steht.
+    private func chapterHeader(_ title: String, depth: Int) -> some View {
+        Text(title.uppercased())
+            .font(BrandFont.sans(10, weight: .semibold))
+            .tracking(0.5)
+            .foregroundStyle(BrandColor.muted)
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 5)
+            .padding(.leading, CGFloat(max(0, depth - 1)) * 14 + 14)
+            .padding(.trailing, 14)
+            .background(.regularMaterial)
+    }
+
     private func rowButton(_ row: PagePickerRow, isSelected: Bool) -> some View {
         Button { open(row) } label: {
-            VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 6) {
                 Text(row.name.isEmpty ? t("picker.untitled") : row.name)
                     .font(BrandFont.sans(13))
                     .foregroundStyle(BrandColor.text)
-                if let chapter = row.chapterName, !chapter.isEmpty {
-                    Text(chapter)
-                        .font(BrandFont.sans(10))
-                        .foregroundStyle(BrandColor.muted)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                if row.id == library.openPageId {
+                    Text(t("picker.openBadge"))
+                        .font(BrandFont.sans(9, weight: .semibold))
+                        .foregroundStyle(BrandColor.primary)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(BrandColor.primary.opacity(0.12),
+                                    in: Capsule())
                 }
+                Spacer(minLength: 0)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, 7)
@@ -205,6 +241,17 @@ struct PagePickerOverlay: View {
     private func open(_ row: PagePickerRow) {
         library.openPage(row)
         close()
+    }
+
+    /// Markiert die aktuell geöffnete Seite und scrollt sie ins Bild — damit ein
+    /// grosses Buch dort aufgeht, „wo man ist", statt immer oben. Nur ohne aktive
+    /// Suche; sobald gefiltert wird, gewinnt der erste Treffer (`onChange(query)`).
+    private func selectOpenPage() {
+        guard query.isEmpty,
+              let openId = library.openPageId,
+              let idx = filtered.firstIndex(where: { $0.id == openId }) else { return }
+        selected = idx
+        scrollTarget = idx
     }
 
     /// Öffnet die aktuell markierte Zeile (Tastatur/Hover); fällt auf den ersten

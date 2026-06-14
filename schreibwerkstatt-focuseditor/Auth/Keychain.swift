@@ -42,9 +42,31 @@ enum Keychain {
         ]
 
         let status = SecItemAdd(query as CFDictionary, nil)
-        guard status == errSecSuccess else {
-            throw KeychainError.unexpectedStatus(status)
+        if status == errSecSuccess { return }
+
+        // Das vorausgehende `delete` konnte den Altbestand nicht entfernen (z. B.
+        // ein Eintrag mit abweichendem Accessibility-Attribut, den die delete-
+        // Query nicht traf) → `add` meldet einen Duplikat. Auf ein Update des
+        // vorhandenen Eintrags zurückfallen, statt den Token-Wechsel scheitern
+        // zu lassen (sonst bliebe der User mit dem alten/ungültigen Token hängen).
+        if status == errSecDuplicateItem {
+            let match: [String: Any] = [
+                kSecClass as String: kSecClassGenericPassword,
+                kSecAttrService as String: service,
+                kSecAttrAccount as String: account,
+            ]
+            let attrs: [String: Any] = [
+                kSecValueData as String: data,
+                kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
+            ]
+            let updateStatus = SecItemUpdate(match as CFDictionary, attrs as CFDictionary)
+            guard updateStatus == errSecSuccess else {
+                throw KeychainError.unexpectedStatus(updateStatus)
+            }
+            return
         }
+
+        throw KeychainError.unexpectedStatus(status)
     }
 
     /// Liest den Wert oder `nil`, wenn kein Eintrag existiert.

@@ -66,6 +66,16 @@ struct AppToolbar: View {
             }
             .keyboardShortcut("o", modifiers: .command)
 
+            // Seite schliessen — nur sichtbar, wenn eine Seite offen ist. Schliesst
+            // die Seite (lokal gesichert) und öffnet den Picker für die nächste Wahl.
+            if library.openPageId != nil {
+                ToolbarIconButton(systemName: "xmark.circle",
+                                  help: t("toolbar.closePageHelp"),
+                                  accessibilityLabel: t("toolbar.closePage")) {
+                    library.closePage()
+                }
+            }
+
             if writingStats.showStats {
                 WritingStatsLabel(words: writingStats.words,
                                   wordsToday: writingStats.wordsToday,

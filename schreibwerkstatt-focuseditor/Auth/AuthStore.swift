@@ -93,6 +93,11 @@ final class AuthStore: ObservableObject {
         }
 
         state = .validating
+        // Der APIClient liest die Basis-URL aus `ServerConfig`, daher muss sie für
+        // die Probe gesetzt sein. Den bisherigen Wert merken und bei Fehlschlag
+        // zurückrollen — eine fehlgeschlagene Anmeldung darf die zuvor
+        // funktionierende Server-Konfiguration nicht dauerhaft überschreiben.
+        let previousURL = ServerConfig.baseURLString
         ServerConfig.baseURLString = normalizedURL.absoluteString
 
         do {
@@ -103,6 +108,7 @@ final class AuthStore: ObservableObject {
                               account: Self.keychainAccount)
             state = .signedIn
         } catch {
+            ServerConfig.baseURLString = previousURL
             lastError = (error as? LocalizedError)?.errorDescription
                 ?? AuthError.network(error).errorDescription
             state = .signedOut

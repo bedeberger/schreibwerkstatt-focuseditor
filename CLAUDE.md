@@ -62,7 +62,8 @@ Bridge-Nachrichten **JS → Swift** (`WKScriptMessageHandlerWithReply`, je `{ op
 - `save { pageId, html, baseUpdatedAt? }` → LocalStore + Outbox (`{ id, updatedAt }`)
 - `list { bookId? }` → Seitenliste aus LocalStore (optional buch-gefiltert)
 - `log { level?, message }` → JS-Diagnose ins Swift-Log
-- `editorState { pageId, dirty }` → meldet offene Seite + Dirty-Flag (steuert Open-Page-Reload/-Schutz im Sync)
+- `editorState { pageId, dirty }` → meldet offene Seite + Dirty-Flag (steuert Open-Page-Reload/-Schutz im Sync). Merkt nebenbei die zuletzt geöffnete Seite gerätelokal (UserDefaults `editor.lastOpenPageId.<server>`, nur echte Seiten).
+- `lastOpenPage {}` → `{ pageId }` (zuletzt geöffnete Seite, gerätelokal/pro-Server; `null` wenn nie geöffnet). Boot-Pull: der Editor-Glue (`loadPage` in [WebAssets.swift](schreibwerkstatt-focuseditor/Web/WebAssets.swift)) bevorzugt sie, falls noch in der Seitenliste — sonst Fallback auf die erste Seite.
 - `spellcheckConfig {}` → `{ enabled, debounceMs }` (aus `GET /config`, in der Bridge gecacht)
 - `languagetoolCheck { text, language?, pageId?, bookId? }` → `{ matches: [...] }` | `{ disabled: true }` (Proxy `POST /languagetool/check`; `404` = serverseitig aus). **Lokale Overrides** (UserDefaults, `SpellcheckPrefs` in [EditorBridge.swift](schreibwerkstatt-focuseditor/Web/EditorBridge.swift)): `spellcheck.localEnabled=false` → `{ disabled: true }` ohne Roundtrip; `spellcheck.languageOverride` (≠ „auto") übersteuert die gesendete Sprache.
 - `dictionaryAdd { word, lang?, bookId? }` → `{ ok }` (Proxy `POST /dictionary`, User-Wörterbuch)

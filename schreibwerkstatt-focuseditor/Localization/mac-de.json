@@ -133,6 +133,17 @@
   "spell.lang.it": "Italienisch",
   "spell.lang.enGB": "Englisch (UK)",
 
+  "spell.popover.ignore": "Ignorieren",
+  "spell.popover.addToDict": "Zum Wörterbuch",
+  "spell.popover.noSuggestions": "Keine Vorschläge",
+  "spell.popover.ruleInfo": "Regel-Info",
+  "spell.status.active": "LanguageTool aktiv",
+  "spell.status.disabled": "LanguageTool deaktiviert",
+  "spell.status.error": "LanguageTool-Fehler",
+  "spell.status.matches": "{n} Hinweise",
+  "spell.status.noMatches": "Keine Hinweise",
+  "spell.extensionConflict.title": "LanguageTool-Browser-Extension erkannt",
+
   "settings.account.signinSection": "Anmeldung",
   "settings.account.server": "Server",
   "settings.account.status": "Status",
@@ -154,6 +165,8 @@
 
   "toolbar.openPageHelp": "Seite öffnen (⌘O)",
   "toolbar.openPage": "Seite öffnen",
+  "toolbar.closePage": "Seite schließen",
+  "toolbar.closePageHelp": "Seite schließen — zur ruhigen Leerfläche",
   "toolbar.appearance": "Darstellung",
   "toolbar.moreOptions": "Weitere Optionen",
   "toolbar.settings": "Einstellungen …",
@@ -202,6 +215,7 @@
   "picker.noBookSelected": "Kein Buch gewählt",
   "picker.noPages": "Keine Seiten",
   "picker.untitled": "Ohne Titel",
+  "picker.openBadge": "offen",
 
   "menu.about": "Über schreibwerkstatt-focuseditor",
   "menu.appearance": "Darstellung",

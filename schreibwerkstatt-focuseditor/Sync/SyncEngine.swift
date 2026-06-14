@@ -87,6 +87,16 @@ final class SyncEngine: ObservableObject {
     /// Poll. Mindestabstand zwischen zwei Reconcile-Durchläufen.
     private let reconcileInterval: TimeInterval = 60
     private var lastReconcileAt: Date?
+    /// Die Bücherliste wird (anders als früher) nicht nur einmal gebootstrappt,
+    /// sondern gedrosselt aufgefrischt — sonst würden in der Web-App neu
+    /// angelegte Bücher nie gepullt. Gleiche Kadenz wie der Reconcile.
+    private let booksRefreshInterval: TimeInterval = 60
+    private var lastBooksRefreshAt: Date?
+    /// Serverseitig gesperrte Seiten (423 PAGE_LOCKED): nicht bei jedem Tick
+    /// erneut pushen, sondern bis zum Ablauf der Sperrfrist überspringen
+    /// (vermeidet Dauer-PUTs + Log-Spam bei langem Lektorats-Lock).
+    private let lockBackoff: TimeInterval = 60
+    private var lockedUntil: [String: Date] = [:]
 
     private var isRunning = false
     private var isActive = false
@@ -148,6 +158,12 @@ final class SyncEngine: ObservableObject {
         conflicts = []
         pendingCount = 0
         lastReconcileAt = nil
+        // Bücherliste beim nächsten Tick zwingend neu (autoritativ) ziehen, damit
+        // evtl. aus dem alten Server migrierte/fremde Buch-IDs sofort gekürzt
+        // werden — nicht erst nach Ablauf des Refresh-Intervalls.
+        lastBooksRefreshAt = nil
+        // Lektorats-Sperren des alten Servers verwerfen.
+        lockedUntil = [:]
         lastError = nil
         status = .idle
         if isActive {
@@ -271,9 +287,14 @@ final class SyncEngine: ObservableObject {
 
     private func pushOutbox() async throws {
         let entries = try await store.pendingOutbox()
+        let now = Date()
         for entry in entries {
             // Unaufgelöste Konflikte nicht erneut blind pushen.
             if conflicts.contains(where: { $0.pageId == entry.pageId }) { continue }
+
+            // Serverseitig gesperrte Seite (423) noch in der Backoff-Frist → diesen
+            // Tick überspringen, statt erneut nutzlos zu pushen.
+            if let until = lockedUntil[entry.pageId], until > now { continue }
 
             guard let base = stateStore.state.serverBaseISO[entry.pageId] else {
                 // Keine Server-Basis → Seite existiert serverseitig (noch) nicht.
@@ -298,18 +319,28 @@ final class SyncEngine: ObservableObject {
                 try await store.markPushed(id: entry.pageId,
                                            queuedAt: entry.queuedAt,
                                            serverUpdatedAtMillis: ISOTime.millis(resp.updated_at) ?? entry.queuedAt)
+                // Erfolgreicher Push → eine etwaige Lock-Backoff-Frist aufheben.
+                lockedUntil[entry.pageId] = nil
             } catch let AuthError.server(status, _, body) where status == 409 {
                 // Stale-Write → 3-Wege-Block-Merge versuchen, sonst Konflikt erfassen.
                 let c = body.flatMap { try? JSONDecoder().decode(ConflictBody.self, from: $0) }
                 await resolveConflict(entry: entry, conflict: c)
             } catch let AuthError.server(status, _, _) where status == 423 {
-                // Seite serverseitig gesperrt (Lektorat) — später erneut versuchen.
-                log.info("Seite gesperrt (423): \(entry.pageId, privacy: .public)")
+                // Seite serverseitig gesperrt (Lektorat) — später erneut versuchen,
+                // aber mit Backoff: bis zum Ablauf der Frist überspringt der Push
+                // diese Seite (kein Dauer-PUT bei langem Lock). Lokaler Stand bleibt.
+                lockedUntil[entry.pageId] = now.addingTimeInterval(lockBackoff)
+                log.info("Seite gesperrt (423), Backoff \(self.lockBackoff, privacy: .public)s: \(entry.pageId, privacy: .public)")
             } catch let AuthError.server(status, _, _) where status == 404 {
-                // Seite existiert serverseitig nicht mehr — Basis verwerfen,
-                // Inhalt aber lokal behalten (kein Datenverlust).
+                // Seite existiert serverseitig nicht mehr (PUT legt nicht an) —
+                // Basis verwerfen, Inhalt aber lokal behalten (kein Datenverlust).
+                // OHNE Server-Basis würde der Push die Seite ab jetzt STILL für
+                // immer überspringen (Sackgasse). Darum als sichtbaren Konflikt
+                // erfassen, damit der Nutzer es bemerkt; der Konflikt-Guard oben
+                // verhindert zugleich nutzlose Re-Pushes.
                 stateStore.mutate { $0.serverBaseISO[entry.pageId] = nil }
-                log.info("Seite serverseitig nicht gefunden (404): \(entry.pageId, privacy: .public)")
+                recordConflict(pageId: entry.pageId, serverUpdatedAt: nil, serverEditorName: nil)
+                log.notice("Seite serverseitig nicht gefunden (404), als Konflikt erfasst: \(entry.pageId, privacy: .public)")
             } catch AuthError.unauthorized {
                 // Session beendet → ganzen Sync abbrechen (kein blindes Weiterpushen).
                 throw AuthError.unauthorized
@@ -414,12 +445,41 @@ final class SyncEngine: ObservableObject {
     // MARK: - Pull
 
     private func pullDeltas() async throws {
-        // Bücherliste einmalig bootstrappen.
-        if stateStore.state.bookIds.isEmpty {
+        // Bücherliste auffrischen: beim ersten Mal (leer) zwingend, danach
+        // gedrosselt — sonst würden in der Web-App neu angelegte Bücher nie
+        // gepullt.
+        let booksDue: Bool = {
+            guard let last = lastBooksRefreshAt else { return true }
+            return Date().timeIntervalSince(last) >= booksRefreshInterval
+        }()
+        if stateStore.state.bookIds.isEmpty || booksDue {
             let books = try await reachableSend {
                 try await api.send("/content/books", method: .GET, decode: [BookDTO].self)
             }
-            stateStore.mutate { $0.bookIds = books.map(\.id) }
+            lastBooksRefreshAt = Date()
+            let ids = books.map(\.id)
+            // `GET /content/books` ist AUTORITATIV: die vollständige Liste der für
+            // diesen User zugänglichen Bücher. Buch-IDs, die nicht (mehr) darin
+            // stehen — etwa von einem anderen Server (Namespace-Altlast) oder nach
+            // Zugriffsentzug —, werden NICHT gepollt; sonst läuft jeder Tick in ein
+            // `NO_BOOK_ACCESS` (Server-Log-Flut). Darum die bekannte Liste auf den
+            // Server-Bestand kürzen, statt sie nur zu vereinigen. Schutz gegen eine
+            // transient leere Antwort: nur kürzen, wenn die Liste nicht leer ist
+            // (eine echte leere Antwort lässt der nächste Tick erneut prüfen).
+            if ids.isEmpty {
+                log.notice("Bücherliste leer — Buch-IDs unverändert gelassen (kein Prune)")
+            } else {
+                let valid = Set(ids)
+                let dropped = stateStore.state.bookIds.filter { !valid.contains($0) }
+                stateStore.mutate { state in
+                    // Cursor verschwundener Bücher mit aufräumen (kein toter Ballast).
+                    for id in dropped { state.cursors[id] = nil }
+                    state.bookIds = ids   // Server-Reihenfolge, autoritativ (gekürzt)
+                }
+                if !dropped.isEmpty {
+                    log.info("Buch-IDs gekürzt: \(dropped.map(String.init).joined(separator: ","), privacy: .public) nicht (mehr) zugänglich")
+                }
+            }
         }
 
         for bookId in stateStore.state.bookIds {
@@ -439,7 +499,18 @@ final class SyncEngine: ObservableObject {
     private func pullBook(_ bookId: Int) async throws {
         var cursor = stateStore.state.cursors[bookId] ?? SyncCursorDTO(since: nil, since_id: 0)
 
+        // Harte Obergrenze gegen ein endloses Paging bei fehlerhaftem Server-
+        // Cursor (oszillierend/nicht-monoton). Bei 200 Seiten/Page deckt das
+        // sehr große Bücher ab; wird sie erreicht, beim nächsten Tick weiter.
+        let maxPages = 500
+        var pageCount = 0
+
         while true {
+            pageCount += 1
+            if pageCount > maxPages {
+                log.notice("Pull Buch \(bookId, privacy: .public): Paging-Limit (\(maxPages, privacy: .public)) erreicht — beim nächsten Tick weiter")
+                break
+            }
             let resp = try await reachableSend {
                 try await api.send(syncPath(bookId: bookId, cursor: cursor),
                                    method: .GET,
