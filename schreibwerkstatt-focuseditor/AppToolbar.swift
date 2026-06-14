@@ -76,12 +76,25 @@ struct AppToolbar: View {
                 }
             }
 
-            if writingStats.showStats {
-                WritingStatsLabel(words: writingStats.words,
-                                  wordsToday: writingStats.wordsToday,
-                                  readingMinutes: writingStats.readingMinutes,
-                                  goal: writingStats.pageGoalWords,
-                                  progress: writingStats.goalProgress)
+            // ── Status-Cluster (rechts) — von den Navigations-/Aktionselementen
+            // durch einen feinen Trenner abgesetzt: links „wo bin ich / was tue
+            // ich", rechts „Zustand" (gesichert / Wörter / Sync). Save-Indikator
+            // und Schreibstatistik beziehen sich auf die offene Seite — ohne Seite
+            // sind sie sinnlos („0 Wörter") und bleiben darum ausgeblendet; nur der
+            // (globale) Sync-Status steht dann rechts. Der Trenner erscheint nur,
+            // wenn links davon ein seitenbezogenes Element sitzt.
+            if library.openPageId != nil {
+                ToolbarSeparator()
+
+                SaveStateLabel(dirty: library.openPageDirty)
+
+                if writingStats.showStats {
+                    WritingStatsLabel(words: writingStats.words,
+                                      wordsToday: writingStats.wordsToday,
+                                      readingMinutes: writingStats.readingMinutes,
+                                      goal: writingStats.pageGoalWords,
+                                      progress: writingStats.goalProgress)
+                }
             }
 
             SyncStatusLabel(status: sync.status,
@@ -196,6 +209,39 @@ private struct ToolbarIconButton: View {
     }
 }
 
+/// Feiner vertikaler Trenner — gruppiert den Status-Cluster (rechts) optisch
+/// gegen die Navigation/Aktionen und gibt der sonst flachen, gleich-lauten Reihe
+/// eine Hierarchie.
+private struct ToolbarSeparator: View {
+    var body: some View {
+        Rectangle()
+            .fill(BrandColor.faint.opacity(0.7))
+            .frame(width: 1, height: 18)
+            .padding(.horizontal, 2)
+            .accessibilityHidden(true)
+    }
+}
+
+/// Lokaler Save-Zustand der offenen Seite (local-first) — bewusst getrennt vom
+/// Server-Sync (`SyncStatusLabel`). Beantwortet die für eine Offline-Schreib-App
+/// zentrale Frage „ist mein Text sicher?": `dirty` = Änderung offen, wird gleich
+/// automatisch lokal gesichert; sonst = lokal gesichert. Sehr dezent (Icon +
+/// Tooltip), um beim Schreiben nicht abzulenken.
+struct SaveStateLabel: View {
+    let dirty: Bool
+
+    var body: some View {
+        Image(systemName: dirty ? "circlebadge.fill" : "checkmark")
+            .font(.system(size: dirty ? 9 : 11, weight: .semibold))
+            // Offene Änderung → Marken-Gold (es passiert gleich etwas);
+            // gesichert → ruhig zurückgenommen.
+            .foregroundStyle(dirty ? BrandColor.accent : BrandColor.faint)
+            .frame(width: 16)
+            .help(dirty ? t("save.tip.dirty") : t("save.tip.saved"))
+            .accessibilityLabel(dirty ? t("save.dirty") : t("save.saved"))
+    }
+}
+
 /// Lebende Schreibstatistik für die Toolbar: Wortzahl, heute geschriebene Wörter
 /// und Lesezeit, plus eine schlanke Fortschrittsleiste, wenn ein Seitenziel
 /// gesetzt ist. Der Tooltip nennt zusätzlich die Zeichenzahl bzw. den Zielwert.
@@ -221,7 +267,9 @@ struct WritingStatsLabel: View {
                 ProgressView(value: progress)
                     .progressViewStyle(.linear)
                     .frame(width: 48)
-                    .tint(progress >= 1 ? .green : BrandColor.muted)
+                    // Ziel erreicht → Marken-Gold (Akzent) statt generischem Grün;
+                    // darunter dezent gedämpft.
+                    .tint(progress >= 1 ? BrandColor.accent : BrandColor.muted)
             }
         }
         .font(BrandFont.sans(11))

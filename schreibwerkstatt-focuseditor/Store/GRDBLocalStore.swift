@@ -171,6 +171,22 @@ final class GRDBLocalStore: LocalStore {
         }
     }
 
+    func pageIdsWithoutBook() async throws -> [String] {
+        try await dbQueue.read { db in
+            try String.fetchAll(db, sql: "SELECT id FROM page WHERE bookId IS NULL")
+        }
+    }
+
+    func assignBook(pageId: String, bookId: Int, chapterId: Int?) async throws {
+        try await dbQueue.write { db in
+            // Nur Metadaten korrigieren — Inhalt/Stempel bleiben unangetastet.
+            guard var page = try StoredPage.fetchOne(db, key: pageId) else { return }
+            page.bookId = bookId
+            if let chapterId { page.chapterId = chapterId }
+            try page.update(db)
+        }
+    }
+
     // MARK: - Hilfen
 
     /// Epoch-Millisekunden — gleiche Einheit wie `Date.now()` in der WebView.

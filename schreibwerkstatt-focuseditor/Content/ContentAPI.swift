@@ -110,6 +110,24 @@ final class ContentAPI {
         Self.flatten(try await tree(bookId: bookId))
     }
 
+    /// Tree → flache `(Seiten-ID, Kapitel-ID)`-Liste über ALLE Seiten des Buchs
+    /// (inkl. Top-Pages). Für Delete-Reconcile (Soll-IDs) und Waisen-Backfill
+    /// (Buch-/Kapitel-Zuordnung) — autoritative Seite→Buch-Zuordnung des Servers.
+    static func flattenTreePages(_ tree: BookTreeDTO) -> [(id: Int, chapterId: Int?)] {
+        var out: [(id: Int, chapterId: Int?)] = []
+
+        func walk(_ chapters: [TreeChapterDTO]) {
+            for ch in chapters {
+                for p in ch.pages { out.append((id: p.id, chapterId: p.chapter_id ?? ch.id)) }
+                walk(ch.subchapters)
+            }
+        }
+
+        walk(tree.chapters)
+        for p in tree.topPages { out.append((id: p.id, chapterId: p.chapter_id)) }
+        return out
+    }
+
     /// Tree → depth-first-Liste (Pure-Funktion, für Tests/Wiederverwendung).
     static func flatten(_ tree: BookTreeDTO) -> [PagePickerRow] {
         var rows: [PagePickerRow] = []

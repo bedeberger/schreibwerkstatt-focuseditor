@@ -79,6 +79,19 @@ protocol LocalStore: AnyObject {
     /// sicher, dass keine ungepushte/ungespeicherte Änderung verloren geht.
     func deletePage(id: String) async throws
 
+    /// IDs aller Seiten ohne Buch-Zuordnung (`bookId == nil`). So eine Seite
+    /// entsteht z. B. übers Einzelseiten-Nachladen der Bridge (`/content/pages/:id`
+    /// liefert kein book_id, anders als der Sync-Pull) und wäre ohne Buch für den
+    /// buch-skopierten Pull/Picker unsichtbar. Der Delete-Reconcile gleicht sie
+    /// gegen die Buch-Trees ab und trägt das Buch via `assignBook` nach.
+    func pageIdsWithoutBook() async throws -> [String]
+
+    /// Trägt einer bereits gespiegelten Seite ihr Buch (+ optional Kapitel) nach —
+    /// reine Metadaten-Korrektur: HTML, `updatedAt` und `baseUpdatedAt` bleiben
+    /// unangetastet (datenverlust-sicher, auch bei dirty/ungepushten Seiten).
+    /// No-op, wenn die Seite (noch) nicht im Spiegel liegt.
+    func assignBook(pageId: String, bookId: Int, chapterId: Int?) async throws
+
     /// Wechselt den persistenten Spiegel auf den aktuell konfigurierten Server
     /// (Per-Server-Namespace). In-Place: die Objekt-Identität bleibt erhalten,
     /// nur die zugrundeliegende Datei wechselt — bestehende Referenzen (z. B. die
@@ -218,6 +231,18 @@ final class InMemoryLocalStore: LocalStore {
     func deletePage(id: String) async throws {
         pages.removeValue(forKey: id)
         outbox.removeAll { $0.pageId == id }
+        persistSnapshot()
+    }
+
+    func pageIdsWithoutBook() async throws -> [String] {
+        pages.values.filter { $0.bookId == nil }.map(\.id)
+    }
+
+    func assignBook(pageId: String, bookId: Int, chapterId: Int?) async throws {
+        guard var page = pages[pageId] else { return }
+        page.bookId = bookId
+        if let chapterId { page.chapterId = chapterId }
+        pages[pageId] = page
         persistSnapshot()
     }
 

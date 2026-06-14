@@ -532,6 +532,10 @@ enum WebAssets {
                     '  font-family: var(--sw-font-family, ui-serif, Georgia, serif) !important;',
                     '  max-width: var(--sw-measure, none) !important;',
                     '  margin-inline: auto !important;',
+                    // Schreib-Caret in Marken-Gold — ein dezenter Identitäts-
+                    // Akzent genau dort, wo geschrieben wird. Ein Ton, der auf
+                    // hellem wie dunklem Papier trägt (kein Theme-Switch nötig).
+                    '  caret-color: #b08d3f !important;',
                     '}',
                     // Papier-Ton nur, wenn gesetzt — sonst bleibt die native,
                     // transparente Brand-Fläche (Light/Dark) sichtbar.

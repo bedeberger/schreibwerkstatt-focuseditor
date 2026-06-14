@@ -644,9 +644,13 @@ final class SyncEngine: ObservableObject {
         if let last = lastReconcileAt, now.timeIntervalSince(last) < reconcileInterval { return }
         lastReconcileAt = now
 
+        // Verwaiste Seiten (bookId == nil) einmal ermitteln — der Buch-Abgleich
+        // unten trägt ihr Buch nach, sobald ein Tree sie als seine Seite ausweist.
+        let orphans = Set((try? await store.pageIdsWithoutBook()) ?? [])
+
         for bookId in stateStore.state.bookIds {
             do {
-                try await reconcileBookDeletes(bookId)
+                try await reconcileBookDeletes(bookId, orphans: orphans)
             } catch {
                 // Ein Tree-Fehler (offline/Serverproblem) darf die anderen Bücher
                 // nicht blockieren und nichts löschen — beim nächsten Mal erneut.
@@ -655,23 +659,40 @@ final class SyncEngine: ObservableObject {
         }
     }
 
-    private func reconcileBookDeletes(_ bookId: Int) async throws {
-        // Soll: alle Seiten, die der Server-Tree für das Buch kennt (vollständig —
-        // ensureTree nimmt auch ungeordnete Seiten auf, kein False-Positive).
-        let soll = Set(try await content.pickerRows(bookId: bookId).map { String($0.id) })
-        // Ist: lokal gespiegelte Seiten dieses Buchs.
-        let ist = try await store.list(bookId: bookId)
-        guard !ist.isEmpty else { return }
+    private func reconcileBookDeletes(_ bookId: Int, orphans: Set<String>) async throws {
+        // Buch-Tree EINMAL holen → Soll-IDs (Delete-Reconcile) + Kapitel-Zuordnung
+        // (Waisen-Backfill) aus derselben Antwort.
+        let treePages = ContentAPI.flattenTreePages(try await content.tree(bookId: bookId))
+        // Soll: alle Seiten, die der Server-Tree für das Buch kennt.
+        let soll = Set(treePages.map { String($0.id) })
 
         // Datenverlust-Schutz: Ein leerer Tree ist verdächtig (transienter
         // Server-200 mit leerem Array, halb-deployter Endpoint, frische Buch-ID)
         // und würde JEDE lokale, saubere Seite löschen — die der cursor-
         // inkrementelle Pull NICHT von selbst zurückbringt. In dem Fall lieber
-        // nichts löschen und beim nächsten Lauf erneut prüfen.
+        // nichts tun und beim nächsten Lauf erneut prüfen.
         guard !soll.isEmpty else {
-            log.notice("Reconcile Buch \(bookId, privacy: .public) übersprungen: leerer Server-Tree, behalte \(ist.count, privacy: .public) lokale Seite(n)")
+            log.notice("Reconcile Buch \(bookId, privacy: .public) übersprungen: leerer Server-Tree")
             return
         }
+
+        // Waisen-Backfill: Seiten ohne Buch, die dieser Tree als seine ausweist,
+        // ihr Buch (+ Kapitel) nachtragen. Reine Metadaten — kein Datenverlust,
+        // greift auch bei dirty/ungepushten Seiten, die der Pull überspringt.
+        // (Ursache: `/content/pages/:id` im Bridge-Nachladen liefert kein book_id.)
+        if !orphans.isEmpty {
+            let chapterOf = Dictionary(treePages.map { (String($0.id), $0.chapterId) },
+                                       uniquingKeysWith: { first, _ in first })
+            for pid in orphans where soll.contains(pid) {
+                try await store.assignBook(pageId: pid, bookId: bookId, chapterId: chapterOf[pid] ?? nil)
+                log.info("Reconcile: verwaiste Seite \(pid, privacy: .public) Buch \(bookId, privacy: .public) zugeordnet")
+            }
+        }
+
+        // Ist: lokal gespiegelte Seiten dieses Buchs (nach dem Backfill, damit
+        // eben zugeordnete Waisen mit erfasst sind).
+        let ist = try await store.list(bookId: bookId)
+        guard !ist.isEmpty else { return }
 
         let pending = Set(try await store.pendingOutbox().map(\.pageId))
 

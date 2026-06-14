@@ -28,6 +28,9 @@ final class LibraryStore: ObservableObject {
     /// Aktuell im Editor geöffnete Seite (von der Bridge gemeldet bzw. per Picker
     /// gewählt) — treibt die Seiten-Anzeige in der Toolbar.
     @Published private(set) var openPageId: Int?
+    /// Hat die offene Seite ungespeicherte (lokale) Änderungen? Treibt den
+    /// Save-Indikator in der Toolbar (von der Bridge via `editorState` gemeldet).
+    @Published private(set) var openPageDirty = false
     /// Zähler, der hochzählt, wenn die View den Seiten-Picker öffnen soll —
     /// beim echten Buchwechsel und beim bewussten Schliessen der Seite (damit der
     /// Nutzer direkt die nächste Seite wählt). Reines Event-Signal, kein Zustand.
@@ -61,6 +64,10 @@ final class LibraryStore: ObservableObject {
         bridge.onOpenPageChange = { [weak self] pageId in
             self?.openPageId = pageId.flatMap(Int.init)
         }
+        // Dirty-Zustand der offenen Seite → Save-Indikator in der Toolbar.
+        bridge.onOpenDirtyChange = { [weak self] dirty in
+            self?.openPageDirty = dirty
+        }
     }
 
     /// Anzeigename des aktiven Buchs (für die Toolbar).
@@ -85,6 +92,16 @@ final class LibraryStore: ObservableObject {
               let chapter = pages.first(where: { $0.id == id })?.chapterName,
               !chapter.isEmpty else { return nil }
         return chapter
+    }
+
+    /// Die zuletzt gerätelokal geöffnete Seite (pro Server), aufgelöst gegen die
+    /// aktuelle Seitenliste — Grundlage für „Zuletzt fortsetzen" im Leerzustand.
+    /// `nil`, wenn nie eine Seite geöffnet wurde oder sie nicht (mehr) im aktiven
+    /// Buch liegt.
+    var lastOpenPageRow: PagePickerRow? {
+        guard let raw = UserDefaults.standard.string(forKey: EditorBridge.lastOpenPageKey),
+              let id = Int(raw) else { return nil }
+        return pages.first { $0.id == id }
     }
 
     // MARK: - Laden
@@ -169,6 +186,7 @@ final class LibraryStore: ObservableObject {
     /// Hebt die gewählte Seite über die Bridge in den Editor.
     func openPage(_ row: PagePickerRow) {
         openPageId = row.id   // sofortige Toolbar-Anzeige; editorState bestätigt später
+        openPageDirty = false // frisch geöffnete Seite ist sauber
         Task {
             let ok = await bridge.openPage(pageId: String(row.id))
             if !ok { log.notice("openPage ohne WebView — Editor noch nicht bereit") }
@@ -198,6 +216,7 @@ final class LibraryStore: ObservableObject {
         books = []
         pages = []
         openPageId = nil
+        openPageDirty = false
         lastError = nil
         let saved = UserDefaults.standard.integer(forKey: defaultsKey)
         activeBookId = saved == 0 ? nil : saved

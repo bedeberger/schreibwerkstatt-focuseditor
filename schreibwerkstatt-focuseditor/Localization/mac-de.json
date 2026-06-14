@@ -6,6 +6,9 @@
   "content.loadingEditor": "Editor wird geladen …",
   "content.editorUnavailableTitle": "Editor konnte nicht geladen werden",
   "content.retry": "Erneut versuchen",
+  "empty.noPageOpen": "Keine Seite geöffnet",
+  "empty.openPage": "Seite öffnen",
+  "empty.continueLast": "Weiterschreiben: {name}",
 
   "settings.tab.general": "Allgemein",
   "settings.tab.appearance": "Darstellung",
@@ -188,6 +191,10 @@
   "toolbar.tip.offline": "Offline — keine Verbindung",
   "toolbar.tip.serverUnreachable": "Server nicht erreichbar — lokale Änderungen sind sicher gespeichert und werden synchronisiert, sobald der Server wieder antwortet",
   "toolbar.tip.notSynced": "Noch nicht synchronisiert",
+  "save.dirty": "Ungespeichert",
+  "save.saved": "Gesichert",
+  "save.tip.dirty": "Nicht gespeicherte Änderung — wird automatisch lokal gesichert",
+  "save.tip.saved": "Lokal gesichert",
 
   "shortcuts.section.app": "App & Fenster",
   "shortcuts.section.pages": "Seiten",
@@ -217,7 +224,10 @@
 
   "picker.searchPage": "Seite suchen …",
   "picker.noBookSelected": "Kein Buch gewählt",
-  "picker.noPages": "Keine Seiten",
+  "picker.noPages": "Keine Seiten in diesem Buch",
+  "picker.noPagesHint": "Lege im Web eine Seite an oder wähle ein anderes Buch.",
+  "picker.noBookHint": "Wähle links in der Leiste ein Buch.",
+  "picker.loadingPages": "Lade Seiten …",
   "picker.untitled": "Ohne Titel",
   "picker.openBadge": "offen",
 

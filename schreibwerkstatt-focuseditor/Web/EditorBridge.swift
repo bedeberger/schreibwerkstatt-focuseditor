@@ -90,6 +90,12 @@ final class EditorBridge: NSObject, WKScriptMessageHandlerWithReply, EditorCoord
     }
     /// Benachrichtigung bei Wechsel der offenen Seite (treibt die Toolbar-Anzeige).
     var onOpenPageChange: ((String?) -> Void)?
+    /// Benachrichtigung, wenn sich der Dirty-Zustand der OFFENEN Seite ändert
+    /// (treibt den lokalen Save-Indikator in der Toolbar). `true` = ungespeicherte
+    /// Änderung offen, `false` = lokal gesichert / keine Seite offen.
+    var onOpenDirtyChange: ((Bool) -> Void)?
+    /// Zuletzt gemeldeter Dirty-Zustand der offenen Seite (Entprellung der Events).
+    private var lastNotifiedDirty = false
     /// Lebende Schreibstatistik (pageId, Wörter, Zeichen) aus der WebView —
     /// treibt die Stats-Anzeige, das Schreibziel und den Tages-Delta. Die pageId
     /// erlaubt dem Store, „heute geschrieben" PRO Seite zu führen. Gesetzt vom
@@ -187,6 +193,7 @@ final class EditorBridge: NSObject, WKScriptMessageHandlerWithReply, EditorCoord
                 // damit eine geschlossene/leere Fläche die Erinnerung nicht löscht.
                 UserDefaults.standard.set(pageId, forKey: Self.lastOpenPageKey)
             }
+            notifyDirty()
             return nil
 
         case "lastOpenPage":
@@ -390,6 +397,15 @@ final class EditorBridge: NSObject, WKScriptMessageHandlerWithReply, EditorCoord
         dirtyPages.contains(pageId)
     }
 
+    /// Meldet den Dirty-Zustand der OFFENEN Seite an Beobachter (Toolbar-Save-
+    /// Indikator), aber nur bei echtem Wechsel. Keine offene Seite → `false`.
+    private func notifyDirty() {
+        let dirty = openPageId.map { dirtyPages.contains($0) } ?? false
+        guard dirty != lastNotifiedDirty else { return }
+        lastNotifiedDirty = dirty
+        onOpenDirtyChange?(dirty)
+    }
+
     /// Lädt die saubere, offene Seite still in der WebView neu (`serverUpdate`-Event).
     func reloadPage(pageId: String, html: String, baseUpdatedAt: Double) async {
         guard let webView else { return }
@@ -436,6 +452,7 @@ final class EditorBridge: NSObject, WKScriptMessageHandlerWithReply, EditorCoord
     func closePage() async {
         guard let webView else { return }
         openPageId = nil
+        notifyDirty()   // keine Seite offen → Save-Indikator zurücksetzen
         do {
             _ = try await webView.callAsyncJavaScript(
                 "window.__focusBridge._receive('closePage', {});",

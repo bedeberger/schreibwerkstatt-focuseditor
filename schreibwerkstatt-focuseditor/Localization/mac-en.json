@@ -6,6 +6,9 @@
   "content.loadingEditor": "Loading editor …",
   "content.editorUnavailableTitle": "Couldn't load the editor",
   "content.retry": "Try again",
+  "empty.noPageOpen": "No page open",
+  "empty.openPage": "Open a page",
+  "empty.continueLast": "Continue: {name}",
 
   "settings.tab.general": "General",
   "settings.tab.appearance": "Appearance",
@@ -188,6 +191,10 @@
   "toolbar.tip.offline": "Offline — no connection",
   "toolbar.tip.serverUnreachable": "Server unreachable — local changes are saved safely and will sync once the server responds again",
   "toolbar.tip.notSynced": "Not synced yet",
+  "save.dirty": "Unsaved",
+  "save.saved": "Saved",
+  "save.tip.dirty": "Unsaved change — saved locally on its own in a moment",
+  "save.tip.saved": "Saved locally",
 
   "shortcuts.section.app": "App & window",
   "shortcuts.section.pages": "Pages",
@@ -217,7 +224,10 @@
 
   "picker.searchPage": "Search page …",
   "picker.noBookSelected": "No book selected",
-  "picker.noPages": "No pages",
+  "picker.noPages": "No pages in this book",
+  "picker.noPagesHint": "Create a page on the web, or pick another book.",
+  "picker.noBookHint": "Choose a book in the toolbar on the left.",
+  "picker.loadingPages": "Loading pages …",
   "picker.untitled": "Untitled",
   "picker.openBadge": "open",
 

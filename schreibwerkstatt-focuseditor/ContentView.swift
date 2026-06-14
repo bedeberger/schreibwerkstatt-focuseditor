@@ -82,6 +82,7 @@ private struct EditorHostView: View {
         }
         .animation(.easeOut(duration: 0.12), value: pickerOpen)
         .animation(.easeOut(duration: 0.18), value: toolbarRevealed)
+        .animation(.easeOut(duration: 0.18), value: library.openPageId)
         .task { await editorBundle.ensureReady() }
         .task { await library.loadBooks() }
         // Beim Ausschalten von Auto-Hide die Toolbar wieder dauerhaft zeigen.
@@ -130,6 +131,15 @@ private struct EditorHostView: View {
                         .onHover { if $0 { revealToolbar() } }
                 }
 
+                // Ruhiger Leerzustand: keine Seite offen und kein Picker — statt
+                // der schwarzen WebView-Fläche eine zentrierte Karte mit Kontext
+                // (Buch) und dem klaren nächsten Schritt (Seite öffnen / zuletzt
+                // fortsetzen). Deckt die WebView voll ab, damit nichts durchscheint.
+                if library.openPageId == nil && !pickerOpen {
+                    EmptyEditorView(openPicker: { pickerOpen = true })
+                        .transition(.opacity)
+                }
+
                 if pickerOpen {
                     PagePickerOverlay(isOpen: $pickerOpen)
                         .transition(.opacity.combined(with: .scale(scale: 0.97)))
@@ -147,6 +157,104 @@ private struct EditorHostView: View {
             guard !Task.isCancelled else { return }
             if autoHideToolbar && chromeAllowed { toolbarRevealed = false }
         }
+    }
+}
+
+/// Ruhiger Leerzustand, wenn keine Seite geöffnet ist (z. B. nach „Seite
+/// schliessen" und Abbruch des Pickers). Bewusst still und markengerecht — kein
+/// Dashboard: nur Buchkontext und der nächste Schritt. Zwei Wege zurück ins
+/// Schreiben: die zuletzt bearbeitete Seite fortsetzen (primär, wenn bekannt)
+/// oder den Seiten-Picker öffnen (⌘O greift parallel über die Toolbar).
+private struct EmptyEditorView: View {
+    @EnvironmentObject private var library: LibraryStore
+    let openPicker: () -> Void
+
+    var body: some View {
+        ZStack {
+            BrandColor.bg.ignoresSafeArea()
+            VStack(spacing: 18) {
+                Image(systemName: "book.closed")
+                    .font(.system(size: 30, weight: .light))
+                    .foregroundStyle(BrandColor.faint)
+
+                VStack(spacing: 5) {
+                    if let book = library.activeBookName {
+                        Text(book)
+                            .font(BrandFont.serif(17))
+                            .foregroundStyle(BrandColor.muted)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
+                    Text(t("empty.noPageOpen"))
+                        .font(BrandFont.sans(13))
+                        .foregroundStyle(BrandColor.faint)
+                }
+
+                VStack(spacing: 10) {
+                    if let last = library.lastOpenPageRow {
+                        EmptyStateButton(title: t("empty.continueLast", ["name": last.name]),
+                                         prominent: true) {
+                            library.openPage(last)
+                        }
+                    }
+                    EmptyStateButton(title: t("empty.openPage"),
+                                     shortcut: "⌘O",
+                                     prominent: library.lastOpenPageRow == nil,
+                                     action: openPicker)
+                }
+                .frame(maxWidth: 320)
+            }
+            .padding(40)
+        }
+        .frame(minWidth: 640, minHeight: 480)
+    }
+}
+
+/// Knopf des Leerzustands: ein prominenter Akzent-Knopf (primärer Weg zurück
+/// ins Schreiben) oder eine zurückgenommene Variante; optional mit Kürzel-Chip.
+private struct EmptyStateButton: View {
+    let title: String
+    var shortcut: String? = nil
+    let prominent: Bool
+    let action: () -> Void
+
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Text(title)
+                    .font(BrandFont.sans(13))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                if let shortcut {
+                    Text(shortcut)
+                        .font(BrandFont.sans(11))
+                        .foregroundStyle(prominent ? BrandColor.bg.opacity(0.7) : BrandColor.faint)
+                }
+            }
+            .foregroundStyle(prominent ? BrandColor.bg : BrandColor.muted)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 9)
+            .padding(.horizontal, 14)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(background)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(prominent ? .clear : BrandColor.faint.opacity(0.8), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+    }
+
+    private var background: Color {
+        if prominent {
+            return hovering ? BrandColor.accent.opacity(0.85) : BrandColor.accent
+        }
+        return hovering ? BrandColor.faint.opacity(0.25) : .clear
     }
 }
 
