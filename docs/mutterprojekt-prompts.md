@@ -2,8 +2,15 @@
 
 Diese Prompts sind für eine Claude-Code-Session im **Hauptrepo**
 `/Users/bd/ClaudeProjects/schreibwerkstatt` gedacht (SSoT des Focus-Editors).
-Sie ermöglichen drei Einstellungen im macOS-Client (`schreibwerkstatt-focuseditor`),
-die heute serverseitig/Editor-seitig nicht steuerbar sind.
+Sie ermöglichen zwei Einstellungen im macOS-Client (`schreibwerkstatt-focuseditor`),
+die sich **nicht** sauber client-seitig umsetzen lassen (Server-Proxy- bzw.
+JS-Scroll-Interna).
+
+> **Stand:** Von den ursprünglich vier offenen Punkten sind zwei bereits
+> **client-seitig erledigt** (kein Hauptrepo-Eingriff nötig): die
+> **Auto-Save-Verzögerung** (`mountStandaloneFocus({ autosaveMs })` existierte
+> schon) und die **Fokus-Abdunklung** (Client-CSS-Override-Schicht, spiegelt den
+> `focus-mode.css`-Selektor). Es bleiben die **zwei** Prompts unten.
 
 **Gemeinsamer Kontext für alle Prompts:** Der macOS-Client lädt den Focus-Editor
 nicht gebündelt, sondern zieht ihn per OTA-ZIP (`GET /content/editor-bundle.zip`,
@@ -94,56 +101,25 @@ Picker (Mitte / Oberes Drittel) im „Typografie"- oder „Fokus"-Bereich.
 
 ---
 
-## Prompt 3 — Fokus-Dimm-Stärke über CSS-Variable steuerbar
+## Bereits client-seitig erledigt (kein Hauptrepo-Prompt nötig)
 
-**Aufgabe:** Die Abdunklung der nicht-aktiven Absätze im Fokus-Modus über eine
-**fokus-eigene** CSS-Custom-Property steuerbar machen, ohne das globale Token
-`--opacity-faint` (wird auch anderswo genutzt) zu verbiegen und ohne den heutigen
-Default zu ändern.
+### Fokus-Abdunklung
+Der Client legt eine CSS-Override-Schicht (`<style id="sw-native-typography">` in
+`WebAssets.indexHTML`) über das unveränderte Editor-CSS und spiegelt dafür den
+Selektor aus `public/css/editor/focus/focus-mode.css` (~Z. 235, nicht-aktive
+Blöcke ausser `typewriter-only`) mit `opacity: var(--sw-focus-dim) !important`,
+gegated über `:root[data-sw-dim="custom"]`. Per Default (Schalter aus) wird nichts
+überschrieben → Editor-Vorgabe bleibt theme-korrekt. Steuerung: Slider „Fokus-
+Abdunklung" im „Typografie"-Tab.
+*Optionaler Hauptrepo-Cleanup (nicht nötig):* den Selektor dort auf eine eigene
+Variable `--focus-dim-opacity` heben (Default `var(--opacity-faint)`), dann könnte
+der Client die Variable setzen statt den Selektor zu spiegeln — robuster gegen
+spätere Klassennamen-Änderungen.
 
-**Heutiger Stand (verifiziert):**
-- `public/css/editor/focus/focus-mode.css` ~Z. 235–241:
-  ```css
-  .focus-editor.is-active:not(.focus-mode--typewriter-only) .focus-editor__content
-    :is(p,h1,h2,h3,h4,h5,h6,blockquote,li,pre):not(.focus-paragraph-active):not(.focus-paragraph-near) {
-    opacity: var(--opacity-faint);   /* ≈ 0.35 */
-  }
-  ```
-- ~Z. 251–253: `.focus-paragraph-near { opacity: 0.7; }` (Window-3-Nachbarn, hartkodiert).
-- ~Z. 262–267: Sentence-Dim via `::highlight(focus-sentence-dim)` mit hartkodiertem
-  `rgba(...)` — separat, optional.
-- `focus-mode.css` ist bereits in `lib/editor-bundle.js` `CSS_FILES` gelistet →
-  Änderungen kommen automatisch ins OTA-Bundle.
-
-**Umsetzung:**
-1. Fokus-scoped Variablen mit Default = heutigem Wert einführen, z. B. am
-   `.focus-editor`-Wurzelselektor:
-   ```css
-   .focus-editor {
-     --focus-dim-opacity: var(--opacity-faint);
-     --focus-near-opacity: 0.7;
-   }
-   ```
-2. In den beiden Regeln `var(--opacity-faint)` → `var(--focus-dim-opacity)` und
-   `0.7` → `var(--focus-near-opacity)` ersetzen.
-3. (Optional, falls gewünscht) Sentence-Dim ebenfalls auf eine Variable heben.
-
-**Akzeptanzkriterien:**
-- Ohne Override: visuell identisch (Defaults = heutige Werte).
-- Setzt der Client `--focus-dim-opacity` (z. B. auf `:root`/`.focus-editor`),
-  ändert sich nur die Fokus-Abdunklung — `--opacity-faint` bleibt unberührt.
-
-**Client-Gegenstück:** Der Client hat bereits eine Override-Schicht
-(`<style id="sw-native-typography">` + `:root`-Custom-Properties, siehe
-`WebAssets.indexHTML`). Er setzt dann einfach `--focus-dim-opacity` dort; ein
-Slider „Fokus-Abdunklung" im „Typografie"-Tab treibt den Wert.
-
----
-
-## Nicht nötig: Auto-Save-Verzögerung (bereits unterstützt)
-
+### Auto-Save-Verzögerung
 `mountStandaloneFocus({ mount, bridge, autosaveMs = DEFAULT_AUTOSAVE_MS })`
 (`public/js/editor/focus/standalone.js` ~Z. 23, 97–109; Default `1500` ms) nimmt
-die Debounce-Zeit **schon heute** als Parameter. Die Auto-Save-Verzögerung ist
-darum **rein client-seitig** umsetzbar (Wert per Settings → an `mountStandaloneFocus`
-übergeben) — **kein Mutterprojekt-Prompt erforderlich.**
+die Debounce-Zeit **schon heute** als Parameter. Der Client liest die lokale
+Vorliebe (`EditorBehaviorPrefs.autosaveMs`) via Bridge-Boot-Pull (`editorBehavior`)
+und reicht sie an `mountStandaloneFocus` durch. Steuerung: Slider „Automatisches
+Speichern" im „Schreiben"-Tab.

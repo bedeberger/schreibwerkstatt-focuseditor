@@ -136,7 +136,6 @@ private struct GeneralSettingsTab: View {
 private struct AppearanceSettingsTab: View {
     @EnvironmentObject private var appearance: AppearanceController
     @EnvironmentObject private var focus: FocusController
-    @AppStorage("kiosk.startInKiosk") private var startInKiosk = false
     @AppStorage("toolbar.autoHide") private var autoHideToolbar = false
 
     var body: some View {
@@ -170,9 +169,8 @@ private struct AppearanceSettingsTab: View {
             }
 
             Section("Fenster") {
-                Toggle("Beim Start in den ablenkungsfreien Vollbild", isOn: $startInKiosk)
                 Toggle("Toolbar bei Inaktivität ausblenden", isOn: $autoHideToolbar)
-                Text("Der ablenkungsfreie Vollbild blendet Menüleiste und Dock aus (⎋ verlässt ihn). Die Auto-Ausblendung zeigt die Toolbar erst wieder, wenn der Zeiger an den oberen Rand fährt.")
+                Text("Für ablenkungsfreies Schreiben den nativen Vollbild nutzen (⌃⌘F) — dort blendet sich die Toolbar automatisch aus. Die Auto-Ausblendung zeigt die Toolbar im Fenster erst wieder, wenn der Zeiger an den oberen Rand fährt.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -251,6 +249,27 @@ private struct TypographySettingsTab: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
+            Section("Fokus-Abdunklung") {
+                Toggle("Stärke selbst festlegen", isOn: $typography.focusDimEnabled)
+                if typography.focusDimEnabled {
+                    LabeledContent("Abdunklung") {
+                        HStack {
+                            // Slider von „dezent" (hohe Opazität) nach „stark"
+                            // (niedrige Opazität) — invertiert, damit rechts = stärker.
+                            Slider(value: dimStrength, in: 0...1)
+                            Text(String(format: "%.0f %%", (1 - typography.focusDimOpacity) * 100))
+                                .font(.callout.monospacedDigit())
+                                .foregroundStyle(.secondary)
+                                .frame(width: 52, alignment: .trailing)
+                        }
+                    }
+                }
+                Text("Im Fokus-Modus blendet der Editor die nicht-aktiven Absätze ab. „Aus“ nutzt die Editor-Vorgabe (theme-korrekt); eingeschaltet bestimmst du die Stärke selbst.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
             Section {
                 HStack {
                     Spacer()
@@ -259,6 +278,15 @@ private struct TypographySettingsTab: View {
             }
         }
         .formStyle(.grouped)
+    }
+
+    /// Slider 0…1 (links dezent, rechts stark) ⇄ Opazität (0.6…0.05).
+    private var dimStrength: Binding<Double> {
+        let range = TypographyController.focusDimRange
+        return Binding(
+            get: { (range.upperBound - typography.focusDimOpacity) / (range.upperBound - range.lowerBound) },
+            set: { typography.focusDimOpacity = range.upperBound - $0 * (range.upperBound - range.lowerBound) }
+        )
     }
 
     /// Toggle koppelt „begrenzen" an measure==0 (aus) bzw. den letzten Wert.

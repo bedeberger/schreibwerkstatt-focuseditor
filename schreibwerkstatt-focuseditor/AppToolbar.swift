@@ -8,8 +8,8 @@
 //  randlos (`fullSizeContentView`), darum die Aussparung links für die Ampeln.
 //
 //  Inhalt: Buch-Picker (links), Öffnen (⌘O), Sync-Status und ein Überlauf-Menü
-//  (Darstellung + Abmelden) rechts. Im nativen Vollbild wird die Leiste vom
-//  Host komplett ausgeblendet.
+//  (Darstellung + Abmelden) rechts. Die Leiste bleibt immer sichtbar (auch im
+//  Vollbild); nur die Auto-Hide-Option blendet sie bei Inaktivität aus.
 //
 
 import SwiftUI
@@ -20,7 +20,7 @@ struct AppToolbar: View {
     @EnvironmentObject private var sync: SyncEngine
     @EnvironmentObject private var library: LibraryStore
     @EnvironmentObject private var appearance: AppearanceController
-    @EnvironmentObject private var fullscreen: KioskFullscreen
+    @EnvironmentObject private var windowChrome: WindowChromeController
     @EnvironmentObject private var writingStats: WritingStatsStore
 
     /// Steuert den beschwörbaren Seiten-Picker (⌘O) im Host.
@@ -80,7 +80,7 @@ struct AppToolbar: View {
 
             overflowMenu
         }
-        .padding(.leading, fullscreen.trafficLightInset)
+        .padding(.leading, windowChrome.trafficLightInset)
         .padding(.trailing, 16)
         .frame(height: 42)
         .frame(maxWidth: .infinity)

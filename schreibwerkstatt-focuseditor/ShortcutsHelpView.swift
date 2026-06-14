@@ -64,8 +64,7 @@ struct ShortcutsHelpView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 ShortcutSection(title: "App & Fenster", rows: [
-                    (["⌘", "⌃", "F"], "Ablenkungsfreier Vollbild ein/aus"),
-                    (["⎋"], "Vollbild verlassen"),
+                    (["⌃", "⌘", "F"], "Vollbild ein/aus (ablenkungsfrei)"),
                     (["⌘", "⇧", "S"], "Jetzt synchronisieren"),
                     (["⌘", ","], "Einstellungen öffnen"),
                     (["⌘", "?"], "Diese Tastaturkürzel-Hilfe"),

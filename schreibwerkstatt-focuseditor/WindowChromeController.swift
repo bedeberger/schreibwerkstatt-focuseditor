@@ -5,8 +5,9 @@
 //  Fenster-Chrome des randlosen Fensters: hält die Ampel-Buttons trotz
 //  `fullSizeContentView` sichtbar (über dem Content), misst ihren Einzug für die
 //  eigene Toolbar und beobachtet den **nativen** macOS-Vollbild (grüner Button /
-//  View ▸ Vollbild). Im nativen Vollbild blendet die Shell die Toolbar aus →
-//  ablenkungsfreies Schreiben (CLAUDE.md). Bewusst KEIN eigener Kiosk-Modus mehr.
+//  View ▸ Vollbild). Die Toolbar bleibt **immer** sichtbar — auch im Vollbild.
+//  Ablenkungsfreies Ausblenden macht allein die Auto-Hide-Option (Toolbar bei
+//  Inaktivität ausblenden), nicht mehr der Vollbild.
 //
 
 import SwiftUI
@@ -80,6 +81,14 @@ final class WindowChromeController: ObservableObject {
     /// unter den Ampel-Buttons. Idempotent (wird vom WindowAccessor mehrfach
     /// gereicht); die Ampel-Buttons bleiben sichtbar.
     private func applyBaseChrome(_ window: NSWindow) {
+        // Native Fenster-Tabs deaktivieren: ablenkungsfreies Schreiben auf genau
+        // einer Seite (CLAUDE.md) verträgt keine Tab-Leiste. Global ausschalten
+        // entfernt die View-Menüpunkte („Tab-Leiste einblenden", „Alle Tabs
+        // zeigen", „Fenster zusammenführen"), pro Fenster verhindert es das
+        // Zusammenführen in Tab-Gruppen.
+        NSWindow.allowsAutomaticWindowTabbing = false
+        window.tabbingMode = .disallowed
+
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
         // Titled-Stil + randloser Inhalt: ohne `.titled` zeigt macOS keine
@@ -135,20 +144,33 @@ final class WindowChromeController: ObservableObject {
         if trailing > 0 { trafficLightInset = trailing + 14 }
     }
 
+    /// Schaltet den nativen macOS-Vollbild um. Pendant zum grünen Ampel-Button /
+    /// ⌃⌘F als Menüpunkt — die Toolbar bleibt im Vollbild sichtbar, der Rückweg
+    /// in die normale Fensteransicht ist also auch über das Überlauf-Menü/Menü
+    /// jederzeit erreichbar.
+    func toggleFullscreen() {
+        window?.toggleFullScreen(nil)
+    }
+
     private func teardownFullscreenObservers() {
         for token in fullscreenObservers { NotificationCenter.default.removeObserver(token) }
         fullscreenObservers.removeAll()
     }
 
-    /// Reaktion auf nativen Vollbild-Wechsel: Ampel-Buttons aus-/einblenden und
-    /// Flag setzen, das die Toolbar in der SwiftUI-Hierarchie versteckt.
+    /// Reaktion auf nativen Vollbild-Wechsel. Die Toolbar bleibt jetzt auch im
+    /// Vollbild sichtbar (CLAUDE.md), darum werden die Ampel-Buttons **nicht**
+    /// mehr versteckt — im Vollbild verwaltet macOS die Titelleiste als
+    /// einblendbares Overlay selbst. Beim Verlassen das normale Chrome
+    /// (Buttons sichtbar, Titelleiste über dem Content) wiederherstellen.
     private func nativeFullscreenChanged(_ entered: Bool) {
-        if let window {
-            for kind in Self.buttons {
-                window.standardWindowButton(kind)?.isHidden = entered
-            }
-        }
         isNativeFullscreen = entered
+        if !entered, let window {
+            for kind in Self.buttons {
+                window.standardWindowButton(kind)?.isHidden = false
+            }
+            raiseTitlebar(window)
+            updateTrafficLightInset(window)
+        }
     }
 }
 

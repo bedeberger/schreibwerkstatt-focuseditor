@@ -57,6 +57,14 @@ struct schreibwerkstatt_focuseditorApp: App {
             core.sync.setActive(phase == .active)
         }
         .commands {
+            // Standard-Menüpunkte entfernen, die für eine Ein-Fenster-/Ein-Seiten-
+            // Schreib-Shell sinnlos sind: kein Dokumentmodell (kein „Neu"/„Sichern"),
+            // kein Import/Export (Inhalte fließen nur über Sync), keine Seitenleiste.
+            CommandGroup(replacing: .newItem) {}        // Neu / Neues Fenster
+            CommandGroup(replacing: .saveItem) {}       // Sichern / Sichern unter…
+            CommandGroup(replacing: .importExport) {}   // Import / Export
+            CommandGroup(replacing: .sidebar) {}        // Seitenleiste ein-/ausblenden
+
             // Manueller Light/Dark/System-Umschalter. Inline-Picker rendert
             // als Menüpunkte mit Häkchen beim aktiven Modus.
             CommandGroup(after: .toolbar) {
@@ -77,6 +85,19 @@ struct schreibwerkstatt_focuseditorApp: App {
                     }
                 }
                 .pickerStyle(.inline)
+            }
+
+            // Vollbild ein/aus (ablenkungsfrei). Eigener Menüpunkt, weil im
+            // Vollbild Toolbar UND Ampel-Buttons ausgeblendet sind → ohne
+            // sichtbaren Einstieg bliebe nur die auto-versteckte Menüleiste.
+            // Label folgt dem Zustand, damit der Rückweg klar benannt ist.
+            CommandGroup(after: .toolbar) {
+                Button(windowChrome.isNativeFullscreen
+                       ? "Vollbild verlassen (Fensteransicht)"
+                       : "Vollbild (ablenkungsfrei)") {
+                    windowChrome.toggleFullscreen()
+                }
+                .keyboardShortcut("f", modifiers: [.control, .command])
             }
 
             // Manueller Sync (⌘⇧S) — wirkt auch bei pausiertem/manuellem Modus.

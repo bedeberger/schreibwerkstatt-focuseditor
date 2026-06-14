@@ -59,11 +59,10 @@ private struct EditorHostView: View {
     @State private var toolbarRevealed = true
     @State private var hideTask: Task<Void, Never>?
 
-    /// Darf überhaupt Chrome (Toolbar) gezeigt werden? Im nativen Vollbild nie
-    /// (CLAUDE.md, „ablenkungsfreies Schreiben").
-    private var chromeAllowed: Bool {
-        !windowChrome.isNativeFullscreen
-    }
+    /// Die Toolbar wird **immer** gezeigt — auch im nativen Vollbild. Das
+    /// ablenkungsfreie Ausblenden übernimmt ausschließlich die „Toolbar bei
+    /// Inaktivität ausblenden"-Option (Auto-Hide), nicht mehr der Vollbild.
+    private var chromeAllowed: Bool { true }
 
     var body: some View {
         Group {
