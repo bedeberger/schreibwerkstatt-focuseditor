@@ -251,8 +251,10 @@ struct SyncStatusLabel: View {
             } else {
                 switch status {
                 case .syncing:
+                    // Nur ein dezenter Spinner an der Stelle des Idle-Icons —
+                    // kein Text, damit das ~3s-Polling die Toolbar nicht ständig
+                    // umbricht/flackert. Der Tooltip nennt weiterhin den Zustand.
                     ProgressView().controlSize(.small)
-                    Text(t("sync.state.syncing"))
                 case .offline:
                     Image(systemName: "wifi.slash").foregroundStyle(BrandColor.muted)
                     Text(t("sync.state.offline"))

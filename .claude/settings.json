@@ -1,0 +1,27 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "jq -r '.tool_input.file_path // empty' 2>/dev/null | grep -q '\\.swift$' && touch /tmp/swk-focuseditor-swift-pending; true"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "[ -f /tmp/swk-focuseditor-swift-pending ] || exit 0; rm -f /tmp/swk-focuseditor-swift-pending; cd /Users/bd/xcode-projects/schreibwerkstatt-focuseditor && if xcodebuild test -project schreibwerkstatt-focuseditor.xcodeproj -scheme schreibwerkstatt-focuseditor -destination 'platform=macOS' -quiet >/tmp/swk-focuseditor-test.log 2>&1; then echo '{\"systemMessage\":\"\\u2705 schreibwerkstatt-focuseditor: Tests gr\\u00fcn\"}'; else echo '{\"systemMessage\":\"\\u274c schreibwerkstatt-focuseditor: Tests/Build fehlgeschlagen \\u2014 Log: /tmp/swk-focuseditor-test.log\"}'; fi",
+            "timeout": 600,
+            "statusMessage": "Führe xcodebuild test aus…"
+          }
+        ]
+      }
+    ]
+  }
+}

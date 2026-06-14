@@ -22,6 +22,10 @@ struct PagePickerOverlay: View {
     @FocusState private var searchFocused: Bool
     /// Index der per Tastatur/Hover markierten Zeile in `filtered`.
     @State private var selected = 0
+    /// Ziel für den Auto-Scroll. Wird NUR von der Tastatur-Navigation gesetzt,
+    /// nicht vom Hover — sonst entsteht eine Rückkopplung (Hover → Scroll → Zeilen
+    /// rutschen unter den Cursor → neuer Hover → …), die als Flackern sichtbar ist.
+    @State private var scrollTarget: Int?
     /// Lokaler Key-Monitor für ↑/↓/⏎ — fängt die Tasten ab, bevor das fokussierte
     /// Suchfeld sie als Cursor-Bewegung/Submit schluckt.
     @State private var keyMonitor: Any?
@@ -62,7 +66,10 @@ struct PagePickerOverlay: View {
             Task { await library.refreshPages() } // beim Öffnen frisch ziehen
         }
         .onDisappear { removeKeyMonitor() }
-        .onChange(of: query) { _, _ in selected = 0 }  // neue Suche → oben anfangen
+        .onChange(of: query) { _, _ in                  // neue Suche → oben anfangen
+            selected = 0
+            scrollTarget = 0
+        }
     }
 
     // MARK: Teile
@@ -110,7 +117,8 @@ struct PagePickerOverlay: View {
                         }
                     }
                 }
-                .onChange(of: selected) { _, new in
+                .onChange(of: scrollTarget) { _, new in
+                    guard let new else { return }
                     withAnimation(.easeOut(duration: 0.1)) {
                         proxy.scrollTo(new, anchor: .center)
                     }
@@ -165,6 +173,7 @@ struct PagePickerOverlay: View {
     private func moveSelection(_ delta: Int) {
         guard !filtered.isEmpty else { return }
         selected = max(0, min(filtered.count - 1, selected + delta))
+        scrollTarget = selected   // nur Tastatur-Nav scrollt mit
     }
 
     private func close() {
