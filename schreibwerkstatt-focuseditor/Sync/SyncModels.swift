@@ -1,0 +1,105 @@
+//
+//  SyncModels.swift
+//  schreibwerkstatt-focuseditor
+//
+//  Netzwerk-DTOs für den inkrementellen Sync — exakt nach Server-Vertrag
+//  (routes/content.js + lib/content-store/backends/localdb.js im Hauptrepo).
+//
+//  Wichtig: Der Server vergleicht `expected_updated_at` atomar als String
+//  (`WHERE updated_at = ?`). Die exakte ISO-Zeichenkette des Servers MUSS
+//  unverändert zurückgeschickt werden — niemals aus Epoch-ms rekonstruiert.
+//
+
+import Foundation
+
+// MARK: - Pull
+
+/// Buch aus `GET /content/books`. Buch-ID heißt serverseitig `id`.
+struct BookDTO: Decodable {
+    let id: Int
+    let name: String?
+    let slug: String?
+}
+
+/// Eine Seite aus `GET /content/books/:id/sync`. Seiten-ID heißt hier `page_id`.
+struct SyncPageDTO: Decodable {
+    let page_id: Int
+    let page_name: String?
+    let chapter_id: Int?
+    let updated_at: String   // ISO-8601 mit Millis + Z
+    let html: String
+}
+
+/// Keyset-Cursor `{ since, since_id }`.
+struct SyncCursorDTO: Codable, Equatable {
+    let since: String?       // ISO-8601 oder null (Voll-Pull)
+    let since_id: Int
+}
+
+/// Antwort von `GET /content/books/:id/sync`.
+struct BookSyncResponse: Decodable {
+    let now: String
+    let pages: [SyncPageDTO]
+    let has_more: Bool
+    let cursor: SyncCursorDTO
+}
+
+// MARK: - Push
+
+/// Body für `PUT /content/pages/:id`. Wir senden nur HTML + Concurrency-Guard;
+/// `expected_updated_at` ist die exakte Server-ISO-Basis (nil → unbedingtes
+/// Update, vermeiden wir bewusst, siehe SyncEngine).
+struct PushRequest: Encodable {
+    let html: String
+    let expected_updated_at: String?
+}
+
+/// 200-Antwort von `PUT /content/pages/:id`. Seiten-ID heißt hier `id`.
+struct PushResponse: Decodable {
+    let id: Int
+    let updated_at: String
+    let name: String?
+    let html: String?
+}
+
+/// 409-Body `PAGE_CONFLICT`.
+struct ConflictBody: Decodable {
+    let error_code: String?
+    let server_updated_at: String?
+    let server_editor_email: String?
+    let server_editor_name: String?
+}
+
+/// 423-Body `PAGE_LOCKED`.
+struct LockBody: Decodable {
+    let error_code: String?
+    let locked_by_email: String?
+    let expires_at: String?
+}
+
+// MARK: - ISO-Zeit
+
+/// Konvertierung zwischen Server-ISO-Strings und Epoch-Millisekunden (Double),
+/// der lokalen Store-/WebView-Einheit. Nur für die LOKALE Basis nötig — die
+/// Server-Basis (`expected_updated_at`) bleibt immer der originale ISO-String.
+enum ISOTime {
+    private static let withFraction: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+    private static let plain: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        return f
+    }()
+
+    static func date(_ s: String) -> Date? {
+        withFraction.date(from: s) ?? plain.date(from: s)
+    }
+
+    /// ISO → Epoch-ms (Double), oder nil bei Parse-Fehler.
+    static func millis(_ s: String) -> Double? {
+        date(s).map { $0.timeIntervalSince1970 * 1000 }
+    }
+}

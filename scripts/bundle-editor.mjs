@@ -41,7 +41,12 @@ const SOURCE = resolve(
 );
 
 const SRC_PUBLIC = join(SOURCE, 'public');               // Wurzel der Web-Assets im Hauptrepo
-const DEST = join(REPO_ROOT, 'schreibwerkstatt-focuseditor', 'Resources', 'web');
+// Ziel liegt BEWUSST ausserhalb des App-Sources-Ordners (= synchronized root
+// group). Läge es darin, würde Xcode jede Datei einzeln + flach als Resource
+// einschleusen (Struktur kaputt, Doppel-Inklusion). Stattdessen ist <repo>/web/
+// als Folder-Reference (blauer Ordner) eingebunden → verbatim nach
+// Contents/Resources/web/ kopiert, Struktur erhalten.
+const DEST = join(REPO_ROOT, 'web');
 
 // Entry-Module der Import-Closure (relativ zu public/). focus.js zieht den
 // gesamten focus/-Kern + benötigte shared/-Helfer; editor-host + block-merge

@@ -97,9 +97,14 @@ schreibwerkstatt-focuseditor/
     Store/                             GRDB-LocalStore + Outbox
     Sync/                              SyncEngine + Reachability + Cursor
     Auth/                              Keychain + Device-Token + Login-Flow
-    Resources/web/                     ← gebündeltes Editor-Build (Build-Step-Output, nicht versioniert/oder generiert)
-  scripts/bundle-editor.*              Build-Step: zieht focus/ + shared/ aus dem Hauptrepo
+  web/                                 ← gebündeltes Editor-Build (Output von scripts/bundle-editor.mjs, gitignored)
+                                         Top-Level (NICHT in App-Sources) + als Folder-Reference eingebunden →
+                                         landet strukturerhaltend als Contents/Resources/web/ im App-Paket.
+  scripts/bundle-editor.mjs            Build-Step: löst die ES-Modul-Import-Closure ab editor/focus.js auf und
+                                         kopiert sie + Token/Editor-CSS + generiert index.html nach web/
 ```
+
+**Warum `web/` top-level statt `Resources/web/`:** Der App-Sources-Ordner ist eine `PBXFileSystemSynchronizedRootGroup` (Xcode 16+) — sie schleust jede Datei darin **einzeln und flach** als Resource ein (verschachtelte Struktur kaputt → relative ES-Modul-Imports brechen). Eine Folder-Reference auf einen Ordner **ausserhalb** der Sync-Group kopiert den Baum dagegen verbatim. Daher liegt das Bundle top-level. Neue Swift-Dateien in den App-Sources kommen umgekehrt **automatisch** ins Target (kein pbxproj-Edit nötig).
 
 ## Harte Regeln
 
@@ -110,12 +115,20 @@ schreibwerkstatt-focuseditor/
 - **Konflikte über Block-Merge.** 409-Auflösung läuft über `block-merge.js` (3-Wege, `data-bid`), nicht über naives Last-Write-Wins. `data-bid`-Attribute nie strippen.
 - **Datenverlust-Schutz vor allem.** Bei Auth-/Sync-Fehlern lokale Inhalte behalten; kein automatisches Verwerfen, kein Überschreiben ohne Merge.
 - **Sprache:** UI-Texte folgen der Locale der Schreibwerkstatt (de/en). Code-Kommentare auf Deutsch (wie Hauptrepo).
+- **Nach jeder Swift-Änderung builden.** Nach jeder Anpassung an Swift-Code den Build laufen lassen (s. „Build & Run") und Fehler/Warnings zurückmelden, bevor es weitergeht. Nicht ungeprüft mehrere Änderungen stapeln.
 
 ## Build & Run
 
 - Xcode-Projekt: `schreibwerkstatt-focuseditor.xcodeproj`. Target: macOS (SwiftUI-App-Lifecycle).
 - Vor dem Build: Editor-Bundle erzeugen (Build-Step / Run-Script-Phase), das `focus/` + `shared/` aus dem Hauptrepo nach `Resources/web/` bündelt.
 - Abhängigkeiten (geplant): GRDB (SQLite), Sparkle (Auto-Update, später).
+- **Build-Check nach jeder Swift-Änderung** (Pflicht, s. Harte Regeln):
+
+  ```bash
+  xcodebuild -scheme schreibwerkstatt-focuseditor -configuration Debug build
+  ```
+
+  Für kompakte Ausgabe `-quiet` anhängen. Verifiziert lauffähig am 2026-06-14 (`** BUILD SUCCEEDED **`).
 
 ## Roadmap (Plan)
 

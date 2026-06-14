@@ -12,29 +12,16 @@
 
 /* Begin PBXFileReference section */
 		61EA813C2FDE904700FBD31B /* schreibwerkstatt-focuseditor.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "schreibwerkstatt-focuseditor.app"; sourceTree = BUILT_PRODUCTS_DIR; };
-		61EA81F0000000000000FB02 /* web */ = {isa = PBXFileReference; lastKnownFileType = folder; name = web; path = "schreibwerkstatt-focuseditor/Resources/web"; sourceTree = "<group>"; };
+		61EA81F0000000000000FB02 /* web */ = {isa = PBXFileReference; lastKnownFileType = folder; name = web; path = web; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		61EA813E2FDE904700FBD31B /* schreibwerkstatt-focuseditor */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-				61EA81F0000000000000FB01 /* PBXFileSystemSynchronizedBuildFileExceptionSet */,
-			);
 			path = "schreibwerkstatt-focuseditor";
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
-
-/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		61EA81F0000000000000FB01 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				Resources/web,
-			);
-			target = 61EA813B2FDE904700FBD31B /* schreibwerkstatt-focuseditor */;
-		};
-/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		61EA81392FDE904700FBD31B /* Frameworks */ = {

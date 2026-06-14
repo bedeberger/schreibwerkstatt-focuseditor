@@ -1,0 +1,53 @@
+{
+  // VS-Code-Tasks für den macOS-Build ohne Xcode-GUI.
+  // Aufruf: ⌘⇧B (Default-Build) bzw. Terminal → Run Task…
+  "version": "2.0.0",
+  "tasks": [
+    {
+      // Editor-Bundle aus dem Hauptrepo ziehen (focus/ + shared/ → Resources/web/)
+      "label": "Bundle Editor",
+      "type": "shell",
+      "command": "node scripts/bundle-editor.mjs",
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "shared", "clear": true }
+    },
+    {
+      // Debug-Build. Hängt am Bundle-Step, damit Resources/web/ frisch ist.
+      "label": "Build (Debug)",
+      "type": "shell",
+      "command": "xcodebuild -scheme schreibwerkstatt-focuseditor -configuration Debug build",
+      "dependsOn": "Bundle Editor",
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": "$gcc",
+      "presentation": { "reveal": "always", "panel": "shared", "clear": true }
+    },
+    {
+      // Release-Build.
+      "label": "Build (Release)",
+      "type": "shell",
+      "command": "xcodebuild -scheme schreibwerkstatt-focuseditor -configuration Release build",
+      "dependsOn": "Bundle Editor",
+      "group": "build",
+      "problemMatcher": "$gcc",
+      "presentation": { "reveal": "always", "panel": "shared", "clear": true }
+    },
+    {
+      // Bauen und die fertige .app starten — der Run-Knopf-Ersatz für Xcode.
+      "label": "Build & Run",
+      "type": "shell",
+      "command": "xcodebuild -scheme schreibwerkstatt-focuseditor -configuration Debug build && open \"$(xcodebuild -scheme schreibwerkstatt-focuseditor -configuration Debug -showBuildSettings 2>/dev/null | awk '/ BUILT_PRODUCTS_DIR /{d=$3} / FULL_PRODUCT_NAME /{n=$3} END{print d\"/\"n}')\"",
+      "dependsOn": "Bundle Editor",
+      "group": "build",
+      "problemMatcher": "$gcc",
+      "presentation": { "reveal": "always", "panel": "shared", "clear": true }
+    },
+    {
+      // Build-Artefakte aufräumen.
+      "label": "Clean",
+      "type": "shell",
+      "command": "xcodebuild -scheme schreibwerkstatt-focuseditor clean",
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "shared", "clear": true }
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+# Generiertes Editor-Bundle (Output von scripts/bundle-editor.mjs).
+# SSoT ist das Hauptrepo — niemals eingecheckt, vor dem Build neu erzeugen.
+/web/
+
+# macOS / Xcode
+.DS_Store
+*.swp
+xcuserdata/
+*.xcuserstate
+DerivedData/
+build/

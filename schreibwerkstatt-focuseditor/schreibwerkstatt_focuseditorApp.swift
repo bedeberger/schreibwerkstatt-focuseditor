@@ -9,13 +9,15 @@ import SwiftUI
 
 @main
 struct schreibwerkstatt_focuseditorApp: App {
-    @StateObject private var auth = AuthStore()
+    @StateObject private var core = AppCore()
 
     var body: some Scene {
         WindowGroup {
             ContentView()
-                .environmentObject(auth)
-                .task { await auth.bootstrap() }
+                .environmentObject(core)
+                .environmentObject(core.auth)
+                .environmentObject(core.sync)
+                .task { await core.bootstrap() }
         }
     }
 }

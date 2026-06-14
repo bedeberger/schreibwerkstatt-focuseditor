@@ -54,6 +54,17 @@ protocol LocalStore: AnyObject {
     func save(id: String, html: String, baseUpdatedAt: Double?) async throws -> StoredPage
     /// Noch nicht gepushte Outbox-Einträge (für die spätere SyncEngine).
     func pendingOutbox() async throws -> [OutboxEntry]
+
+    /// Quittiert einen erfolgreichen Push: setzt die lokale Server-Basis der
+    /// Seite auf `serverUpdatedAtMillis` und entfernt den Outbox-Eintrag —
+    /// aber nur, wenn er seit `queuedAt` nicht erneut geändert wurde (sonst
+    /// liegt eine neuere lokale Änderung vor, die noch gepusht werden muss).
+    func markPushed(id: String, queuedAt: Double, serverUpdatedAtMillis: Double) async throws
+
+    /// Schreibt eine vom Server gezogene Seite in den Spiegel, OHNE einen
+    /// Outbox-Eintrag zu erzeugen (Pull ist keine lokale Änderung). Setzt
+    /// `updatedAt` und `baseUpdatedAt` auf den Server-Stand.
+    func applyServerPage(id: String, html: String, title: String?, serverUpdatedAtMillis: Double) async throws
 }
 
 /// Schlanke Listenzeile (kein HTML-Body).
@@ -116,6 +127,30 @@ final class InMemoryLocalStore: LocalStore {
 
     func pendingOutbox() async throws -> [OutboxEntry] {
         outbox
+    }
+
+    func markPushed(id: String, queuedAt: Double, serverUpdatedAtMillis: Double) async throws {
+        // Server-Basis übernehmen (Inhalt/updatedAt bleiben unangetastet).
+        if var page = pages[id] {
+            page.baseUpdatedAt = serverUpdatedAtMillis
+            pages[id] = page
+        }
+        // Outbox-Eintrag nur entfernen, wenn unverändert seit dem Push.
+        if let idx = outbox.firstIndex(where: { $0.pageId == id }),
+           outbox[idx].queuedAt == queuedAt {
+            outbox.remove(at: idx)
+        }
+        persistSnapshot()
+    }
+
+    func applyServerPage(id: String, html: String, title: String?, serverUpdatedAtMillis: Double) async throws {
+        let derived = title ?? Self.deriveTitle(from: html) ?? pages[id]?.title
+        pages[id] = StoredPage(id: id,
+                               html: html,
+                               title: derived,
+                               updatedAt: serverUpdatedAtMillis,
+                               baseUpdatedAt: serverUpdatedAtMillis)
+        persistSnapshot()
     }
 
     // MARK: Hilfen
