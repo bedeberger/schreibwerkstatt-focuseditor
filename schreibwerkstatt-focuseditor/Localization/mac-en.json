@@ -114,6 +114,7 @@
   "sync.state.ready": "Ready",
   "sync.state.syncing": "Syncing …",
   "sync.state.offline": "Offline",
+  "sync.state.serverUnreachable": "Server unreachable",
   "sync.lastSynced.never": "Never",
 
   "settings.spell.section": "Spell check",

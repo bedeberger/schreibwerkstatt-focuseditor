@@ -258,6 +258,11 @@ struct SyncStatusLabel: View {
                 case .offline:
                     Image(systemName: "wifi.slash").foregroundStyle(BrandColor.muted)
                     Text(t("sync.state.offline"))
+                case .serverUnreachable:
+                    // Netz da, aber Server antwortet nicht — deutlich (orange)
+                    // anzeigen, damit es nicht wie ein sauberer Sync-Zustand wirkt.
+                    Image(systemName: "exclamationmark.icloud").foregroundStyle(.orange)
+                    Text(t("sync.state.serverUnreachable"))
                 case .idle:
                     Image(systemName: "checkmark.circle").foregroundStyle(BrandColor.muted)
                 }
@@ -271,12 +276,17 @@ struct SyncStatusLabel: View {
     /// „Zuletzt synchronisiert“ als relative Zeit, sonst der aktuelle Zustand.
     private var tooltip: String {
         if conflicts > 0 { return t("toolbar.tip.conflicts") }
+        // Server-Unerreichbarkeit ist ein aktiver Fehlerzustand — auch wenn früher
+        // schon einmal erfolgreich synchronisiert wurde, geht sie der „zuletzt
+        // synchronisiert"-Meldung vor.
+        if status == .serverUnreachable { return t("toolbar.tip.serverUnreachable") }
+        if status == .offline { return t("toolbar.tip.offline") }
         if let last = lastSyncedAt {
             let rel = RelativeDateTimeFormatter()
             rel.locale = Locale(identifier: L10nStore.shared.localeCode)
             return t("toolbar.tip.lastSynced", ["rel": rel.localizedString(for: last, relativeTo: Date())])
         }
-        return status == .offline ? t("toolbar.tip.offline") : t("toolbar.tip.notSynced")
+        return t("toolbar.tip.notSynced")
     }
 }
 

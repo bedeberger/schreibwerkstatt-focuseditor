@@ -114,6 +114,7 @@
   "sync.state.ready": "Bereit",
   "sync.state.syncing": "Synchronisiere …",
   "sync.state.offline": "Offline",
+  "sync.state.serverUnreachable": "Server nicht erreichbar",
   "sync.lastSynced.never": "Noch nie",
 
   "settings.spell.section": "Rechtschreibprüfung",

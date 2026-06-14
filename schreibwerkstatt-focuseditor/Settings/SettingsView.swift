@@ -424,6 +424,7 @@ private struct SyncSettingsTab: View {
         case .idle:    return sync.isPaused ? t("sync.state.paused") : t("sync.state.ready")
         case .syncing: return t("sync.state.syncing")
         case .offline: return t("sync.state.offline")
+        case .serverUnreachable: return t("sync.state.serverUnreachable")
         }
     }
 

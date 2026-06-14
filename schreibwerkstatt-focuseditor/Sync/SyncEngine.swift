@@ -27,9 +27,11 @@ import OSLog
 final class SyncEngine: ObservableObject {
 
     enum Status: Equatable {
-        case idle       // bereit, nichts zu tun
-        case syncing    // Push/Pull läuft
-        case offline    // kein Netz
+        case idle               // bereit, nichts zu tun
+        case syncing            // Push/Pull läuft
+        case offline            // kein Netz (Reachability-Pfad nicht erreichbar)
+        case serverUnreachable  // Netz da, aber der Server antwortet nicht
+                                // (Verbindung abgelehnt/Timeout) — Server gekappt o. Ä.
     }
 
     /// Ein erfasster, noch nicht aufgelöster Server-Konflikt (409).
@@ -89,6 +91,12 @@ final class SyncEngine: ObservableObject {
     private var isRunning = false
     private var isActive = false
     private var pollTask: Task<Void, Never>?
+    /// Wurde der Server im laufenden Sync-Durchlauf (transport-seitig) erreicht?
+    /// Jede HTTP-Antwort (auch 4xx/5xx/401) zählt als erreichbar, nur ein echter
+    /// Transport-Fehler (`AuthError.network`: Verbindung abgelehnt/Timeout/TLS)
+    /// lässt das Flag false — daraus leitet `syncNow()` `.serverUnreachable` ab,
+    /// unterscheidet also „Server weg" von „kein Netz" (`.offline`).
+    private var serverReachedThisRun = false
 
     init(api: APIClient,
          content: ContentAPI,
@@ -111,9 +119,15 @@ final class SyncEngine: ObservableObject {
     func start() {
         reachability.onChange = { [weak self] online in
             guard let self else { return }
-            self.status = online ? .idle : .offline
-            // Netz wieder da + Auto-Poll erlaubt → sofort ein Tick.
-            if online && self.autoPollEnabled { self.requestSync() }
+            if online {
+                // Netz wieder da: noch NICHT blind auf `.idle` — ob der Server
+                // antwortet, klärt erst der folgende Tick (sonst „grün", obwohl
+                // der Server weg ist). Mit Auto-Poll sofort ein Tick; sonst den
+                // bisherigen Stand halten (der nächste manuelle Sync prüft).
+                if self.autoPollEnabled { self.requestSync() }
+            } else {
+                self.status = .offline
+            }
         }
         reachability.start()
     }
@@ -182,9 +196,19 @@ final class SyncEngine: ObservableObject {
         guard isActive, shouldSync(), reachability.isOnline, !isRunning else { return }
         isRunning = true
         status = .syncing
+        serverReachedThisRun = false
         defer {
             isRunning = false
-            if status == .syncing { status = reachability.isOnline ? .idle : .offline }
+            // Status aus dem Lauf neu ableiten: kein Netz → offline; Netz da,
+            // aber kein einziger Request hat den Server erreicht → serverUnreachable;
+            // sonst idle. (Konflikte zeigt die UI unabhängig vom Status.)
+            if !reachability.isOnline {
+                status = .offline
+            } else if !serverReachedThisRun {
+                status = .serverUnreachable
+            } else {
+                status = .idle
+            }
         }
 
         do {
@@ -200,6 +224,27 @@ final class SyncEngine: ObservableObject {
         } catch {
             lastError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
             log.error("Sync-Fehler: \(self.lastError ?? "?", privacy: .public)")
+        }
+    }
+
+    /// Führt einen Server-Aufruf aus und merkt sich für `serverReachedThisRun`,
+    /// ob der Server antwortete. Jede HTTP-Antwort (Erfolg ODER 4xx/5xx/401)
+    /// gilt als erreichbar; nur `AuthError.network` (Transport-Fehler) lässt das
+    /// Flag unverändert. Der Fehler wird unverändert weitergereicht — die
+    /// bestehende Fehlerbehandlung (409-Merge, 404/423-Skip, 401-Abbruch) bleibt.
+    @discardableResult
+    private func reachableSend<T>(_ call: () async throws -> T) async throws -> T {
+        do {
+            let result = try await call()
+            serverReachedThisRun = true
+            return result
+        } catch {
+            if case AuthError.network = error {
+                // Transport-Fehler → Server NICHT erreicht; Flag bleibt false.
+            } else {
+                serverReachedThisRun = true   // Server hat geantwortet (nur Status ≠ 2xx)
+            }
+            throw error
         }
     }
 
@@ -220,10 +265,12 @@ final class SyncEngine: ObservableObject {
 
             let req = PushRequest(html: entry.html, expected_updated_at: base)
             do {
-                let resp = try await api.send("/content/pages/\(entry.pageId)",
-                                              method: .PUT,
-                                              body: req,
-                                              decode: PushResponse.self)
+                let resp = try await reachableSend {
+                    try await api.send("/content/pages/\(entry.pageId)",
+                                       method: .PUT,
+                                       body: req,
+                                       decode: PushResponse.self)
+                }
                 // Basis vorrücken (exakte Server-ISO + HTML als Merge-Ancestor) + Outbox quittieren.
                 stateStore.mutate {
                     $0.serverBaseISO[entry.pageId] = resp.updated_at
@@ -278,9 +325,11 @@ final class SyncEngine: ObservableObject {
         // Outbox ohne Konflikt-Flag, der nächste Push-Tick versucht es erneut.
         let serverPage: PushResponse
         do {
-            serverPage = try await api.send("/content/pages/\(pid)",
-                                            method: .GET,
-                                            decode: PushResponse.self)
+            serverPage = try await reachableSend {
+                try await api.send("/content/pages/\(pid)",
+                                   method: .GET,
+                                   decode: PushResponse.self)
+            }
         } catch {
             log.notice("Konflikt-Merge für \(pid, privacy: .public) verschoben: \(error.localizedDescription, privacy: .public)")
             return
@@ -313,10 +362,12 @@ final class SyncEngine: ObservableObject {
         // Kollisionsfrei: gemergtes HTML mit der neuen Server-Basis erneut pushen.
         let req = PushRequest(html: outcome.merged, expected_updated_at: serverPage.updated_at)
         do {
-            let resp = try await api.send("/content/pages/\(pid)",
-                                          method: .PUT,
-                                          body: req,
-                                          decode: PushResponse.self)
+            let resp = try await reachableSend {
+                try await api.send("/content/pages/\(pid)",
+                                   method: .PUT,
+                                   body: req,
+                                   decode: PushResponse.self)
+            }
             let ms = ISOTime.millis(resp.updated_at) ?? entry.queuedAt
             stateStore.mutate {
                 $0.serverBaseISO[pid] = resp.updated_at
@@ -346,7 +397,9 @@ final class SyncEngine: ObservableObject {
     private func pullDeltas() async throws {
         // Bücherliste einmalig bootstrappen.
         if stateStore.state.bookIds.isEmpty {
-            let books = try await api.send("/content/books", method: .GET, decode: [BookDTO].self)
+            let books = try await reachableSend {
+                try await api.send("/content/books", method: .GET, decode: [BookDTO].self)
+            }
             stateStore.mutate { $0.bookIds = books.map(\.id) }
         }
 
@@ -368,9 +421,11 @@ final class SyncEngine: ObservableObject {
         var cursor = stateStore.state.cursors[bookId] ?? SyncCursorDTO(since: nil, since_id: 0)
 
         while true {
-            let resp = try await api.send(syncPath(bookId: bookId, cursor: cursor),
-                                          method: .GET,
-                                          decode: BookSyncResponse.self)
+            let resp = try await reachableSend {
+                try await api.send(syncPath(bookId: bookId, cursor: cursor),
+                                   method: .GET,
+                                   decode: BookSyncResponse.self)
+            }
 
             let pending = Set(try await store.pendingOutbox().map(\.pageId))
 
