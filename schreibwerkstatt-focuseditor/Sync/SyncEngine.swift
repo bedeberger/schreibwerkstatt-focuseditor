@@ -2,7 +2,10 @@
 //  SyncEngine.swift
 //  schreibwerkstatt-focuseditor
 //
-//  Reachability-getriebene Sync-Engine auf dem Auth-`APIClient`.
+//  Sync-Engine auf dem Auth-`APIClient`. Getrieben durch die Scene-Phase:
+//  Solange das Fenster aktiv ist, wird periodisch (~5 s) gepollt; im
+//  Hintergrund pausiert der Loop (Energie), beim Reaktivieren gibt es sofort
+//  einen Tick. Zusätzlicher Trigger: Reachability (Netz wieder da → Tick).
 //   • Push: drainiert die Outbox des LocalStore → `PUT /content/pages/:id`
 //     mit `expected_updated_at` (exakte Server-ISO-Basis). 200 → Basis
 //     vorrücken; 409 → Konflikt erfassen (Block-Merge folgt, kein
@@ -50,10 +53,11 @@ final class SyncEngine: ObservableObject {
     private let shouldSync: () -> Bool
     private let log = Logger(subsystem: "ch.schreibwerkstatt.focuseditor", category: "sync")
 
-    /// Pull-Periode, solange online.
-    private let pollInterval: Duration = .seconds(30)
+    /// Poll-Periode, solange das Fenster aktiv ist (Doku-Richtwert ~5 s).
+    private let pollInterval: Duration = .seconds(5)
 
     private var isRunning = false
+    private var isActive = false
     private var pollTask: Task<Void, Never>?
 
     init(api: APIClient,
@@ -69,24 +73,37 @@ final class SyncEngine: ObservableObject {
 
     // MARK: - Lifecycle
 
-    /// Startet Reachability-Beobachtung + periodischen Pull.
+    /// Startet die Reachability-Beobachtung. Das Polling selbst hängt an der
+    /// Scene-Phase und wird über `setActive(_:)` ein-/ausgeschaltet.
     func start() {
         reachability.onChange = { [weak self] online in
             guard let self else { return }
             self.status = online ? .idle : .offline
-            if online { self.requestSync() }
+            // Netz wieder da + Fenster aktiv → sofort ein Tick.
+            if online && self.isActive { self.requestSync() }
         }
         reachability.start()
-        startPolling()
     }
 
     func stop() {
-        pollTask?.cancel()
-        pollTask = nil
+        stopPolling()
         reachability.stop()
     }
 
-    /// Stößt einen Sync-Durchlauf an (z. B. nach lokalem Save oder Online-Wechsel).
+    /// Vom Scene-Phasen-Wechsel getrieben: aktiv → sofortiger Tick + 5 s-Poll;
+    /// inaktiv/Hintergrund → Poll pausieren (CLAUDE.md: nur solange Fenster aktiv).
+    func setActive(_ active: Bool) {
+        guard active != isActive else { return }
+        isActive = active
+        if active {
+            requestSync()        // sofortiger Tick beim Reaktivieren
+            startPolling()
+        } else {
+            stopPolling()
+        }
+    }
+
+    /// Stößt einen Sync-Durchlauf an (Scene-aktiv, Online-Wechsel, lokaler Save).
     func requestSync() {
         Task { await syncNow() }
     }
@@ -95,17 +112,23 @@ final class SyncEngine: ObservableObject {
         pollTask?.cancel()
         pollTask = Task { [weak self] in
             guard let self else { return }
+            // Erster Tick kommt über requestSync(); der Loop ergänzt Folge-Ticks.
             while !Task.isCancelled {
-                await self.syncNow()
                 try? await Task.sleep(for: self.pollInterval)
+                await self.syncNow()
             }
         }
+    }
+
+    private func stopPolling() {
+        pollTask?.cancel()
+        pollTask = nil
     }
 
     // MARK: - Durchlauf
 
     func syncNow() async {
-        guard shouldSync(), reachability.isOnline, !isRunning else { return }
+        guard isActive, shouldSync(), reachability.isOnline, !isRunning else { return }
         isRunning = true
         status = .syncing
         defer {
@@ -205,11 +228,20 @@ final class SyncEngine: ObservableObject {
                     log.notice("Pull übersprungen (lokale Änderung offen): \(pid, privacy: .public)")
                     continue
                 }
-                stateStore.mutate { $0.serverBaseISO[pid] = p.updated_at }
+                // Ohne Server-`updated_at` gibt es keine gültige Konflikt-Basis
+                // (PUT braucht den exakten ISO-String). Seite überspringen, statt
+                // sie ohne Basis in den Store zu mergen.
+                guard let serverUpdatedAt = p.updated_at else {
+                    log.notice("Pull übersprungen (Seite ohne updated_at): \(pid, privacy: .public)")
+                    continue
+                }
+                stateStore.mutate { $0.serverBaseISO[pid] = serverUpdatedAt }
                 try await store.applyServerPage(id: pid,
-                                                html: p.html,
-                                                title: p.page_name,
-                                                serverUpdatedAtMillis: ISOTime.millis(p.updated_at) ?? 0)
+                                                html: p.html ?? "",
+                                                pageName: p.page_name,
+                                                bookId: bookId,
+                                                chapterId: p.chapter_id,
+                                                serverUpdatedAtMillis: ISOTime.millis(serverUpdatedAt) ?? 0)
             }
 
             // Cursor vorrücken + persistieren (robust gegen Abbruch mittendrin).

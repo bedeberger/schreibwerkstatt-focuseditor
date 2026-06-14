@@ -26,8 +26,14 @@ struct SyncPageDTO: Decodable {
     let page_id: Int
     let page_name: String?
     let chapter_id: Int?
-    let updated_at: String   // ISO-8601 mit Millis + Z
-    let html: String
+    /// ISO-8601 mit Millis + Z. Optional, weil der Server in Randfällen
+    /// (unsaubere/leere Seite) `null` liefert — solche Seiten sind ohne Basis
+    /// kein gültiger Sync-Stand und werden übersprungen, statt den ganzen
+    /// Batch-Decode (und damit den kompletten Sync) zu killen.
+    let updated_at: String?
+    /// Defensiv optional: eine einzelne `null`-Seite darf den Array-Decode
+    /// nicht scheitern lassen.
+    let html: String?
 }
 
 /// Keyset-Cursor `{ since, since_id }`.

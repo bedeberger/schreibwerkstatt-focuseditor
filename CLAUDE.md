@@ -20,7 +20,7 @@ AppKit/SwiftUI-Shell
   Swift-Kern
      ├─ LocalStore  (GRDB / SQLite-Spiegel der Seiten)
      ├─ Outbox      (Schreib-Queue, immer erst lokal)
-     ├─ SyncEngine  (Pull: periodisches Polling; Push: Reachability-getrieben)
+     ├─ SyncEngine  (Scene-Phase-getriebenes Polling ~5 s + Reachability-Trigger; Push + Pull)
      └─ Auth        (Device-Token im Keychain)
                  │ HTTPS Bearer swd_…
                  ▼
@@ -55,7 +55,8 @@ Bridge-Nachrichten (Swift `WKScriptMessageHandler`), mindestens:
 Basis-URL konfigurierbar (Default Prod-Host). Auth über **Device-Token** (Bearer `swd_…`), nicht OIDC.
 
 ### Auth (Device-Token)
-- Einmaliger Online-Login: Browser-OAuth-Flow am Server → User stellt im `/me`-Bereich ein Device-Token aus → Klartext (`swd_<64 hex>`) **genau einmal** sichtbar.
+- Einmaliger Online-Login: Browser-OAuth-Flow am Server → User stellt im `/me`-Bereich ein Device-Token aus → Klartext (`swd_<64 hex>`, serverseitig SHA256-gehasht) **genau einmal** sichtbar.
+- **Kein Self-Minting:** Der Client kann ein Token **nicht selbst ausstellen** — `POST /me/device-tokens` lehnt mit `403 DEVICE_TOKEN_SELF_MINT_FORBIDDEN` ab, wenn der Request selbst per Device-Token läuft ([routes/usersettings.js](../../ClaudeProjects/schreibwerkstatt/routes/usersettings.js)). Der Login-Flow ist darum **Copy-Paste**: User stellt das Token in der Web-`/me`-Ansicht aus und fügt es im Client ein. Validierung im Client über `GET /me/device-tokens` (funktioniert mit Device-Token, nur das Ausstellen ist gesperrt).
 - Client cached das Token im **macOS Keychain** (nie in UserDefaults/Plist).
 - Jeder Request: `Authorization: Bearer swd_…`. Der Server löst auf den echten User + dessen echte Rolle auf und respektiert das Status-Gate (suspended/deleted → 401).
 - Token-Verwaltung am Server: `GET/POST /me/device-tokens`, `POST /me/device-tokens/:id/revoke`, `DELETE /me/device-tokens/:id`.
@@ -72,17 +73,19 @@ Der Sync hält den lokalen Spiegel **aktuell, auch wenn eine Seite in einer ande
 - Antwort-Seiten tragen vollen HTML-Body: `{ page_id, page_name, chapter_id, updated_at, html }` + `now` (Server-Stempel).
 - **Enthält eigene Edits** (anders als `/content/books/:id/changes`, das self-exkludiert + ohne HTML ist — das ist der Web-Collab-Toast-Pfad, nicht für uns). Der Client kann darum jeden Server-Stand übernehmen, auch von anderen eigenen Geräten/Sessions.
 
-**Cross-Session-Frische (Polling-Loop):** Die SyncEngine pollt periodisch (Richtwert 5 s) `…/sync` mit dem gespeicherten Cursor — **nur solange App/Fenster aktiv** (Scene-Phase `.active`; im Hintergrund pausieren, beim Reaktivieren sofort einen Tick). Eingehende Seiten in den LocalStore mergen, `baseUpdatedAt = Server-updated_at` setzen. Ist die **im Editor offene Seite** betroffen:
+**Cross-Session-Frische (Polling-Loop):** Die SyncEngine pollt periodisch (Richtwert 5 s) `…/sync` mit dem gespeicherten Cursor — **nur solange App/Fenster aktiv** (Scene-Phase `.active` über `setActive(_:)`; im Hintergrund pausieren, beim Reaktivieren sofort einen Tick). Zusätzlicher Trigger: Reachability (Netz wieder erreichbar → sofort ein Tick). Eingehende Seiten in den LocalStore mergen, `baseUpdatedAt = Server-updated_at` setzen. Ist die **im Editor offene Seite** betroffen:
   - Editor **sauber** (nicht dirty) → Inhalt in der WebView still neu laden (Bridge-`load`), neuer `baseUpdatedAt` = Server-`updated_at`.
   - Editor **dirty** → lokalen Stand **nicht** überschreiben (Datenverlust-Schutz). Konflikt wird erst beim nächsten Push aufgelöst (409 → Block-Merge, s.u.).
 
-**Push** — `PUT /content/pages/:id` mit `expected_updated_at` (= lokaler `baseUpdatedAt`):
+**Push** — `PUT /content/pages/:id` mit `expected_updated_at` ([routes/content.js](../../ClaudeProjects/schreibwerkstatt/routes/content.js) `PUT /pages/:page_id`, Backend `savePage`). **Wichtig:** `expected_updated_at` ist der **exakte Server-ISO-String** (`WHERE updated_at = ?`, atomar) — nie aus Epoch-ms rekonstruieren, sonst bricht der Match. Der Client führt die ISO-Basis darum getrennt vom Epoch-ms-Store (`Sync/SyncState.swift`).
   - `200` → übernommen, Server-`updated_at` als neue Basis speichern, Outbox-Eintrag droppen.
   - `409 PAGE_CONFLICT` → Server liefert `server_updated_at` + `server_editor_email/name`. Client zieht den frischen Server-Stand (Pull der einen Seite) und löst per **3-Wege-Block-Merge** (`block-merge.js`, `data-bid`-basiert) in der WebView auf: kollisionsfrei → still mergen + erneut pushen; echte Block-Kollision → Konflikt-Modal des Editors.
+  - `404 PAGE_NOT_FOUND` → **PUT updated nur, legt nicht an.** Neue Seiten entstehen über `POST /content/pages`, nicht über den Push. Ohne Server-Basis (Seite nie gepullt) wird darum **nicht** gepusht.
+  - `423 PAGE_LOCKED` → Seite ist serverseitig gesperrt (Lektorats-Lock); später erneut versuchen, lokalen Stand behalten.
 
 **Deletes:** `/sync` meldet nur geänderte/neue Seiten, **keine Löschungen**. Gelöschte Seiten reconciled der Client über `GET /content/books/:book_id/tree` (Soll-Bestand abgleichen).
 
-**Ort des Codes:** `Sync/SyncEngine.swift` (Poll-Loop + Push) + `Sync/Cursor.swift` (Cursor-Modell). Instanziiert im Shell-Root ([ContentView.swift](schreibwerkstatt-focuseditor/ContentView.swift)), Lifecycle an Scene-Phase / `.onAppear`/`.onDisappear`. Cursor wird über den LocalStore persistiert (eigenes Feld im JSON-Snapshot, später GRDB-Tabelle) — der Pull-Merge in den Store läuft analog zum bestehenden `save(...)`, setzt aber `baseUpdatedAt` direkt auf den Server-Stand und legt **keinen** Outbox-Eintrag an.
+**Ort des Codes:** `Sync/SyncEngine.swift` (Poll-Loop + Push + Pull), `Sync/SyncState.swift` (persistente Cursor + Server-ISO-Basis je Seite, eigener JSON-Snapshot), `Sync/Reachability.swift` (`NWPathMonitor`), `Sync/SyncModels.swift` (DTOs + ISO↔ms). Instanziiert app-weit in [AppCore.swift](schreibwerkstatt-focuseditor/AppCore.swift) (ein geteilter LocalStore für Bridge **und** Sync); Scene-Phase wird in [schreibwerkstatt_focuseditorApp.swift](schreibwerkstatt-focuseditor/schreibwerkstatt_focuseditorApp.swift) per `.onChange(of: scenePhase)` an `setActive(_:)` gereicht. Der Pull-Merge in den Store läuft über `applyServerPage(...)` (setzt `baseUpdatedAt` auf den Server-Stand, **kein** Outbox-Eintrag); der Push quittiert über `markPushed(...)`.
 
 - Inhalte fließen ausschließlich über die Content-Store-Semantik des Servers — kein Voll-Buch-`.swbook` für den Live-Sync (zu grob).
 
@@ -95,7 +98,7 @@ schreibwerkstatt-focuseditor/
     ContentView.swift                  Shell-Root (WebView-Host)
     Web/                               WKWebView-Host + Bridge (WKScriptMessageHandler)
     Store/                             GRDB-LocalStore + Outbox
-    Sync/                              SyncEngine + Reachability + Cursor
+    Sync/                              SyncEngine + Reachability + SyncState (Cursor/Basis) + SyncModels
     Auth/                              Keychain + Device-Token + Login-Flow
   web/                                 ← gebündeltes Editor-Build (Output von scripts/bundle-editor.mjs, gitignored)
                                          Top-Level (NICHT in App-Sources) + als Folder-Reference eingebunden →

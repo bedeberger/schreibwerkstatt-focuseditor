@@ -10,6 +10,7 @@ import SwiftUI
 @main
 struct schreibwerkstatt_focuseditorApp: App {
     @StateObject private var core = AppCore()
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
         WindowGroup {
@@ -18,6 +19,11 @@ struct schreibwerkstatt_focuseditorApp: App {
                 .environmentObject(core.auth)
                 .environmentObject(core.sync)
                 .task { await core.bootstrap() }
+        }
+        // Polling nur solange das Fenster aktiv ist; im Hintergrund pausieren,
+        // beim Reaktivieren sofort ein Tick (CLAUDE.md, Cross-Session-Frische).
+        .onChange(of: scenePhase, initial: true) { _, phase in
+            core.sync.setActive(phase == .active)
         }
     }
 }

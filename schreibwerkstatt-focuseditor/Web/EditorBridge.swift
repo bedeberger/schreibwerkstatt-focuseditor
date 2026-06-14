@@ -80,9 +80,14 @@ final class EditorBridge: NSObject, WKScriptMessageHandlerWithReply {
             return ["id": saved.id, "updatedAt": saved.updatedAt]
 
         case "list":
-            let summaries = try await store.list()
+            // Optionaler Buch-Filter: nil = alle Seiten (Picker reicht book_id durch).
+            let bookId = params["bookId"] as? Int
+            let summaries = try await store.list(bookId: bookId)
             return summaries.map { ["id": $0.id,
                                     "title": $0.title as Any,
+                                    "pageName": $0.pageName as Any,
+                                    "bookId": $0.bookId as Any,
+                                    "chapterId": $0.chapterId as Any,
                                     "updatedAt": $0.updatedAt] }
 
         case "log":
@@ -114,6 +119,9 @@ final class EditorBridge: NSObject, WKScriptMessageHandlerWithReply {
             "updatedAt": page.updatedAt,
         ]
         if let title = page.title { dict["title"] = title }
+        if let pageName = page.pageName { dict["pageName"] = pageName }
+        if let bookId = page.bookId { dict["bookId"] = bookId }
+        if let chapterId = page.chapterId { dict["chapterId"] = chapterId }
         if let base = page.baseUpdatedAt { dict["baseUpdatedAt"] = base }
         return dict
     }

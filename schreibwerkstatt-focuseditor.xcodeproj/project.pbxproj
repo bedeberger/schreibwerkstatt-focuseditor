@@ -12,7 +12,7 @@
 
 /* Begin PBXFileReference section */
 		61EA813C2FDE904700FBD31B /* schreibwerkstatt-focuseditor.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "schreibwerkstatt-focuseditor.app"; sourceTree = BUILT_PRODUCTS_DIR; };
-		61EA81F0000000000000FB02 /* web */ = {isa = PBXFileReference; lastKnownFileType = folder; name = web; path = web; sourceTree = SOURCE_ROOT; };
+		61EA81F0000000000000FB02 /* web */ = {isa = PBXFileReference; lastKnownFileType = folder; path = web; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -34,11 +34,20 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		61A6A6E02FDEA3B200596EFA /* Recovered References */ = {
+			isa = PBXGroup;
+			children = (
+				61EA81F0000000000000FB02 /* web */,
+			);
+			name = "Recovered References";
+			sourceTree = "<group>";
+		};
 		61EA81332FDE904700FBD31B = {
 			isa = PBXGroup;
 			children = (
 				61EA813E2FDE904700FBD31B /* schreibwerkstatt-focuseditor */,
 				61EA813D2FDE904700FBD31B /* Products */,
+				61A6A6E02FDEA3B200596EFA /* Recovered References */,
 			);
 			sourceTree = "<group>";
 		};

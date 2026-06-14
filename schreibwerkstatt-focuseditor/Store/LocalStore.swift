@@ -20,7 +20,14 @@ import Foundation
 struct StoredPage: Codable, Equatable, Identifiable {
     var id: String
     var html: String
+    /// Aus dem HTML abgeleiteter Anzeige-Fallback (erste Textzeile).
     var title: String?
+    /// Server-seitiger Seitenname (autoritativ für die Anzeige im Picker).
+    var pageName: String?
+    /// Zugehöriges Buch — steuert Filterung im Picker und den buch-skopierten Pull.
+    var bookId: Int?
+    /// Zugehöriges Kapitel (für Gruppierung im Picker). Optional.
+    var chapterId: Int?
     /// Letzte lokale Änderung (Epoch ms).
     var updatedAt: Double
     /// Server-Basis für den nächsten Push (`expected_updated_at`). `nil`, solange
@@ -47,8 +54,9 @@ struct OutboxEntry: Codable, Equatable {
 protocol LocalStore: AnyObject {
     /// Liefert eine Seite, oder `nil` wenn unbekannt.
     func page(id: String) async throws -> StoredPage?
-    /// Buch-/Seitenliste (ohne HTML-Body — schlanke Übersicht).
-    func list() async throws -> [PageSummary]
+    /// Seitenliste (ohne HTML-Body — schlanke Übersicht). `bookId == nil`
+    /// liefert alle Seiten, sonst nur die des gewählten Buchs (Picker-Filter).
+    func list(bookId: Int?) async throws -> [PageSummary]
     /// Schreibt eine Seite lokal UND legt einen Outbox-Eintrag an (local-first).
     /// Liefert die gespeicherte Seite mit neuem `updatedAt` zurück.
     func save(id: String, html: String, baseUpdatedAt: Double?) async throws -> StoredPage
@@ -64,14 +72,20 @@ protocol LocalStore: AnyObject {
     /// Schreibt eine vom Server gezogene Seite in den Spiegel, OHNE einen
     /// Outbox-Eintrag zu erzeugen (Pull ist keine lokale Änderung). Setzt
     /// `updatedAt` und `baseUpdatedAt` auf den Server-Stand.
-    func applyServerPage(id: String, html: String, title: String?, serverUpdatedAtMillis: Double) async throws
+    func applyServerPage(id: String, html: String, pageName: String?, bookId: Int?, chapterId: Int?, serverUpdatedAtMillis: Double) async throws
 }
 
 /// Schlanke Listenzeile (kein HTML-Body).
 struct PageSummary: Codable, Equatable, Identifiable {
     var id: String
     var title: String?
+    var pageName: String?
+    var bookId: Int?
+    var chapterId: Int?
     var updatedAt: Double
+
+    /// Bevorzugter Anzeigename: Server-Seitenname, sonst HTML-Ableitung.
+    var displayName: String { pageName ?? title ?? "Ohne Titel" }
 }
 
 // MARK: - Platzhalter-Implementierung (In-Memory + JSON-Snapshot)
@@ -103,9 +117,15 @@ final class InMemoryLocalStore: LocalStore {
         pages[id]
     }
 
-    func list() async throws -> [PageSummary] {
+    func list(bookId: Int?) async throws -> [PageSummary] {
         pages.values
-            .map { PageSummary(id: $0.id, title: $0.title, updatedAt: $0.updatedAt) }
+            .filter { bookId == nil || $0.bookId == bookId }
+            .map { PageSummary(id: $0.id,
+                               title: $0.title,
+                               pageName: $0.pageName,
+                               bookId: $0.bookId,
+                               chapterId: $0.chapterId,
+                               updatedAt: $0.updatedAt) }
             .sorted { $0.updatedAt > $1.updatedAt }
     }
 
@@ -114,7 +134,16 @@ final class InMemoryLocalStore: LocalStore {
         // Basis übernehmen: explizit übergebene Basis gewinnt, sonst bisherige behalten.
         let base = baseUpdatedAt ?? pages[id]?.baseUpdatedAt
         let title = Self.deriveTitle(from: html) ?? pages[id]?.title
-        let page = StoredPage(id: id, html: html, title: title, updatedAt: now, baseUpdatedAt: base)
+        // Buch-Zuordnung bleibt erhalten (lokaler Save ändert nur Inhalt).
+        let existing = pages[id]
+        let page = StoredPage(id: id,
+                              html: html,
+                              title: title,
+                              pageName: existing?.pageName,
+                              bookId: existing?.bookId,
+                              chapterId: existing?.chapterId,
+                              updatedAt: now,
+                              baseUpdatedAt: base)
         pages[id] = page
 
         // Outbox: einen Eintrag pro Seite vorhalten (jüngster Stand gewinnt).
@@ -143,11 +172,14 @@ final class InMemoryLocalStore: LocalStore {
         persistSnapshot()
     }
 
-    func applyServerPage(id: String, html: String, title: String?, serverUpdatedAtMillis: Double) async throws {
-        let derived = title ?? Self.deriveTitle(from: html) ?? pages[id]?.title
+    func applyServerPage(id: String, html: String, pageName: String?, bookId: Int?, chapterId: Int?, serverUpdatedAtMillis: Double) async throws {
+        let derived = Self.deriveTitle(from: html) ?? pages[id]?.title
         pages[id] = StoredPage(id: id,
                                html: html,
                                title: derived,
+                               pageName: pageName ?? pages[id]?.pageName,
+                               bookId: bookId ?? pages[id]?.bookId,
+                               chapterId: chapterId ?? pages[id]?.chapterId,
                                updatedAt: serverUpdatedAtMillis,
                                baseUpdatedAt: serverUpdatedAtMillis)
         persistSnapshot()

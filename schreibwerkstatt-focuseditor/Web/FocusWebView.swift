@@ -39,6 +39,16 @@ struct FocusWebView: NSViewRepresentable {
         let config = WKWebViewConfiguration()
         config.userContentController = controller
 
+        // Bundle über ein eigenes Scheme ausliefern (EINE Origin → ES-Module laden;
+        // loadFileURL gibt jeder Datei eine opake Origin → CORS-Block). Nur wenn
+        // ein echtes Build vorliegt; sonst greift unten die Dev-Harness.
+        if let webRoot = Bundle.main.url(forResource: "index", withExtension: "html", subdirectory: "web")?
+            .deletingLastPathComponent() {
+            let handler = AppSchemeHandler(webRoot: webRoot)
+            context.coordinator.schemeHandler = handler  // Lebensdauer an die View koppeln
+            config.setURLSchemeHandler(handler, forURLScheme: AppScheme.scheme)
+        }
+
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.setValue(false, forKey: "drawsBackground") // Brand-Hintergrund durchscheinen lassen
         webView.navigationDelegate = context.coordinator
@@ -56,10 +66,10 @@ struct FocusWebView: NSViewRepresentable {
         // Statisches lokales Bundle — kein dynamisches Reload nötig.
     }
 
-    /// Lädt das gebündelte Editor-Build, sonst die Dev-Harness.
+    /// Lädt das gebündelte Editor-Build über das eigene Scheme, sonst die Dev-Harness.
     private func load(into webView: WKWebView) {
-        if let index = Bundle.main.url(forResource: "index", withExtension: "html", subdirectory: "web") {
-            webView.loadFileURL(index, allowingReadAccessTo: index.deletingLastPathComponent())
+        if Bundle.main.url(forResource: "index", withExtension: "html", subdirectory: "web") != nil {
+            webView.load(URLRequest(url: AppScheme.indexURL))
         } else {
             webView.loadHTMLString(WebAssets.devHarnessHTML, baseURL: nil)
         }
@@ -67,13 +77,14 @@ struct FocusWebView: NSViewRepresentable {
 
     final class Coordinator: NSObject, WKNavigationDelegate {
         var bridge: EditorBridge?
+        var schemeHandler: AppSchemeHandler?
 
         // HARTE REGEL: keine externen Navigationen. Nur lokale Schemes erlauben.
         func webView(_ webView: WKWebView,
                      decidePolicyFor navigationAction: WKNavigationAction,
                      decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
             let scheme = navigationAction.request.url?.scheme?.lowercased()
-            if scheme == "file" || scheme == "about" || scheme == nil {
+            if scheme == AppScheme.scheme || scheme == "file" || scheme == "about" || scheme == nil {
                 decisionHandler(.allow)
             } else {
                 // http(s)/mailto/… gehören nicht in die Editor-WebView.
