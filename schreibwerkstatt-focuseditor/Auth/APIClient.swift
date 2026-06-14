@@ -62,6 +62,59 @@ final class APIClient {
         _ = try await sendRaw(path, method: method, body: body, overrideToken: overrideToken)
     }
 
+    /// Ergebnis eines Roh-GET ohne JSON-Decode (für Nicht-JSON-Ressourcen wie
+    /// das Editor-Bundle-ZIP). `notModified` = Server-304 auf `If-None-Match`.
+    struct RawResponse {
+        let notModified: Bool
+        let data: Data
+        let etag: String?
+    }
+
+    /// Roh-GET für binäre Ressourcen. Behandelt `304 Not Modified` NICHT als
+    /// Fehler (für konditionale Anfragen via `If-None-Match`). 401 schlägt wie
+    /// üblich auf `onUnauthorized` durch.
+    func getRaw(_ path: String, ifNoneMatch etag: String? = nil) async throws -> RawResponse {
+        guard let baseURL = ServerConfig.baseURL,
+              let url = URL(string: path, relativeTo: baseURL) else {
+            throw AuthError.invalidServerURL
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = Method.GET.rawValue
+        if let token = tokenProvider() {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        if let etag {
+            request.setValue(etag, forHTTPHeaderField: "If-None-Match")
+        }
+
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await session.data(for: request)
+        } catch {
+            throw AuthError.network(error)
+        }
+
+        guard let http = response as? HTTPURLResponse else {
+            throw AuthError.server(status: -1, code: nil, body: nil)
+        }
+
+        let responseETag = http.value(forHTTPHeaderField: "ETag")
+        switch http.statusCode {
+        case 304:
+            return RawResponse(notModified: true, data: Data(), etag: responseETag ?? etag)
+        case 200...299:
+            return RawResponse(notModified: false, data: data, etag: responseETag)
+        case 401:
+            onUnauthorized?()
+            throw AuthError.unauthorized
+        default:
+            let code = (try? decoder.decode(ServerErrorBody.self, from: data))?.error_code
+            throw AuthError.server(status: http.statusCode, code: code, body: data)
+        }
+    }
+
     /// Kern: baut den Request, prüft Statuscodes, mappt Fehler.
     private func sendRaw(
         _ path: String,

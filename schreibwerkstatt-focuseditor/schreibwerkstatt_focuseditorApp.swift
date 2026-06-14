@@ -11,6 +11,7 @@ import SwiftUI
 struct schreibwerkstatt_focuseditorApp: App {
     @StateObject private var core = AppCore()
     @StateObject private var fullscreen = KioskFullscreen()
+    @StateObject private var appearance = AppearanceController()
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
@@ -20,7 +21,9 @@ struct schreibwerkstatt_focuseditorApp: App {
                 .environmentObject(core.auth)
                 .environmentObject(core.sync)
                 .environmentObject(core.library)
+                .environmentObject(core.editorBundle)
                 .environmentObject(fullscreen)
+                .environmentObject(appearance)
                 .background(WindowAccessor { fullscreen.bind($0) })
                 .task { await core.bootstrap() }
         }
@@ -38,6 +41,17 @@ struct schreibwerkstatt_focuseditorApp: App {
                     fullscreen.toggle()
                 }
                 .keyboardShortcut("f", modifiers: [.command, .control])
+            }
+
+            // Manueller Light/Dark/System-Umschalter. Inline-Picker rendert
+            // als Menüpunkte mit Häkchen beim aktiven Modus.
+            CommandGroup(after: .toolbar) {
+                Picker("Darstellung", selection: $appearance.mode) {
+                    ForEach(AppearanceMode.allCases) { mode in
+                        Text(mode.label).tag(mode)
+                    }
+                }
+                .pickerStyle(.inline)
             }
         }
     }

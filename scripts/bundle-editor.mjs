@@ -180,6 +180,8 @@ ${links}
 
       // baseUpdatedAt je Seite mitführen (für den nächsten Push / 409-Basis).
       const bases = new Map();
+      // Aktuell offene Seite (für editorState-Meldung an Swift + Event-Routing).
+      let currentId = null;
       const bridge = {
         granularity: 'paragraph',
         loadPage: async () => {
@@ -200,12 +202,94 @@ ${links}
           const base = bases.get(String(id)) ?? null;
           const res = await fb.save(id, html, base);
           if (res && res.updatedAt != null) bases.set(String(id), res.updatedAt);
+          // Save erfolgreich → Seite ist nicht mehr dirty (Open-Page-Schutz im Sync).
+          fb.reportState?.(String(id), false);
           return res;
         },
       };
 
-      window.__standalone = await mountStandaloneFocus({ mount: document.getElementById('mount'), bridge });
+      const std = await mountStandaloneFocus({ mount: document.getElementById('mount'), bridge });
+      window.__standalone = std;
       status.remove();
+
+      // ── Live-Counter (sanft im Focus-Header) ──────────────────────────────
+      // Wie die Mutter-App: Wörter/Zeichen gesamt + heute-Delta gegen die
+      // Tagesbaseline. Die Werte rechnet der gebündelte installEditCounter
+      // (enterFocusMode) bereits live in host.focusCount* — die SPA rendert sie
+      // via Alpine-Partial, das hier nicht existiert. Darum baut die Schale
+      // einen schlanken Topbar mit den vorhandenen Editor-CSS-Klassen
+      // (.focus-editor__topbar / .focus-live-counter[--today]; gedimmt, blendet
+      // bei Hover auf) und spiegelt die Host-Felder per Poll-Tick hinein.
+      const focusEl = document.querySelector('.focus-editor');
+      if (focusEl) {
+        const topbar = document.createElement('div');
+        topbar.className = 'focus-editor__topbar';
+        const titleRow = document.createElement('div');
+        titleRow.className = 'focus-editor__title-row';
+        const titleEl = document.createElement('span');
+        titleEl.className = 'focus-editor__title';
+        titleRow.appendChild(titleEl);
+        const counter = document.createElement('span');
+        counter.className = 'focus-live-counter';
+        const totalEl = document.createElement('span');
+        const todayEl = document.createElement('span');
+        todayEl.className = 'focus-live-counter--today';
+        counter.append(totalEl, todayEl);
+        topbar.append(titleRow, counter);
+        // Vor den contenteditable-Content: .focus-editor ist flex-column, der
+        // Topbar (flex:0 0 auto) sitzt damit oben, Content (flex:1) darunter.
+        focusEl.insertBefore(topbar, focusEl.firstChild);
+
+        // Nur bei Änderung ins DOM schreiben (kein Layout-Thrash pro Tick).
+        const setText = (el, txt) => { if (el.textContent !== txt) el.textContent = txt; };
+        const host = std.host;
+        const renderStats = () => {
+          setText(titleEl, host.currentPage?.name || '');
+          setText(totalEl, (host.focusCountWords | 0) + ' Wörter · ' + (host.focusCountChars | 0) + ' Zeichen');
+          const wd = host.focusCountWordsDelta || '±0';
+          const cd = host.focusCountCharsDelta || '±0';
+          setText(todayEl, wd + ' Wörter · ' + cd + ' Zeichen heute');
+        };
+        renderStats();
+        // Der Counter selbst tickt debounced (220 ms); ein 400-ms-Poll spiegelt
+        // den jeweils frischen Stand und übersteht Seitenwechsel (setPage setzt
+        // den Counter via enterFocusMode neu auf) ohne eigene Verdrahtung.
+        setInterval(renderStats, 400);
+      }
+
+      // Offene Seite an Swift melden (steuert Open-Page-Reload/-Schutz beim Sync).
+      currentId = std.host.currentPage ? String(std.host.currentPage.id) : null;
+      fb.reportState?.(currentId, false);
+
+      // Tippen markiert die offene Seite dirty (zusätzlich zum internen Autosave).
+      const contentEl = document.querySelector('.focus-editor__content');
+      contentEl?.addEventListener('input', () => {
+        if (currentId) fb.reportState?.(currentId, true);
+      });
+
+      // Nativer Picker: Swift schickt 'openPage' → frischen lokalen Stand laden.
+      fb.on?.('openPage', async (p) => {
+        const id = String(p.pageId);
+        let page = null;
+        try { page = await fb.load(id); } catch (_) {}
+        const html = page ? (page.html || '<p><br></p>') : (p.html || '<p><br></p>');
+        const name = page ? (page.pageName || page.title || 'Seite') : 'Seite';
+        if (page && page.updatedAt != null) bases.set(id, page.updatedAt);
+        std.setPage({ id, name, html });
+        currentId = id;
+        fb.reportState?.(id, false);
+      });
+
+      // Sync hat die offene, saubere Seite serverseitig aktualisiert → still neu laden.
+      fb.on?.('serverUpdate', async (p) => {
+        const id = String(p.pageId);
+        if (id !== currentId) return;
+        if (p.baseUpdatedAt != null) bases.set(id, p.baseUpdatedAt);
+        const name = std.host.currentPage ? std.host.currentPage.name : 'Seite';
+        std.setPage({ id, name, html: p.html || '<p><br></p>' });
+        fb.reportState?.(id, false);
+      });
+
       fb.log?.('Standalone-Focus gemountet');
     } catch (e) {
       status.className = 'err';

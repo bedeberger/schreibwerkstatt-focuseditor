@@ -17,7 +17,7 @@ import Foundation
 
 /// Eine Seite im lokalen Spiegel. `updatedAt` ist ein Epoch-Millis-Zeitstempel
 /// (Double) — passt 1:1 zu `Date.now()` in der WebView und zur Sync-Basis.
-struct StoredPage: Codable, Equatable, Identifiable {
+nonisolated struct StoredPage: Codable, Equatable, Identifiable {
     var id: String
     var html: String
     /// Aus dem HTML abgeleiteter Anzeige-Fallback (erste Textzeile).
@@ -38,7 +38,7 @@ struct StoredPage: Codable, Equatable, Identifiable {
 
 /// Eintrag der Schreib-Queue. Jeder lokale Save erzeugt (oder aktualisiert) einen
 /// Outbox-Eintrag; die SyncEngine arbeitet ihn bei Konnektivität ab.
-struct OutboxEntry: Codable, Equatable {
+nonisolated struct OutboxEntry: Codable, Equatable {
     var pageId: String
     var html: String
     /// Server-Basis, gegen die gepusht wird (`expected_updated_at`).
@@ -73,10 +73,30 @@ protocol LocalStore: AnyObject {
     /// Outbox-Eintrag zu erzeugen (Pull ist keine lokale Änderung). Setzt
     /// `updatedAt` und `baseUpdatedAt` auf den Server-Stand.
     func applyServerPage(id: String, html: String, pageName: String?, bookId: Int?, chapterId: Int?, serverUpdatedAtMillis: Double) async throws
+
+    /// Entfernt eine Seite aus dem Spiegel (serverseitig gelöscht, Delete-Reconcile).
+    /// Räumt einen evtl. vorhandenen Outbox-Eintrag mit weg. Der Aufrufer stellt
+    /// sicher, dass keine ungepushte/ungespeicherte Änderung verloren geht.
+    func deletePage(id: String) async throws
+}
+
+/// Titel-Ableitung aus dem HTML — von allen LocalStore-Implementierungen
+/// geteilt, damit In-Memory- und GRDB-Spiegel denselben Anzeigenamen erzeugen.
+/// `nonisolated`, weil GRDB die Ableitung im DB-Writer-Thread aufruft.
+nonisolated enum PageTitle {
+    /// Grobe Titel-Ableitung: erste nicht-leere Textzeile des HTML (max. 80 Zeichen).
+    static func derive(from html: String) -> String? {
+        let stripped = html.replacingOccurrences(of: "<[^>]+>", with: " ", options: .regularExpression)
+            .replacingOccurrences(of: "&nbsp;", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !stripped.isEmpty else { return nil }
+        let firstLine = stripped.split(whereSeparator: \.isNewline).first.map(String.init) ?? stripped
+        return String(firstLine.prefix(80))
+    }
 }
 
 /// Schlanke Listenzeile (kein HTML-Body).
-struct PageSummary: Codable, Equatable, Identifiable {
+nonisolated struct PageSummary: Codable, Equatable, Identifiable {
     var id: String
     var title: String?
     var pageName: String?
@@ -133,7 +153,7 @@ final class InMemoryLocalStore: LocalStore {
         let now = nowMillis()
         // Basis übernehmen: explizit übergebene Basis gewinnt, sonst bisherige behalten.
         let base = baseUpdatedAt ?? pages[id]?.baseUpdatedAt
-        let title = Self.deriveTitle(from: html) ?? pages[id]?.title
+        let title = PageTitle.derive(from: html) ?? pages[id]?.title
         // Buch-Zuordnung bleibt erhalten (lokaler Save ändert nur Inhalt).
         let existing = pages[id]
         let page = StoredPage(id: id,
@@ -173,7 +193,7 @@ final class InMemoryLocalStore: LocalStore {
     }
 
     func applyServerPage(id: String, html: String, pageName: String?, bookId: Int?, chapterId: Int?, serverUpdatedAtMillis: Double) async throws {
-        let derived = Self.deriveTitle(from: html) ?? pages[id]?.title
+        let derived = PageTitle.derive(from: html) ?? pages[id]?.title
         pages[id] = StoredPage(id: id,
                                html: html,
                                title: derived,
@@ -185,21 +205,17 @@ final class InMemoryLocalStore: LocalStore {
         persistSnapshot()
     }
 
+    func deletePage(id: String) async throws {
+        pages.removeValue(forKey: id)
+        outbox.removeAll { $0.pageId == id }
+        persistSnapshot()
+    }
+
     // MARK: Hilfen
 
     /// Epoch-Millisekunden — gleiche Einheit wie `Date.now()` in der WebView.
     private func nowMillis() -> Double {
         Date().timeIntervalSince1970 * 1000
-    }
-
-    /// Grobe Titel-Ableitung: erster nicht-leerer Textinhalt des HTML.
-    private static func deriveTitle(from html: String) -> String? {
-        let stripped = html.replacingOccurrences(of: "<[^>]+>", with: " ", options: .regularExpression)
-            .replacingOccurrences(of: "&nbsp;", with: " ")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !stripped.isEmpty else { return nil }
-        let firstLine = stripped.split(whereSeparator: \.isNewline).first.map(String.init) ?? stripped
-        return String(firstLine.prefix(80))
     }
 
     // MARK: JSON-Snapshot (Platzhalter-Persistenz)

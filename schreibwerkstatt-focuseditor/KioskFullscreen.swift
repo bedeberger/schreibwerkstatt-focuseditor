@@ -18,6 +18,9 @@ import Combine
 @MainActor
 final class KioskFullscreen: ObservableObject {
     @Published private(set) var isActive = false
+    /// True, solange das Fenster im **nativen** macOS-Vollbild ist. Steuert das
+    /// Ausblenden der Toolbar (ablenkungsfrei) in `ContentView`.
+    @Published private(set) var isNativeFullscreen = false
 
     private weak var window: NSWindow?
 
@@ -28,12 +31,47 @@ final class KioskFullscreen: ObservableObject {
     private var savedTitlebarTransparent = false
     private var escMonitor: Any?
 
+    // Beobachter für die nativen Vollbild-Notifications des Fensters.
+    private var fullscreenObservers: [NSObjectProtocol] = []
+
     private static let buttons: [NSWindow.ButtonType] = [.closeButton, .miniaturizeButton, .zoomButton]
 
     /// Vom `WindowAccessor` gereicht, sobald das NSWindow existiert.
     func bind(_ window: NSWindow?) {
         guard window !== self.window else { return }
+        teardownFullscreenObservers()
         self.window = window
+        guard let window else { return }
+
+        // Nativer Vollbild (grüner Button / View ▸ Vollbild) soll sofort den
+        // ablenkungsfreien Modus auslösen: Ampel-Buttons weg, Toolbar aus.
+        let center = NotificationCenter.default
+        fullscreenObservers = [
+            center.addObserver(forName: NSWindow.didEnterFullScreenNotification,
+                               object: window, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.nativeFullscreenChanged(true) }
+            },
+            center.addObserver(forName: NSWindow.didExitFullScreenNotification,
+                               object: window, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.nativeFullscreenChanged(false) }
+            },
+        ]
+    }
+
+    private func teardownFullscreenObservers() {
+        for token in fullscreenObservers { NotificationCenter.default.removeObserver(token) }
+        fullscreenObservers.removeAll()
+    }
+
+    /// Reaktion auf nativen Vollbild-Wechsel: Ampel-Buttons aus-/einblenden und
+    /// Flag setzen, das die Toolbar in der SwiftUI-Hierarchie versteckt.
+    private func nativeFullscreenChanged(_ entered: Bool) {
+        if let window {
+            for kind in Self.buttons {
+                window.standardWindowButton(kind)?.isHidden = entered
+            }
+        }
+        isNativeFullscreen = entered
     }
 
     func toggle() {

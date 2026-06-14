@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		61DB000000000000000000A3 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = 61DB000000000000000000A2 /* GRDB */; };
 		61EA81F0000000000000FB03 /* web in Resources */ = {isa = PBXBuildFile; fileRef = 61EA81F0000000000000FB02 /* web */; };
 /* End PBXBuildFile section */
 
@@ -28,6 +29,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				61DB000000000000000000A3 /* GRDB in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -79,6 +81,7 @@
 			);
 			name = "schreibwerkstatt-focuseditor";
 			packageProductDependencies = (
+				61DB000000000000000000A2 /* GRDB */,
 			);
 			productName = "schreibwerkstatt-focuseditor";
 			productReference = 61EA813C2FDE904700FBD31B /* schreibwerkstatt-focuseditor.app */;
@@ -108,6 +111,9 @@
 			);
 			mainGroup = 61EA81332FDE904700FBD31B;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				61DB000000000000000000A1 /* XCRemoteSwiftPackageReference "GRDB" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 61EA813D2FDE904700FBD31B /* Products */;
 			projectDirPath = "";
@@ -271,6 +277,7 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Schreibwerkstatt Fokus";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -302,6 +309,7 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Schreibwerkstatt Fokus";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -342,6 +350,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		61DB000000000000000000A1 /* XCRemoteSwiftPackageReference "GRDB" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/groue/GRDB.swift";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 7.11.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		61DB000000000000000000A2 /* GRDB */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 61DB000000000000000000A1 /* XCRemoteSwiftPackageReference "GRDB" */;
+			productName = GRDB;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 61EA81342FDE904700FBD31B /* Project object */;
 }

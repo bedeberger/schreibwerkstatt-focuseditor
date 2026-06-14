@@ -83,6 +83,94 @@ enum WebAssets {
     })();
     """
 
+    /// Boot-/Bridge-HTML der Mac-Schale für das OTA-Editor-Bundle.
+    ///
+    /// Das `index.html` ist NICHT Teil des Server-Bundles (Editor-SSoT) — es ist
+    /// Client-Glue (adaptiert die WKWebView-Bridge `window.__focusBridge` auf den
+    /// standalone-Vertrag und mountet die Focus-Engine). Der EditorBundleStore
+    /// schreibt es nach dem Entpacken in den Cache, mit den `<link>`-Tags aus den
+    /// `cssFiles` des Bundle-Manifests (Reihenfolge = Link-Reihenfolge).
+    ///
+    /// Spiegelt die frühere Generierung in scripts/bundle-editor.mjs; bei
+    /// Änderungen am Boot beide Stellen synchron halten (oder bundle-editor.mjs
+    /// als reine Build-Referenz endgültig zurückbauen).
+    static func indexHTML(cssFiles: [String], sourceCommit: String) -> String {
+        let links = cssFiles
+            .map { "  <link rel=\"stylesheet\" href=\"\($0)\">" }
+            .joined(separator: "\n")
+        return """
+        <!doctype html>
+        <html lang="de">
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1">
+          <title>Schreibwerkstatt — Focus-Editor</title>
+          <!-- GENERIERT vom EditorBundleStore aus dem OTA-Bundle (Quelle @\(sourceCommit)). Nicht von Hand editieren. -->
+        \(links)
+          <style>
+            html, body { margin: 0; height: 100%; background: var(--color-bg, #faf7f2); color: var(--color-text, #1f1c18); }
+            #mount { height: 100vh; display: flex; flex-direction: column; }
+            #boot-status { font: 13px/1.5 -apple-system, system-ui, sans-serif; padding: 24px; }
+            .err { color: #c62828; }
+          </style>
+        </head>
+        <body>
+          <!-- Mount-Punkt für den Standalone-Focus-Editor. -->
+          <div id="mount"></div>
+          <div id="boot-status">Lade Editor…</div>
+
+          <script type="module">
+            // Boot der nativen Schale: adaptiert die WKWebView-Bridge (window.__focusBridge:
+            // load/save/list) auf den standalone-Bridge-Vertrag (loadPage/savePage) und
+            // mountet die Focus-Engine. Die Bridge-Facade liegt at-document-start bereit
+            // (WKUserScript). Im reinen Browser (ohne Swift) fehlt sie → Hinweis statt Crash.
+            const status = document.getElementById('boot-status');
+            const fb = window.__focusBridge;
+            try {
+              if (!fb) throw new Error('window.__focusBridge fehlt (kein nativer Kontext)');
+              const { mountStandaloneFocus } = await import('./js/editor/focus/standalone.js');
+
+              // baseUpdatedAt je Seite mitführen (für den nächsten Push / 409-Basis).
+              const bases = new Map();
+              const bridge = {
+                granularity: 'paragraph',
+                loadPage: async () => {
+                  let pages = [];
+                  try { pages = await fb.list(); } catch (_) {}
+                  const first = Array.isArray(pages) && pages.length ? pages[0] : null;
+                  const id = first ? first.id : 'default';
+                  let page = null;
+                  try { page = await fb.load(id); } catch (_) {}
+                  if (page) {
+                    bases.set(String(page.id), page.updatedAt ?? null);
+                    return { id: page.id, name: page.pageName || page.title || 'Seite', html: page.html || '<p><br></p>' };
+                  }
+                  bases.set('default', null);
+                  return { id: 'default', name: 'Neue Seite', html: '<p><br></p>' };
+                },
+                savePage: async ({ id, html }) => {
+                  const base = bases.get(String(id)) ?? null;
+                  const res = await fb.save(id, html, base);
+                  if (res && res.updatedAt != null) bases.set(String(id), res.updatedAt);
+                  return res;
+                },
+              };
+
+              window.__standalone = await mountStandaloneFocus({ mount: document.getElementById('mount'), bridge });
+              status.remove();
+              fb.log?.('Standalone-Focus gemountet');
+            } catch (e) {
+              status.className = 'err';
+              status.textContent = 'Boot-Fehler: ' + (e && e.message ? e.message : e);
+              fb?.log?.('Boot-Fehler: ' + e, 'error');
+              console.error(e);
+            }
+          </script>
+        </body>
+        </html>
+        """
+    }
+
     /// Eigenständige Diagnose-Seite — testet den Bridge-Round-Trip ohne Editor.
     /// Wird via `loadHTMLString` geladen (kein Resource-Bundling nötig).
     static let devHarnessHTML = """

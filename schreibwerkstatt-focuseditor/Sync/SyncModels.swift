@@ -52,12 +52,15 @@ struct BookSyncResponse: Decodable {
 
 // MARK: - Push
 
-/// Body für `PUT /content/pages/:id`. Wir senden nur HTML + Concurrency-Guard;
-/// `expected_updated_at` ist die exakte Server-ISO-Basis (nil → unbedingtes
-/// Update, vermeiden wir bewusst, siehe SyncEngine).
+/// Body für `PUT /content/pages/:id`. Wir senden HTML + Concurrency-Guard +
+/// Herkunfts-Marker; `expected_updated_at` ist die exakte Server-ISO-Basis
+/// (nil → unbedingtes Update, vermeiden wir bewusst, siehe SyncEngine).
+/// `source` markiert die Revision serverseitig als Mac-App-Edit
+/// (db/page-revisions.js#VALID_SOURCES).
 struct PushRequest: Encodable {
     let html: String
     let expected_updated_at: String?
+    var source: String = "macapp"
 }
 
 /// 200-Antwort von `PUT /content/pages/:id`. Seiten-ID heißt hier `id`.

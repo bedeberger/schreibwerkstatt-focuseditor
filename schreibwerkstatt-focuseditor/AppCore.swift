@@ -9,11 +9,13 @@
 
 import Foundation
 import Combine
+import os
 
 @MainActor
 final class AppCore: ObservableObject {
     let auth: AuthStore
-    /// App-weiter Inhalts-Spiegel (vorerst In-Memory/JSON, später GRDB).
+    /// App-weiter Inhalts-Spiegel — GRDB/SQLite, mit In-Memory-Fallback falls
+    /// die DB nicht geöffnet werden kann (App startet trotzdem).
     let store: any LocalStore
     /// App-weite WebView-Bridge — geteilt zwischen FocusWebView und SyncEngine
     /// (Open-Page-Reload, Block-Merge laufen über dieselbe Instanz).
@@ -23,10 +25,22 @@ final class AppCore: ObservableObject {
     let content: ContentAPI
     /// Buch-/Seitenauswahl-Zustand (aktives Buch persistiert, treibt den Picker).
     let library: LibraryStore
+    /// OTA-Bundle des Focus-Editors (lädt/cacht die Editor-Assets vom Server).
+    let editorBundle: EditorBundleStore
 
     init() {
         let auth = AuthStore()
-        let store = InMemoryLocalStore()
+        let store: any LocalStore
+        do {
+            store = try GRDBLocalStore()
+        } catch {
+            // DB-Öffnen fehlgeschlagen → In-Memory-Fallback. Lokale, noch nicht
+            // gepushte Inhalte sind dann flüchtig; der Sync re-hydratisiert aus
+            // dem Server. Kein Crash beim Start.
+            Logger(subsystem: "ch.schreibwerkstatt.focuseditor", category: "store")
+                .error("GRDB-Store nicht öffenbar, In-Memory-Fallback: \(error.localizedDescription, privacy: .public)")
+            store = InMemoryLocalStore()
+        }
         let bridge = EditorBridge(store: store)
         let content = ContentAPI(api: auth.api)
         self.auth = auth
@@ -34,7 +48,9 @@ final class AppCore: ObservableObject {
         self.bridge = bridge
         self.content = content
         self.library = LibraryStore(content: content, store: store, bridge: bridge)
+        self.editorBundle = EditorBundleStore(api: auth.api)
         let sync = SyncEngine(api: auth.api,
+                              content: content,
                               store: store,
                               shouldSync: { auth.state == .signedIn })
         sync.editor = bridge   // SyncEngine ↔ Editor-Kopplung (schwach gehalten)

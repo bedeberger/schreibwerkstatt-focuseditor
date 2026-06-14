@@ -20,6 +20,9 @@ import WebKit
 struct FocusWebView: NSViewRepresentable {
     /// App-weite Bridge (geteilt mit der SyncEngine über `AppCore`).
     let bridge: EditorBridge
+    /// Wurzelverzeichnis des lokal gecachten OTA-Editor-Bundles (web-cache/).
+    /// Der AppSchemeHandler liefert ausschließlich Dateien hierunter aus.
+    let webRoot: URL
 
     func makeCoordinator() -> Coordinator {
         Coordinator()
@@ -40,10 +43,10 @@ struct FocusWebView: NSViewRepresentable {
         config.userContentController = controller
 
         // Bundle über ein eigenes Scheme ausliefern (EINE Origin → ES-Module laden;
-        // loadFileURL gibt jeder Datei eine opake Origin → CORS-Block). Nur wenn
-        // ein echtes Build vorliegt; sonst greift unten die Dev-Harness.
-        if let webRoot = Bundle.main.url(forResource: "index", withExtension: "html", subdirectory: "web")?
-            .deletingLastPathComponent() {
+        // loadFileURL gibt jeder Datei eine opake Origin → CORS-Block). Quelle ist
+        // der lokale OTA-Cache (web-cache/); liegt dort kein index.html, greift
+        // unten die Dev-Harness.
+        if hasBundle {
             let handler = AppSchemeHandler(webRoot: webRoot)
             context.coordinator.schemeHandler = handler  // Lebensdauer an die View koppeln
             config.setURLSchemeHandler(handler, forURLScheme: AppScheme.scheme)
@@ -69,9 +72,14 @@ struct FocusWebView: NSViewRepresentable {
         // Statisches lokales Bundle — kein dynamisches Reload nötig.
     }
 
-    /// Lädt das gebündelte Editor-Build über das eigene Scheme, sonst die Dev-Harness.
+    /// Liegt im Cache ein bootfähiges Bundle (index.html)?
+    private var hasBundle: Bool {
+        FileManager.default.fileExists(atPath: webRoot.appendingPathComponent("index.html").path)
+    }
+
+    /// Lädt das gecachte Editor-Bundle über das eigene Scheme, sonst die Dev-Harness.
     private func load(into webView: WKWebView) {
-        if Bundle.main.url(forResource: "index", withExtension: "html", subdirectory: "web") != nil {
+        if hasBundle {
             webView.load(URLRequest(url: AppScheme.indexURL))
         } else {
             webView.loadHTMLString(WebAssets.devHarnessHTML, baseURL: nil)

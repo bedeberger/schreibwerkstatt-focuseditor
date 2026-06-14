@@ -47,23 +47,38 @@ private struct EditorHostView: View {
     @EnvironmentObject private var core: AppCore
     @EnvironmentObject private var sync: SyncEngine
     @EnvironmentObject private var library: LibraryStore
+    @EnvironmentObject private var fullscreen: KioskFullscreen
+    @EnvironmentObject private var editorBundle: EditorBundleStore
     /// Sichtbarkeit des beschwörbaren Seiten-Pickers (⌘O).
     @State private var pickerOpen = false
 
     var body: some View {
         ZStack {
-            // App-weiter, geteilter Store — dieselbe Instanz, die die SyncEngine bedient.
-            FocusWebView(bridge: core.bridge)
-                .background(BrandColor.bg)
-                .frame(minWidth: 640, minHeight: 480)
-                .ignoresSafeArea()
+            switch editorBundle.state {
+            case .ready:
+                // App-weiter, geteilter Store — dieselbe Instanz, die die SyncEngine bedient.
+                FocusWebView(bridge: core.bridge, webRoot: editorBundle.webRoot)
+                    .background(BrandColor.bg)
+                    .frame(minWidth: 640, minHeight: 480)
+                    .ignoresSafeArea()
 
-            if pickerOpen {
-                PagePickerOverlay(isOpen: $pickerOpen)
-                    .transition(.opacity)
+                if pickerOpen {
+                    PagePickerOverlay(isOpen: $pickerOpen)
+                        .transition(.opacity)
+                }
+            case .failed(let message):
+                BundleUnavailableView(message: message) {
+                    Task { await editorBundle.refresh(silent: false) }
+                }
+            case .idle, .refreshing:
+                BundleLoadingView()
             }
         }
         .animation(.easeOut(duration: 0.12), value: pickerOpen)
+        .task { await editorBundle.ensureReady() }
+        // Im nativen Vollbild Toolbar komplett aus — pures, ablenkungsfreies
+        // Schreiben (kein Einblenden beim Hovern an den oberen Rand).
+        .toolbar(fullscreen.isNativeFullscreen ? .hidden : .automatic, for: .windowToolbar)
         .toolbar {
             ToolbarItem(placement: .navigation) {
                 BookPicker()
@@ -84,6 +99,49 @@ private struct EditorHostView: View {
             }
         }
         .task { await library.loadBooks() }
+    }
+}
+
+/// Erst-Download/Refresh des Editor-Bundles ohne vorhandenen Cache.
+private struct BundleLoadingView: View {
+    var body: some View {
+        ZStack {
+            BrandColor.bg.ignoresSafeArea()
+            VStack(spacing: 14) {
+                ProgressView().controlSize(.large)
+                Text("Editor wird geladen …")
+                    .font(BrandFont.sans(13))
+                    .foregroundStyle(BrandColor.muted)
+            }
+        }
+        .frame(minWidth: 640, minHeight: 480)
+    }
+}
+
+/// Kein Cache UND Download fehlgeschlagen (typisch: erster Start offline).
+private struct BundleUnavailableView: View {
+    let message: String
+    let retry: () -> Void
+
+    var body: some View {
+        ZStack {
+            BrandColor.bg.ignoresSafeArea()
+            VStack(spacing: 16) {
+                Image(systemName: "wifi.slash")
+                    .font(.system(size: 32))
+                    .foregroundStyle(BrandColor.muted)
+                Text("Editor konnte nicht geladen werden")
+                    .font(BrandFont.serif(18))
+                Text(message)
+                    .font(BrandFont.sans(12))
+                    .foregroundStyle(BrandColor.muted)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 360)
+                Button("Erneut versuchen", action: retry)
+            }
+            .padding(40)
+        }
+        .frame(minWidth: 640, minHeight: 480)
     }
 }
 

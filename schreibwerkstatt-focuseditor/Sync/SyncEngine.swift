@@ -46,6 +46,7 @@ final class SyncEngine: ObservableObject {
     @Published private(set) var conflicts: [Conflict] = []
 
     private let api: APIClient
+    private let content: ContentAPI
     private let store: any LocalStore
     private let reachability: Reachability
     private let stateStore: SyncStateStore
@@ -58,16 +59,22 @@ final class SyncEngine: ObservableObject {
 
     /// Poll-Periode, solange das Fenster aktiv ist (Doku-Richtwert ~5 s).
     private let pollInterval: Duration = .seconds(5)
+    /// Delete-Reconcile ist teurer (ein Tree-Fetch je Buch) → seltener als der
+    /// Poll. Mindestabstand zwischen zwei Reconcile-Durchläufen.
+    private let reconcileInterval: TimeInterval = 60
+    private var lastReconcileAt: Date?
 
     private var isRunning = false
     private var isActive = false
     private var pollTask: Task<Void, Never>?
 
     init(api: APIClient,
+         content: ContentAPI,
          store: any LocalStore,
          reachability: Reachability? = nil,
          shouldSync: @escaping () -> Bool) {
         self.api = api
+        self.content = content
         self.store = store
         self.reachability = reachability ?? Reachability()
         self.shouldSync = shouldSync
@@ -142,6 +149,7 @@ final class SyncEngine: ObservableObject {
         do {
             try await pushOutbox()
             try await pullDeltas()
+            await reconcileDeletesIfDue()
             lastSyncedAt = Date()
             lastError = nil
         } catch AuthError.unauthorized {
@@ -351,6 +359,59 @@ final class SyncEngine: ObservableObject {
             path += "&since=\(encoded)&since_id=\(cursor.since_id)"
         }
         return path
+    }
+
+    // MARK: - Delete-Reconcile
+
+    /// Entfernt lokal Seiten, die der Server nicht mehr kennt. `/sync` meldet
+    /// keine Löschungen (CLAUDE.md) — der Soll-Bestand kommt aus dem Buch-Tree.
+    /// Gedrosselt (≤ 1×/`reconcileInterval`), da je Buch ein Tree-Fetch anfällt.
+    private func reconcileDeletesIfDue() async {
+        let now = Date()
+        if let last = lastReconcileAt, now.timeIntervalSince(last) < reconcileInterval { return }
+        lastReconcileAt = now
+
+        for bookId in stateStore.state.bookIds {
+            do {
+                try await reconcileBookDeletes(bookId)
+            } catch {
+                // Ein Tree-Fehler (offline/Serverproblem) darf die anderen Bücher
+                // nicht blockieren und nichts löschen — beim nächsten Mal erneut.
+                log.notice("Reconcile Buch \(bookId, privacy: .public) übersprungen: \(error.localizedDescription, privacy: .public)")
+            }
+        }
+    }
+
+    private func reconcileBookDeletes(_ bookId: Int) async throws {
+        // Soll: alle Seiten, die der Server-Tree für das Buch kennt (vollständig —
+        // ensureTree nimmt auch ungeordnete Seiten auf, kein False-Positive).
+        let soll = Set(try await content.pickerRows(bookId: bookId).map { String($0.id) })
+        // Ist: lokal gespiegelte Seiten dieses Buchs.
+        let ist = try await store.list(bookId: bookId)
+        guard !ist.isEmpty else { return }
+
+        let pending = Set(try await store.pendingOutbox().map(\.pageId))
+
+        for summary in ist where !soll.contains(summary.id) {
+            let pid = summary.id
+            // Datenverlust-Schutz: nie löschen, wenn lokale Änderung offen/ungepusht
+            // ist oder die Seite gerade dirty im Editor liegt.
+            if pending.contains(pid) {
+                log.notice("Reconcile: \(pid, privacy: .public) serverseitig weg, aber Outbox offen — behalten")
+                continue
+            }
+            if editor?.openPageId == pid, editor?.isDirty(pid) == true {
+                log.notice("Reconcile: \(pid, privacy: .public) serverseitig weg, aber dirty im Editor — behalten")
+                continue
+            }
+
+            try await store.deletePage(id: pid)
+            stateStore.mutate {
+                $0.serverBaseISO[pid] = nil
+                $0.serverBaseHtml[pid] = nil
+            }
+            log.info("Reconcile: lokale Seite \(pid, privacy: .public) entfernt (serverseitig gelöscht)")
+        }
     }
 
     // MARK: - Konflikte
