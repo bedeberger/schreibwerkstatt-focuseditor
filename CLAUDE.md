@@ -20,7 +20,7 @@ AppKit/SwiftUI-Shell
   Swift-Kern
      ├─ LocalStore  (GRDB / SQLite-Spiegel der Seiten)
      ├─ Outbox      (Schreib-Queue, immer erst lokal)
-     ├─ SyncEngine  (Reachability-getrieben: Push Outbox, Pull Deltas)
+     ├─ SyncEngine  (Pull: periodisches Polling; Push: Reachability-getrieben)
      └─ Auth        (Device-Token im Keychain)
                  │ HTTPS Bearer swd_…
                  ▼
@@ -61,11 +61,29 @@ Basis-URL konfigurierbar (Default Prod-Host). Auth über **Device-Token** (Beare
 - Token-Verwaltung am Server: `GET/POST /me/device-tokens`, `POST /me/device-tokens/:id/revoke`, `DELETE /me/device-tokens/:id`.
 - 401 → Token ungültig/widerrufen: Client muss neu authentifizieren (Token aus Keychain löschen, Re-Login anstoßen). Ungespeicherte lokale Inhalte **nie** verwerfen.
 
-### Sync
-- **Pull:** `GET /sync/delta?since=<cursor>` → seit Cursor geänderte Seiten (`id`, `html`, `updated_at`). Cursor lokal persistieren, monoton vorrücken.
-- **Push:** `PUT /content/pages/:id` mit `expected_updated_at`.
-  - `200` → übernommen, Server-`updated_at` als neue Basis speichern.
-  - `409` → Server liefert aktuellen Server-Stand zurück. Client löst per **3-Wege-Block-Merge** (`block-merge.js`, `data-bid`-basiert) in der WebView auf: kollisionsfrei → still mergen + erneut pushen; echte Block-Kollision → Konflikt-Modal des Editors.
+### Sync (Polling: Pull + Push)
+
+Der Sync hält den lokalen Spiegel **aktuell, auch wenn eine Seite in einer anderen Session geändert wird** (Web-App, anderes Gerät). Mechanismus ist **Polling** des bestehenden Server-Endpoints — kein SSE/WebSocket-Push.
+
+**Pull (Deltas ziehen) — `GET /content/books/:book_id/sync`** *(Server: erledigt, [routes/content.js](../../ClaudeProjects/schreibwerkstatt/routes/content.js) `GET /books/:book_id/sync`)*
+- **Buch-skopiert** (braucht ein gewähltes `book_id`), nicht seiten-global. Ein `/sync/delta`-Endpoint existiert **nicht** — das war ein veralteter Plan.
+- Query: `since=<ISO-8601>` + `since_id=<page_id>` + `limit=<n≤200>`. Ohne `since` = Voll-Pull (Baseline) des ganzen Buchs.
+- **Keyset-Cursor `(updated_at, page_id)`:** Antwort liefert `cursor: { since, since_id }` (Position NACH der letzten gelieferten Seite) + `has_more`. Solange `has_more=true`, mit dem zurückgegebenen Cursor weiterpagen, bis erschöpft. Cursor **lokal persistieren** (since + since_id), monoton vorrücken.
+- Antwort-Seiten tragen vollen HTML-Body: `{ page_id, page_name, chapter_id, updated_at, html }` + `now` (Server-Stempel).
+- **Enthält eigene Edits** (anders als `/content/books/:id/changes`, das self-exkludiert + ohne HTML ist — das ist der Web-Collab-Toast-Pfad, nicht für uns). Der Client kann darum jeden Server-Stand übernehmen, auch von anderen eigenen Geräten/Sessions.
+
+**Cross-Session-Frische (Polling-Loop):** Die SyncEngine pollt periodisch (Richtwert 5 s) `…/sync` mit dem gespeicherten Cursor — **nur solange App/Fenster aktiv** (Scene-Phase `.active`; im Hintergrund pausieren, beim Reaktivieren sofort einen Tick). Eingehende Seiten in den LocalStore mergen, `baseUpdatedAt = Server-updated_at` setzen. Ist die **im Editor offene Seite** betroffen:
+  - Editor **sauber** (nicht dirty) → Inhalt in der WebView still neu laden (Bridge-`load`), neuer `baseUpdatedAt` = Server-`updated_at`.
+  - Editor **dirty** → lokalen Stand **nicht** überschreiben (Datenverlust-Schutz). Konflikt wird erst beim nächsten Push aufgelöst (409 → Block-Merge, s.u.).
+
+**Push** — `PUT /content/pages/:id` mit `expected_updated_at` (= lokaler `baseUpdatedAt`):
+  - `200` → übernommen, Server-`updated_at` als neue Basis speichern, Outbox-Eintrag droppen.
+  - `409 PAGE_CONFLICT` → Server liefert `server_updated_at` + `server_editor_email/name`. Client zieht den frischen Server-Stand (Pull der einen Seite) und löst per **3-Wege-Block-Merge** (`block-merge.js`, `data-bid`-basiert) in der WebView auf: kollisionsfrei → still mergen + erneut pushen; echte Block-Kollision → Konflikt-Modal des Editors.
+
+**Deletes:** `/sync` meldet nur geänderte/neue Seiten, **keine Löschungen**. Gelöschte Seiten reconciled der Client über `GET /content/books/:book_id/tree` (Soll-Bestand abgleichen).
+
+**Ort des Codes:** `Sync/SyncEngine.swift` (Poll-Loop + Push) + `Sync/Cursor.swift` (Cursor-Modell). Instanziiert im Shell-Root ([ContentView.swift](schreibwerkstatt-focuseditor/ContentView.swift)), Lifecycle an Scene-Phase / `.onAppear`/`.onDisappear`. Cursor wird über den LocalStore persistiert (eigenes Feld im JSON-Snapshot, später GRDB-Tabelle) — der Pull-Merge in den Store läuft analog zum bestehenden `save(...)`, setzt aber `baseUpdatedAt` direkt auf den Server-Stand und legt **keinen** Outbox-Eintrag an.
+
 - Inhalte fließen ausschließlich über die Content-Store-Semantik des Servers — kein Voll-Buch-`.swbook` für den Live-Sync (zu grob).
 
 ## Verzeichnislayout (Soll)
@@ -103,6 +121,6 @@ schreibwerkstatt-focuseditor/
 
 1. **Bridge-Facade** im Hauptrepo (`editor/focus/` + `editor/shared/`) + Build-Step → Offline-Bundle.
 2. **Device-Token-Auth** am Server — *erledigt* (Tabelle `device_tokens`, `swd_`-Bearer, `/me/device-tokens`). Frontend-UI zum Ausstellen noch offen.
-3. **Inkrementeller Sync** am Server — `GET /sync/delta`, 409-Semantik auf `PUT /content/pages/:id`.
-4. **macOS-Shell + Offline-Kern** — WKWebView + Bridge, GRDB-LocalStore, Outbox, SyncEngine (Reachability).
+3. **Inkrementeller Sync** am Server — *erledigt*: `GET /content/books/:book_id/sync` (Keyset-Cursor, voller HTML, inkl. eigener Edits) + 409-Semantik (`PAGE_CONFLICT`) auf `PUT /content/pages/:id`.
+4. **macOS-Shell + Offline-Kern** — WKWebView + Bridge *(steht)*, LocalStore + Outbox *(steht, In-Memory/JSON-Platzhalter)*, GRDB *(offen)*, **SyncEngine (Polling-Pull + Push)** *(offen — Cross-Session-Frische, s. „Sync")*.
 5. **Nativer Feinschliff** — Menüleiste, ⌘-Shortcuts, echtes Vollbild, Preferences, Dark Mode, Sparkle-Auto-Update, Code-Signing/Notarization.
