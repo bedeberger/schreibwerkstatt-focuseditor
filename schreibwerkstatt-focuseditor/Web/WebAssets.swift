@@ -43,8 +43,33 @@ enum WebAssets {
         call,
         load: (pageId) => call('load', { pageId }),
         save: (pageId, html, baseUpdatedAt) => call('save', { pageId, html, baseUpdatedAt }),
-        list: () => call('list'),
+        list: (bookId) => call('list', bookId == null ? {} : { bookId }),
         log:  (message, level) => call('log', { message: String(message), level: level || 'info' }),
+
+        // Editor meldet offene Seite + Dirty-Flag an Swift (Open-Page-Reload/-Schutz).
+        reportState: (pageId, dirty) =>
+          call('editorState', { pageId: pageId == null ? null : String(pageId), dirty: !!dirty }),
+
+        // Swift→JS Event-Bus. Der Editor-Host abonniert z. B. 'serverUpdate'
+        // (saubere offene Seite wurde serverseitig aktualisiert → still neu laden).
+        _handlers: {},
+        on: function (event, cb) {
+          (this._handlers[event] = this._handlers[event] || []).push(cb);
+        },
+        _receive: function (event, payload) {
+          (this._handlers[event] || []).forEach(function (cb) {
+            try { cb(payload); } catch (e) { console.error('[focus-bridge] handler', e); }
+          });
+        },
+
+        // 3-Wege-Block-Merge über das gebündelte block-merge.js (ES-Modul,
+        // dynamisch geladen). Von Swift via callAsyncJavaScript aufgerufen.
+        // Wirft, wenn kein Bundle vorliegt (Dev-Harness) → Swift wertet das als Konflikt.
+        _merge3: async function (baseHtml, localHtml, serverHtml) {
+          const m = await import('/js/editor/shared/block-merge.js');
+          const res = m.mergeBlocks(baseHtml || '', localHtml || '', serverHtml || '');
+          return { merged: m.mergedToHtml(res.merged), conflictCount: res.conflicts.length };
+        },
       };
 
       // console → Swift-Log (nur Weiterleitung, Original bleibt erhalten).
@@ -132,6 +157,12 @@ enum WebAssets {
           logLine('FEHLER: window.__focusBridge fehlt — Facade nicht injiziert.', 'err');
         } else {
           logLine('Bridge verfügbar: ' + Object.keys(bridge).join(', '), 'ok');
+          // Nativer Picker → Swift `openPage` → hier: Seite übernehmen (Diagnose).
+          bridge.on('openPage', (p) => {
+            $('pageId').value = p.pageId == null ? '' : p.pageId;
+            if (p.html != null) $('html').value = p.html;
+            logLine('openPage ← ' + p.pageId, 'ok');
+          });
         }
 
         async function run(label, fn) {

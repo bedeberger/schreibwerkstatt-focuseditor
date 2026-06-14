@@ -22,6 +22,21 @@ struct SyncState: Codable {
     var cursors: [Int: SyncCursorDTO] = [:]
     /// Exakte Server-ISO-Basis je Seiten-ID (String-Key = Store-Seiten-ID).
     var serverBaseISO: [String: String] = [:]
+    /// Server-HTML der letzten Basis je Seite — gemeinsamer Vorfahr (Ancestor)
+    /// für den 3-Wege-Block-Merge bei 409.
+    var serverBaseHtml: [String: String] = [:]
+
+    init() {}
+
+    // Tolerant gegen fehlende Keys (ältere Snapshots ohne `serverBaseHtml`),
+    // damit ein neues Feld nicht den ganzen Sync-Zustand verwirft.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        bookIds = try c.decodeIfPresent([Int].self, forKey: .bookIds) ?? []
+        cursors = try c.decodeIfPresent([Int: SyncCursorDTO].self, forKey: .cursors) ?? [:]
+        serverBaseISO = try c.decodeIfPresent([String: String].self, forKey: .serverBaseISO) ?? [:]
+        serverBaseHtml = try c.decodeIfPresent([String: String].self, forKey: .serverBaseHtml) ?? [:]
+    }
 }
 
 /// Lädt/speichert `SyncState` als JSON-Snapshot.

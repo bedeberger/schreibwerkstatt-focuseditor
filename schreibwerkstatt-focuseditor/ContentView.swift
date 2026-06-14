@@ -46,22 +46,44 @@ private struct EditorHostView: View {
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var core: AppCore
     @EnvironmentObject private var sync: SyncEngine
+    @EnvironmentObject private var library: LibraryStore
+    /// Sichtbarkeit des beschwörbaren Seiten-Pickers (⌘O).
+    @State private var pickerOpen = false
 
     var body: some View {
-        // App-weiter, geteilter Store — dieselbe Instanz, die die SyncEngine bedient.
-        FocusWebView(store: core.store)
-            .background(BrandColor.bg)
-            .frame(minWidth: 640, minHeight: 480)
-            .ignoresSafeArea()
-            .toolbar {
-                ToolbarItem(placement: .automatic) {
-                    SyncStatusLabel(status: sync.status, conflicts: sync.conflicts.count)
-                }
-                ToolbarItem(placement: .automatic) {
-                    Button("Abmelden") { auth.signOut() }
-                        .font(BrandFont.sans(12))
-                }
+        ZStack {
+            // App-weiter, geteilter Store — dieselbe Instanz, die die SyncEngine bedient.
+            FocusWebView(bridge: core.bridge)
+                .background(BrandColor.bg)
+                .frame(minWidth: 640, minHeight: 480)
+                .ignoresSafeArea()
+
+            if pickerOpen {
+                PagePickerOverlay(isOpen: $pickerOpen)
+                    .transition(.opacity)
             }
+        }
+        .animation(.easeOut(duration: 0.12), value: pickerOpen)
+        .toolbar {
+            ToolbarItem(placement: .navigation) {
+                BookPicker()
+            }
+            ToolbarItem(placement: .automatic) {
+                Button { pickerOpen.toggle() } label: {
+                    Image(systemName: "doc.text.magnifyingglass")
+                }
+                .keyboardShortcut("o", modifiers: .command)
+                .help("Seite öffnen (⌘O)")
+            }
+            ToolbarItem(placement: .automatic) {
+                SyncStatusLabel(status: sync.status, conflicts: sync.conflicts.count)
+            }
+            ToolbarItem(placement: .automatic) {
+                Button("Abmelden") { auth.signOut() }
+                    .font(BrandFont.sans(12))
+            }
+        }
+        .task { await library.loadBooks() }
     }
 }
 

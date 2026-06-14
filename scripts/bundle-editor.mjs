@@ -49,11 +49,13 @@ const SRC_PUBLIC = join(SOURCE, 'public');               // Wurzel der Web-Asset
 const DEST = join(REPO_ROOT, 'web');
 
 // Entry-Module der Import-Closure (relativ zu public/). focus.js zieht den
-// gesamten focus/-Kern + benötigte shared/-Helfer; editor-host + block-merge
-// explizit, weil der spätere Bridge-Host bzw. die 409-Auflösung sie braucht
-// (CLAUDE.md), auch wenn sie focus.js nicht zwingend erreicht.
+// gesamten focus/-Kern + benötigte shared/-Helfer; standalone.js ist der
+// Mount-Einstieg der Mac-Schale (wird NICHT von focus.js erreicht und muss
+// darum explizit gelistet sein); editor-host + block-merge explizit, weil der
+// Bridge-Host bzw. die 409-Auflösung sie brauchen (CLAUDE.md).
 const ENTRY_MODULES = [
   'js/editor/focus.js',
+  'js/editor/focus/standalone.js',
   'js/editor/shared/editor-host.js',
   'js/editor/shared/block-merge.js',
 ];
@@ -141,7 +143,7 @@ function sourceCommit() {
   } catch { return 'unbekannt'; }
 }
 
-// ── index.html (Lade-Scaffold / Verifikations-Harness) ───────────────────────
+// ── index.html (Boot der Mac-Schale) ─────────────────────────────────────────
 
 function indexHtml(cssFiles, commit) {
   const links = cssFiles.map((f) => `  <link rel="stylesheet" href="${f}">`).join('\n');
@@ -155,33 +157,60 @@ function indexHtml(cssFiles, commit) {
 ${links}
   <style>
     html, body { margin: 0; height: 100%; background: var(--color-bg, #faf7f2); color: var(--color-text, #1f1c18); }
+    #mount { height: 100vh; display: flex; flex-direction: column; }
     #boot-status { font: 13px/1.5 -apple-system, system-ui, sans-serif; padding: 24px; }
-    .ok { color: #2e7d32; } .err { color: #c62828; }
+    .err { color: #c62828; }
   </style>
 </head>
 <body>
-  <!-- Mount-Punkt für den späteren Standalone-Bootstrap (focus/standalone.js,
-       noch nicht vorhanden). Bis dahin verifiziert das Modul-Probe-Script unten
-       nur, dass der Editor-Modulgraph nativ in der WKWebView lädt. -->
-  <div id="editor-root"></div>
-  <div id="boot-status">Lade Editor-Module…</div>
+  <!-- Mount-Punkt für den Standalone-Focus-Editor. -->
+  <div id="mount"></div>
+  <div id="boot-status">Lade Editor…</div>
 
   <script type="module">
+    // Boot der nativen Schale: adaptiert die WKWebView-Bridge (window.__focusBridge:
+    // load/save/list) auf den standalone-Bridge-Vertrag (loadPage/savePage) und
+    // mountet die Focus-Engine. Die Bridge-Facade liegt at-document-start bereit
+    // (WKUserScript). Im reinen Browser (ohne Swift) fehlt sie → Hinweis statt Crash.
     const status = document.getElementById('boot-status');
+    const fb = window.__focusBridge;
     try {
-      const focus = await import('./js/editor/focus.js');
-      const host  = await import('./js/editor/shared/editor-host.js');
-      const exportNames = Object.keys(focus).join(', ');
-      status.className = 'ok';
-      status.textContent = 'Editor-Modulgraph geladen ✓  (focus.js exportiert: ' + exportNames + ')';
-      window.__focusBridge?.log?.('Editor-Module geladen: ' + exportNames);
-      // Anbaupunkt: sobald focus/standalone.js existiert, hier mounten und via
-      // host.setEditorHost(bridgeHost) den Bridge-Host injizieren.
-      window.__editorModules = { focus, host };
+      if (!fb) throw new Error('window.__focusBridge fehlt (kein nativer Kontext)');
+      const { mountStandaloneFocus } = await import('./js/editor/focus/standalone.js');
+
+      // baseUpdatedAt je Seite mitführen (für den nächsten Push / 409-Basis).
+      const bases = new Map();
+      const bridge = {
+        granularity: 'paragraph',
+        loadPage: async () => {
+          let pages = [];
+          try { pages = await fb.list(); } catch (_) {}
+          const first = Array.isArray(pages) && pages.length ? pages[0] : null;
+          const id = first ? first.id : 'default';
+          let page = null;
+          try { page = await fb.load(id); } catch (_) {}
+          if (page) {
+            bases.set(String(page.id), page.updatedAt ?? null);
+            return { id: page.id, name: page.pageName || page.title || 'Seite', html: page.html || '<p><br></p>' };
+          }
+          bases.set('default', null);
+          return { id: 'default', name: 'Neue Seite', html: '<p><br></p>' };
+        },
+        savePage: async ({ id, html }) => {
+          const base = bases.get(String(id)) ?? null;
+          const res = await fb.save(id, html, base);
+          if (res && res.updatedAt != null) bases.set(String(id), res.updatedAt);
+          return res;
+        },
+      };
+
+      window.__standalone = await mountStandaloneFocus({ mount: document.getElementById('mount'), bridge });
+      status.remove();
+      fb.log?.('Standalone-Focus gemountet');
     } catch (e) {
       status.className = 'err';
-      status.textContent = 'Modul-Ladefehler: ' + (e && e.message ? e.message : e);
-      window.__focusBridge?.log?.('Modul-Ladefehler: ' + e, 'error');
+      status.textContent = 'Boot-Fehler: ' + (e && e.message ? e.message : e);
+      fb?.log?.('Boot-Fehler: ' + e, 'error');
       console.error(e);
     }
   </script>

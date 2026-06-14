@@ -43,10 +43,18 @@ Zu überbrückende Methoden:
 Zu liefernde Props (lesend für den Editor):
 - `currentPage`, `renderedPageHtml`, `focusGranularity`, `editDirty`
 
-Bridge-Nachrichten (Swift `WKScriptMessageHandler`), mindestens:
-- `load { pageId }` → Swift liefert Seite aus LocalStore
-- `save { pageId, html, baseUpdatedAt }` → Swift schreibt LocalStore + Outbox
-- `list` → Buch-/Seitenliste aus LocalStore
+Bridge-Nachrichten **JS → Swift** (`WKScriptMessageHandlerWithReply`, je `{ op, params }`):
+- `load { pageId }` → Seite aus LocalStore (`{ id, html, updatedAt, baseUpdatedAt? }`)
+- `save { pageId, html, baseUpdatedAt? }` → LocalStore + Outbox (`{ id, updatedAt }`)
+- `list { bookId? }` → Seitenliste aus LocalStore (optional buch-gefiltert)
+- `log { level?, message }` → JS-Diagnose ins Swift-Log
+- `editorState { pageId, dirty }` → meldet offene Seite + Dirty-Flag (steuert Open-Page-Reload/-Schutz im Sync)
+
+Bridge-Kanal **Swift → JS** (`callAsyncJavaScript` in `contentWorld: .page`): Die Facade stellt einen Event-Bus `window.__focusBridge.on(event, cb)` / `_receive(event, payload)` bereit. Swift sendet:
+- `serverUpdate { pageId, html, baseUpdatedAt }` → saubere offene Seite wurde serverseitig aktualisiert → still neu laden.
+- `openPage { pageId, html, baseUpdatedAt }` → nativer Picker hat eine Seite gewählt → im Editor öffnen.
+
+Block-Merge (409): `window.__focusBridge._merge3(base, local, server)` lädt das gebündelte `block-merge.js` dynamisch und liefert `{ merged, conflictCount }`. Der Swift-Kern ruft das beim 409-Push: `conflictCount == 0` → gemergtes HTML mit neuer Basis erneut pushen (still); `> 0` → Konflikt erfassen (Editor-Konflikt-UI). Merge-Ancestor (`base`) führt die SyncEngine als `serverBaseHtml` je Seite.
 
 **Regel:** Die Facade ist die **einzige** Kopplungsschicht. Kein direkter `fetch` aus dem gebündelten Editor-Code. Wenn der Editor eine neue Root-Methode braucht, wird sie zuerst in der Facade ergänzt und der Bridge-Vertrag hier dokumentiert.
 

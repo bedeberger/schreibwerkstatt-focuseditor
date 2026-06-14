@@ -18,14 +18,14 @@ import SwiftUI
 import WebKit
 
 struct FocusWebView: NSViewRepresentable {
-    let store: any LocalStore
+    /// App-weite Bridge (geteilt mit der SyncEngine über `AppCore`).
+    let bridge: EditorBridge
 
     func makeCoordinator() -> Coordinator {
         Coordinator()
     }
 
     func makeNSView(context: Context) -> WKWebView {
-        let bridge = EditorBridge(store: store)
         context.coordinator.bridge = bridge   // Lebensdauer an die View koppeln
 
         let controller = WKUserContentController()
@@ -57,6 +57,9 @@ struct FocusWebView: NSViewRepresentable {
             webView.isInspectable = true   // Web-Inspector im Debug-Build
         }
         #endif
+
+        // Swift→JS-Kanal verbinden (Open-Page-Reload, Block-Merge).
+        bridge.attach(webView)
 
         load(into: webView)
         return webView
