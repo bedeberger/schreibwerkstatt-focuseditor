@@ -343,10 +343,17 @@ final class SyncEngine: ObservableObject {
             }
 
             // Cursor vorrücken + persistieren (robust gegen Abbruch mittendrin).
+            let previous = cursor
             stateStore.mutate { $0.cursors[bookId] = resp.cursor }
 
             // Schutz gegen Endlosschleife, falls der Cursor nicht vorrückt.
             if !resp.has_more || resp.pages.isEmpty { break }
+            // Server meldet `has_more`, liefert aber denselben Cursor zurück
+            // (Server-Bug) → nicht ewig pagen, beim nächsten Tick neu ansetzen.
+            if resp.cursor == previous {
+                log.notice("Pull Buch \(bookId, privacy: .public): Cursor rückt nicht vor — Schleife abgebrochen")
+                break
+            }
             cursor = resp.cursor
         }
     }
@@ -389,6 +396,16 @@ final class SyncEngine: ObservableObject {
         // Ist: lokal gespiegelte Seiten dieses Buchs.
         let ist = try await store.list(bookId: bookId)
         guard !ist.isEmpty else { return }
+
+        // Datenverlust-Schutz: Ein leerer Tree ist verdächtig (transienter
+        // Server-200 mit leerem Array, halb-deployter Endpoint, frische Buch-ID)
+        // und würde JEDE lokale, saubere Seite löschen — die der cursor-
+        // inkrementelle Pull NICHT von selbst zurückbringt. In dem Fall lieber
+        // nichts löschen und beim nächsten Lauf erneut prüfen.
+        guard !soll.isEmpty else {
+            log.notice("Reconcile Buch \(bookId, privacy: .public) übersprungen: leerer Server-Tree, behalte \(ist.count, privacy: .public) lokale Seite(n)")
+            return
+        }
 
         let pending = Set(try await store.pendingOutbox().map(\.pageId))
 

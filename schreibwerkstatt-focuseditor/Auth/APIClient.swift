@@ -22,11 +22,25 @@ final class APIClient {
 
     private let session: URLSession
     private let decoder = JSONDecoder()
+    private let encoder = JSONEncoder()
 
     init(tokenProvider: @escaping () -> String?,
-         session: URLSession = .shared) {
+         session: URLSession? = nil) {
         self.tokenProvider = tokenProvider
-        self.session = session
+        self.session = session ?? APIClient.makeSession()
+    }
+
+    /// Eigene Session mit endlichem Request-Timeout. Default-`URLSession.shared`
+    /// wartet bis zu 60 s je Request — ein hängender Sync-Pull würde den
+    /// `isRunning`-Lock der SyncEngine so lange halten und alle Folge-Ticks
+    /// blockieren. `timeoutIntervalForRequest` greift pro Datenpaket, große
+    /// Downloads (Editor-Bundle-ZIP) bleiben also unbeschränkt, solange Daten
+    /// fließen.
+    static func makeSession() -> URLSession {
+        let cfg = URLSessionConfiguration.default
+        cfg.timeoutIntervalForRequest = 30
+        cfg.waitsForConnectivity = false
+        return URLSession(configuration: cfg)
     }
 
     enum Method: String {
@@ -71,39 +85,15 @@ final class APIClient {
     /// `401` schlägt wie üblich auf `onUnauthorized` durch und wirft; `5xx`
     /// und Netzfehler werfen ebenfalls. Lokale Inhalte werden NIE verworfen.
     func postExpectingJSON(_ path: String, body: Encodable) async throws -> (status: Int, data: Data) {
-        guard let baseURL = ServerConfig.baseURL,
-              let url = URL(string: path, relativeTo: baseURL) else {
-            throw AuthError.invalidServerURL
-        }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = Method.POST.rawValue
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        if let token = tokenProvider() {
-            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        }
-        request.httpBody = try JSONEncoder().encode(AnyEncodable(body))
-
-        let data: Data
-        let response: URLResponse
-        do {
-            (data, response) = try await session.data(for: request)
-        } catch {
-            throw AuthError.network(error)
-        }
-
-        guard let http = response as? HTTPURLResponse else {
-            throw AuthError.server(status: -1, code: nil, body: nil)
-        }
+        let request = try buildRequest(path, method: .POST, body: body)
+        let (http, data) = try await perform(request)
 
         switch http.statusCode {
         case 401:
             onUnauthorized?()
             throw AuthError.unauthorized
         case 500...599:
-            let code = (try? decoder.decode(ServerErrorBody.self, from: data))?.error_code
-            throw AuthError.server(status: http.statusCode, code: code, body: data)
+            throw serverError(http, data)
         default:
             // 2xx und fachliche 4xx (z. B. 404/413) reicht der Aufrufer aus.
             return (http.statusCode, data)

@@ -175,6 +175,42 @@ enum WebAssets {
               status.remove();
               fb.log?.('Standalone-Focus gemountet');
 
+              // ── Seitenwechsel / Server-Frische (Swift → JS Event-Bus) ───────
+              // Der native Picker (⌘O) und die SyncEngine heben Seiten über die
+              // Bridge in den Editor. Ohne diese Abos passiert beim Auswählen
+              // einer Seite NICHTS (Event ohne Listener) → kein Seitenwechsel.
+              // Inhalt frisch aus dem LocalStore ziehen (offline-first), damit
+              // name/bookId/updatedAt konsistent zur loadPage-Logik sind.
+              async function applyPage(pageId, { save }) {
+                // Beim Picker-Wechsel den aktuellen Stand zuerst sichern
+                // (local-first): setPage verwirft den Autosave-Timer, sonst
+                // gingen offene Änderungen der bisherigen Seite verloren.
+                if (save) { try { await window.__standalone.save(); } catch (_) {} }
+                let page = null;
+                try { page = await fb.load(String(pageId)); } catch (_) {}
+                bases.set(String(pageId), page ? (page.updatedAt ?? null) : null);
+                currentPageId = String(pageId);
+                currentBookId = (page && page.bookId != null) ? Number(page.bookId) : null;
+                window.__standalone.setPage({
+                  id: pageId,
+                  name: (page && (page.pageName || page.title)) || 'Seite',
+                  html: (page && page.html != null) ? page.html : '<p><br></p>',
+                });
+              }
+
+              // Nativer Picker → andere Seite öffnen (vorher aktuellen Stand sichern).
+              fb.on('openPage', (p) => {
+                if (!p || p.pageId == null) return;
+                applyPage(p.pageId, { save: true });
+              });
+              // Saubere offene Seite wurde serverseitig aktualisiert → still neu
+              // laden (Swift sendet das nur für die nicht-dirty offene Seite, also
+              // KEIN Save — der Server-Stand ist bereits die Quelle der Wahrheit).
+              fb.on('serverUpdate', (p) => {
+                if (!p || p.pageId == null) return;
+                applyPage(p.pageId, { save: false });
+              });
+
               // ── Rechtschreibprüfung (LanguageTool) ──────────────────────────
               // Wiederverwendet den unveränderten Editor-Controller aus dem
               // Hauptrepo (kein Fork). Statt direktem fetch laufen Prüfung +

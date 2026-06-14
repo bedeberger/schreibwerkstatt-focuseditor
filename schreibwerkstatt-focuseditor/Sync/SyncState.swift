@@ -15,7 +15,7 @@
 
 import Foundation
 
-struct SyncState: Codable {
+struct SyncState: Codable, Sendable {
     /// Bekannte Buch-IDs (Server `id`).
     var bookIds: [Int] = []
     /// Pull-Cursor je Buch-ID.
@@ -40,10 +40,17 @@ struct SyncState: Codable {
 }
 
 /// Lädt/speichert `SyncState` als JSON-Snapshot.
+///
+/// Der In-Memory-Zustand lebt auf dem MainActor; das Encodieren + Schreiben
+/// läuft NICHT dort, sondern auf einer eigenen seriellen Queue. So blockiert
+/// ein Save-/Pull-Tick den Main-Thread nicht, auch wenn der Snapshot (inkl.
+/// `serverBaseHtml`) groß wird. FIFO-Serialität garantiert Last-Write-Wins.
 @MainActor
 final class SyncStateStore {
     private let url: URL
     private(set) var state: SyncState
+    /// Serielle I/O-Queue: encode + atomic write off-main, in Aufruf-Reihenfolge.
+    private let ioQueue = DispatchQueue(label: "ch.schreibwerkstatt.focuseditor.syncstate.io")
 
     init(filename: String = "syncstate.json") {
         let fm = FileManager.default
@@ -64,14 +71,20 @@ final class SyncStateStore {
         }
     }
 
-    /// Mutiert den Zustand und schreibt sofort einen Snapshot.
+    /// Mutiert den Zustand (MainActor) und stößt einen Background-Snapshot an.
     func mutate(_ block: (inout SyncState) -> Void) {
         block(&state)
         persist()
     }
 
+    /// Reicht eine Wert-Kopie (COW, Sendable) an die I/O-Queue; encode + write
+    /// passieren dort, nicht auf dem MainActor.
     private func persist() {
-        guard let data = try? JSONEncoder().encode(state) else { return }
-        try? data.write(to: url, options: .atomic)
+        let snapshot = state
+        let url = self.url
+        ioQueue.async {
+            guard let data = try? JSONEncoder().encode(snapshot) else { return }
+            try? data.write(to: url, options: .atomic)
+        }
     }
 }

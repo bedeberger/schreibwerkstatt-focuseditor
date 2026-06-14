@@ -37,7 +37,7 @@ struct SyncPageDTO: Decodable {
 }
 
 /// Keyset-Cursor `{ since, since_id }`.
-struct SyncCursorDTO: Codable, Equatable {
+struct SyncCursorDTO: Codable, Equatable, Sendable {
     let since: String?       // ISO-8601 oder null (Voll-Pull)
     let since_id: Int
 }
