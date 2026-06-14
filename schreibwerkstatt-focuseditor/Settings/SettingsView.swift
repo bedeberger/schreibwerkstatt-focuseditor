@@ -15,30 +15,33 @@
 import SwiftUI
 
 struct SettingsView: View {
+    /// Sprachwechsel rendert die Tabs neu (frische `t()`-Werte).
+    @EnvironmentObject private var loc: LocalizationController
+
     var body: some View {
         TabView {
             GeneralSettingsTab()
-                .tabItem { Label("Allgemein", systemImage: "gearshape") }
+                .tabItem { Label(t("settings.tab.general"), systemImage: "gearshape") }
 
             AppearanceSettingsTab()
-                .tabItem { Label("Darstellung", systemImage: "paintbrush") }
+                .tabItem { Label(t("settings.tab.appearance"), systemImage: "paintbrush") }
 
             TypographySettingsTab()
-                .tabItem { Label("Typografie", systemImage: "textformat.size") }
+                .tabItem { Label(t("settings.tab.typography"), systemImage: "textformat.size") }
 
             WritingSettingsTab()
-                .tabItem { Label("Schreiben", systemImage: "pencil.and.scribble") }
+                .tabItem { Label(t("settings.tab.writing"), systemImage: "pencil.and.scribble") }
 
             SyncSettingsTab()
-                .tabItem { Label("Sync", systemImage: "arrow.triangle.2.circlepath") }
+                .tabItem { Label(t("settings.tab.sync"), systemImage: "arrow.triangle.2.circlepath") }
 
             SpellcheckSettingsTab()
-                .tabItem { Label("Rechtschreibung", systemImage: "textformat.abc.dottedunderline") }
+                .tabItem { Label(t("settings.tab.spellcheck"), systemImage: "textformat.abc.dottedunderline") }
 
             AccountSettingsTab()
-                .tabItem { Label("Konto", systemImage: "person.crop.circle") }
+                .tabItem { Label(t("settings.tab.account"), systemImage: "person.crop.circle") }
         }
-        .frame(width: 460)
+        .frame(width: 620, height: 560)
     }
 }
 
@@ -47,6 +50,7 @@ struct SettingsView: View {
 private struct GeneralSettingsTab: View {
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var library: LibraryStore
+    @EnvironmentObject private var loc: LocalizationController
 
     /// Lokaler Entwurf der Server-Adresse; erst „Übernehmen" schreibt sie.
     @State private var serverDraft: String = ServerConfig.baseURLString
@@ -64,37 +68,49 @@ private struct GeneralSettingsTab: View {
 
     var body: some View {
         Form {
-            Section("Server") {
-                TextField("Server-Adresse", text: $serverDraft, prompt: Text("https://…"))
+            Section(t("settings.language.section")) {
+                Picker(t("settings.language.label"), selection: $loc.language) {
+                    ForEach(AppLanguage.allCases) { lang in
+                        Text(lang.label).tag(lang)
+                    }
+                }
+                Text(t("settings.language.hint"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Section(t("settings.general.serverSection")) {
+                TextField(t("settings.general.serverAddress"), text: $serverDraft, prompt: Text("https://…"))
                     .textFieldStyle(.roundedBorder)
                     .disableAutocorrection(true)
 
-                Text("Ein Serverwechsel meldet dich ab — das Gerätetoken gilt nur für einen Server. Lokale Inhalte bleiben erhalten; melde dich danach am neuen Server neu an.")
+                Text(t("settings.general.serverHint"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
 
                 HStack {
                     Spacer()
-                    Button("Übernehmen") { showServerSwitchAlert = true }
+                    Button(t("general.apply")) { showServerSwitchAlert = true }
                         .disabled(!serverChanged || !serverValid)
                 }
             }
 
-            Section("Lieblingsbuch") {
-                Picker("Buch", selection: bookSelection) {
+            Section(t("settings.general.favoriteBookSection")) {
+                Picker(t("settings.general.book"), selection: bookSelection) {
                     if library.books.isEmpty {
-                        Text(library.isLoadingBooks ? "Lade Bücher …" : "Keine Bücher")
+                        Text(library.isLoadingBooks ? t("library.loadingBooks") : t("library.noBooks"))
                             .tag(Int?.none)
                     } else {
                         ForEach(library.books, id: \.id) { book in
-                            Text(book.name ?? "Buch \(book.id)").tag(Int?.some(book.id))
+                            Text(book.name ?? t("library.bookFallback", ["id": "\(book.id)"])).tag(Int?.some(book.id))
                         }
                     }
                 }
                 .disabled(library.books.isEmpty)
 
-                Text("Das Lieblingsbuch wird beim Start geöffnet und steuert den Seiten-Picker. Du kannst es auch jederzeit über die Toolbar wechseln.")
+                Text(t("settings.general.favoriteBookHint"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -106,11 +122,11 @@ private struct GeneralSettingsTab: View {
             // (falls die Settings vor dem Editor-Host geöffnet werden).
             if library.books.isEmpty { await library.loadBooks() }
         }
-        .alert("Server wechseln?", isPresented: $showServerSwitchAlert) {
-            Button("Abbrechen", role: .cancel) {}
-            Button("Wechseln & abmelden", role: .destructive) { applyServerChange() }
+        .alert(t("settings.general.switchServerAlertTitle"), isPresented: $showServerSwitchAlert) {
+            Button(t("general.cancel"), role: .cancel) {}
+            Button(t("settings.general.switchAndSignOut"), role: .destructive) { applyServerChange() }
         } message: {
-            Text("Du wirst abgemeldet und musst dich am neuen Server neu anmelden. Lokale, noch nicht synchronisierte Inhalte bleiben erhalten.")
+            Text(t("settings.general.switchServerAlertMessage"))
         }
     }
 
@@ -140,37 +156,37 @@ private struct AppearanceSettingsTab: View {
 
     var body: some View {
         Form {
-            Section("Darstellung") {
-                Picker("Modus", selection: $appearance.mode) {
+            Section(t("settings.appearance.section")) {
+                Picker(t("settings.appearance.mode"), selection: $appearance.mode) {
                     ForEach(AppearanceMode.allCases) { mode in
                         Text(mode.label).tag(mode)
                     }
                 }
                 .pickerStyle(.inline)
 
-                Text("„Automatisch“ folgt dem System; Hell/Dunkel erzwingt das Aussehen für Shell und Editor.")
+                Text(t("settings.appearance.hint"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            Section("Fokus") {
-                Picker("Granularität", selection: $focus.granularity) {
+            Section(t("settings.appearance.focusSection")) {
+                Picker(t("settings.appearance.granularity"), selection: $focus.granularity) {
                     ForEach(FocusGranularity.allCases) { g in
                         Text(g.label).tag(g)
                     }
                 }
                 .pickerStyle(.inline)
 
-                Text("Bestimmt, wie stark der Editor die Umgebung des aktiven Absatzes abblendet. Die Änderung wirkt sofort im offenen Editor.")
+                Text(t("settings.appearance.focusHint"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            Section("Fenster") {
-                Toggle("Toolbar bei Inaktivität ausblenden", isOn: $autoHideToolbar)
-                Text("Für ablenkungsfreies Schreiben den nativen Vollbild nutzen (⌃⌘F) — dort blendet sich die Toolbar automatisch aus. Die Auto-Ausblendung zeigt die Toolbar im Fenster erst wieder, wenn der Zeiger an den oberen Rand fährt.")
+            Section(t("settings.appearance.windowSection")) {
+                Toggle(t("settings.appearance.autoHideToolbar"), isOn: $autoHideToolbar)
+                Text(t("settings.appearance.windowHint"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -187,14 +203,14 @@ private struct TypographySettingsTab: View {
 
     var body: some View {
         Form {
-            Section("Schrift") {
-                Picker("Schriftart", selection: $typography.fontFamily) {
+            Section(t("settings.typo.fontSection")) {
+                Picker(t("settings.typo.fontFamily"), selection: $typography.fontFamily) {
                     ForEach(EditorFontFamily.allCases) { f in
                         Text(f.label).tag(f)
                     }
                 }
 
-                LabeledContent("Schriftgrösse") {
+                LabeledContent(t("settings.typo.fontSize")) {
                     HStack {
                         Slider(value: $typography.fontSize,
                                in: TypographyController.fontSizeRange, step: 1)
@@ -205,7 +221,7 @@ private struct TypographySettingsTab: View {
                     }
                 }
 
-                LabeledContent("Zeilenhöhe") {
+                LabeledContent(t("settings.typo.lineHeight")) {
                     HStack {
                         Slider(value: $typography.lineHeight,
                                in: TypographyController.lineHeightRange, step: 0.05)
@@ -217,10 +233,10 @@ private struct TypographySettingsTab: View {
                 }
             }
 
-            Section("Layout") {
-                Toggle("Spaltenbreite begrenzen", isOn: measureEnabled)
+            Section(t("settings.typo.layoutSection")) {
+                Toggle(t("settings.typo.limitMeasure"), isOn: measureEnabled)
                 if typography.measure > 0 {
-                    LabeledContent("Breite") {
+                    LabeledContent(t("settings.typo.width")) {
                         HStack {
                             Slider(value: $typography.measure,
                                    in: TypographyController.measureRange, step: 1)
@@ -231,28 +247,28 @@ private struct TypographySettingsTab: View {
                         }
                     }
                 }
-                Text("Begrenzt die Zeilenlänge (in Zeichen) für angenehmeres Lesen. „ch“ ≈ Breite einer Ziffer.")
+                Text(t("settings.typo.measureHint"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            Section("Papier") {
-                Picker("Hintergrund", selection: $typography.paperTone) {
-                    ForEach(PaperTone.allCases) { t in
-                        Text(t.label).tag(t)
+            Section(t("settings.typo.paperSection")) {
+                Picker(t("settings.typo.background"), selection: $typography.paperTone) {
+                    ForEach(PaperTone.allCases) { tone in
+                        Text(tone.label).tag(tone)
                     }
                 }
-                Text("„System“ folgt Hell/Dunkel. Andere Töne erzwingen eine feste Schreibfläche (z. B. Sepia für warmes Licht).")
+                Text(t("settings.typo.paperHint"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            Section("Fokus-Abdunklung") {
-                Toggle("Stärke selbst festlegen", isOn: $typography.focusDimEnabled)
+            Section(t("settings.typo.dimSection")) {
+                Toggle(t("settings.typo.dimCustom"), isOn: $typography.focusDimEnabled)
                 if typography.focusDimEnabled {
-                    LabeledContent("Abdunklung") {
+                    LabeledContent(t("settings.typo.dimAmount")) {
                         HStack {
                             // Slider von „dezent" (hohe Opazität) nach „stark"
                             // (niedrige Opazität) — invertiert, damit rechts = stärker.
@@ -264,7 +280,7 @@ private struct TypographySettingsTab: View {
                         }
                     }
                 }
-                Text("Im Fokus-Modus blendet der Editor die nicht-aktiven Absätze ab. „Aus“ nutzt die Editor-Vorgabe (theme-korrekt); eingeschaltet bestimmst du die Stärke selbst.")
+                Text(t("settings.typo.dimHint"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -273,7 +289,7 @@ private struct TypographySettingsTab: View {
             Section {
                 HStack {
                     Spacer()
-                    Button("Auf Standard zurücksetzen") { typography.resetToDefaults() }
+                    Button(t("settings.typo.reset")) { typography.resetToDefaults() }
                 }
             }
         }
@@ -307,25 +323,26 @@ private struct WritingSettingsTab: View {
 
     var body: some View {
         Form {
-            Section("Statistik") {
-                Toggle("Wortzahl & Lesezeit in der Toolbar zeigen", isOn: $stats.showStats)
+            Section(t("settings.writing.statsSection")) {
+                Toggle(t("settings.writing.showStats"), isOn: $stats.showStats)
             }
 
-            Section("Schreibziel") {
-                Toggle("Wort-Ziel pro Seite", isOn: goalEnabled)
+            Section(t("settings.writing.goalSection")) {
+                Toggle(t("settings.writing.goalToggle"), isOn: goalEnabled)
                 if stats.pageGoalWords > 0 {
                     Stepper(value: $stats.pageGoalWords, in: 50...5000, step: 50) {
-                        LabeledContent("Ziel", value: "\(stats.pageGoalWords) Wörter")
+                        LabeledContent(t("settings.writing.goal"),
+                                       value: t("settings.writing.goalWords", ["n": "\(stats.pageGoalWords)"]))
                     }
                 }
-                Text("Zeigt einen Fortschrittsbalken in der Toolbar, bis die offene Seite das Ziel erreicht. Die App ist auf genau eine Seite ausgelegt — das Ziel gilt darum pro Seite.")
+                Text(t("settings.writing.goalHint"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            Section("Automatisches Speichern") {
-                LabeledContent("Verzögerung") {
+            Section(t("settings.writing.autosaveSection")) {
+                LabeledContent(t("settings.writing.autosaveDelay")) {
                     HStack {
                         Slider(value: $autosaveMs,
                                in: EditorBehaviorPrefs.autosaveRange, step: 250)
@@ -335,7 +352,7 @@ private struct WritingSettingsTab: View {
                             .frame(width: 52, alignment: .trailing)
                     }
                 }
-                Text("Wartezeit nach der letzten Eingabe, bis der Entwurf gespeichert wird. Wirkt beim nächsten Öffnen des Editors. Lokal gespeichert wird trotzdem immer zuerst (kein Datenverlust).")
+                Text(t("settings.writing.autosaveHint"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -360,41 +377,42 @@ private struct SyncSettingsTab: View {
 
     var body: some View {
         Form {
-            Section("Aktualisierung") {
-                Picker("Poll-Kadenz", selection: $sync.pollMode) {
+            Section(t("settings.sync.updateSection")) {
+                Picker(t("settings.sync.pollCadence"), selection: $sync.pollMode) {
                     ForEach(SyncPollMode.allCases) { m in
                         Text(m.label).tag(m)
                     }
                 }
                 .pickerStyle(.inline)
 
-                Text("Wie oft im aktiven Fenster nach Änderungen gesucht wird. „Sparsam“ schont Akku/Daten; „Nur manuell“ synchronisiert ausschliesslich auf Knopfdruck.")
+                Text(t("settings.sync.cadenceHint"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            Section("Pause") {
-                Toggle("Sync pausieren (diese Sitzung)", isOn: $sync.isPaused)
-                Text("Hält den automatischen Abgleich an, bis du ihn wieder einschaltest oder die App neu startest. Lokale Änderungen bleiben in der Warteschlange.")
+            Section(t("settings.sync.pauseSection")) {
+                Toggle(t("settings.sync.pauseToggle"), isOn: $sync.isPaused)
+                Text(t("settings.sync.pauseHint"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            Section("Status") {
-                LabeledContent("Zustand", value: statusText)
-                LabeledContent("Zuletzt synchronisiert", value: lastSyncedText)
+            Section(t("settings.sync.statusSection")) {
+                LabeledContent(t("settings.sync.state"), value: statusText)
+                LabeledContent(t("settings.sync.lastSynced"), value: lastSyncedText)
                 if sync.pendingCount > 0 {
-                    LabeledContent("Ausstehend", value: "\(sync.pendingCount) Seite\(sync.pendingCount == 1 ? "" : "n")")
+                    LabeledContent(t("settings.sync.pending"),
+                                   value: tn(sync.pendingCount, "settings.sync.pendingValue"))
                 }
                 if !sync.conflicts.isEmpty {
-                    LabeledContent("Konflikte", value: "\(sync.conflicts.count)")
+                    LabeledContent(t("settings.sync.conflicts"), value: "\(sync.conflicts.count)")
                         .foregroundStyle(.orange)
                 }
                 HStack {
                     Spacer()
-                    Button("Jetzt synchronisieren") { sync.syncManually() }
+                    Button(t("settings.sync.syncNow")) { sync.syncManually() }
                 }
             }
         }
@@ -403,16 +421,16 @@ private struct SyncSettingsTab: View {
 
     private var statusText: String {
         switch sync.status {
-        case .idle:    return sync.isPaused ? "Pausiert" : "Bereit"
-        case .syncing: return "Synchronisiere …"
-        case .offline: return "Offline"
+        case .idle:    return sync.isPaused ? t("sync.state.paused") : t("sync.state.ready")
+        case .syncing: return t("sync.state.syncing")
+        case .offline: return t("sync.state.offline")
         }
     }
 
     private var lastSyncedText: String {
-        guard let last = sync.lastSyncedAt else { return "Noch nie" }
+        guard let last = sync.lastSyncedAt else { return t("sync.lastSynced.never") }
         let rel = RelativeDateTimeFormatter()
-        rel.locale = Locale(identifier: "de")
+        rel.locale = Locale(identifier: L10nStore.shared.localeCode)
         return rel.localizedString(for: last, relativeTo: Date())
     }
 }
@@ -425,29 +443,29 @@ private struct SpellcheckSettingsTab: View {
 
     var body: some View {
         Form {
-            Section("Rechtschreibprüfung") {
-                Toggle("Auf diesem Gerät aktiv", isOn: $localEnabled)
-                Text("Die Prüfung läuft über LanguageTool am Server (online-only). Dieser Schalter kann sie zusätzlich pro Gerät abschalten — auch wenn sie serverseitig aktiv ist.")
+            Section(t("settings.spell.section")) {
+                Toggle(t("settings.spell.deviceToggle"), isOn: $localEnabled)
+                Text(t("settings.spell.deviceHint"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            Section("Sprache") {
-                Picker("Prüfsprache", selection: $languageRaw) {
+            Section(t("settings.spell.languageSection")) {
+                Picker(t("settings.spell.checkLanguage"), selection: $languageRaw) {
                     ForEach(SpellcheckLanguage.allCases) { lang in
                         Text(lang.label).tag(lang.rawValue)
                     }
                 }
                 .disabled(!localEnabled)
-                Text("„Automatisch“ überlässt dem Server die Sprache (aus der Buch-Sprache, i. d. R. Deutsch Schweiz). Eine feste Wahl übersteuert das pro Gerät.")
+                Text(t("settings.spell.languageHint"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
             Section {
-                Text("Strenge (Picky) und aktive Regeln werden serverseitig verwaltet und lassen sich hier nicht ändern.")
+                Text(t("settings.spell.serverNote"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -467,61 +485,62 @@ private struct AccountSettingsTab: View {
 
     var body: some View {
         Form {
-            Section("Anmeldung") {
-                LabeledContent("Server", value: ServerConfig.baseURLString)
-                LabeledContent("Status", value: auth.state == .signedIn ? "Angemeldet" : "Nicht angemeldet")
+            Section(t("settings.account.signinSection")) {
+                LabeledContent(t("settings.account.server"), value: ServerConfig.baseURLString)
+                LabeledContent(t("settings.account.status"),
+                               value: auth.state == .signedIn ? t("settings.account.signedIn") : t("settings.account.signedOut"))
                 HStack {
                     Spacer()
-                    Button("Abmelden", role: .destructive) { showLogoutAlert = true }
+                    Button(t("general.signOut"), role: .destructive) { showLogoutAlert = true }
                         .disabled(auth.state != .signedIn)
                 }
-                Text("Abmelden entfernt nur das Gerätetoken aus dem Schlüsselbund. Lokale, noch nicht synchronisierte Inhalte bleiben erhalten.")
+                Text(t("settings.account.signOutHint"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            Section("Editor-Version") {
-                LabeledContent("Quelle (Commit)", value: commitShort)
+            Section(t("settings.account.editorVersionSection")) {
+                LabeledContent(t("settings.account.sourceCommit"), value: commitShort)
                 HStack {
                     if editorBundle.isCheckingUpdate { ProgressView().controlSize(.small) }
                     Spacer()
-                    Button("Nach Update suchen") {
+                    Button(t("settings.account.checkUpdate")) {
                         Task { await editorBundle.checkForUpdate() }
                     }
                     .disabled(editorBundle.isCheckingUpdate)
                 }
-                Text("Ein neueres Editor-Bundle wird heruntergeladen und greift beim nächsten Start (kein Wechsel mitten im Schreiben).")
+                Text(t("settings.account.updateHint"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            Section("Wartung") {
+            Section(t("settings.account.maintenanceSection")) {
                 HStack {
                     Spacer()
-                    Button("Editor-Cache leeren") { showClearCacheAlert = true }
+                    Button(t("settings.account.clearCache")) { showClearCacheAlert = true }
                 }
-                Text("Lädt die Editor-Assets frisch vom Server. Betrifft nur den Editor — deine Texte (lokaler Spiegel) bleiben unangetastet.")
+                Text(t("settings.account.clearCacheHint"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
         .formStyle(.grouped)
-        .alert("Abmelden?", isPresented: $showLogoutAlert) {
-            Button("Abbrechen", role: .cancel) {}
-            Button("Abmelden", role: .destructive) { auth.signOut() }
+        .alert(t("settings.account.signOutAlertTitle"), isPresented: $showLogoutAlert) {
+            Button(t("general.cancel"), role: .cancel) {}
+            Button(t("general.signOut"), role: .destructive) { auth.signOut() }
         } message: {
-            Text("Du musst dich danach mit einem Gerätetoken neu anmelden. Lokale Inhalte bleiben erhalten.")
+            Text(t("settings.account.signOutAlertMessage"))
         }
-        .alert("Editor-Cache leeren?", isPresented: $showClearCacheAlert) {
-            Button("Abbrechen", role: .cancel) {}
-            Button("Leeren & neu laden", role: .destructive) {
+        .alert(t("settings.account.clearCacheAlertTitle"), isPresented: $showClearCacheAlert) {
+            Button(t("general.cancel"), role: .cancel) {}
+            Button(t("settings.account.clearAndReload"), role: .destructive) {
                 Task { await editorBundle.clearEditorCache() }
             }
         } message: {
-            Text("Der Editor wird neu vom Server geladen. Ohne Verbindung steht er bis zum nächsten erfolgreichen Download nicht zur Verfügung. Deine Texte bleiben erhalten.")
+            Text(t("settings.account.clearCacheAlertMessage"))
         }
     }
 

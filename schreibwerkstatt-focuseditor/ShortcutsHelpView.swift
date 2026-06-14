@@ -60,32 +60,35 @@ private struct ShortcutSection: View {
 }
 
 struct ShortcutsHelpView: View {
+    /// Sprachwechsel rendert die Hilfe neu (eigenes Fenster).
+    @EnvironmentObject private var loc: LocalizationController
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
-                ShortcutSection(title: "App & Fenster", rows: [
-                    (["⌃", "⌘", "F"], "Vollbild ein/aus (ablenkungsfrei)"),
-                    (["⌘", "⇧", "S"], "Jetzt synchronisieren"),
-                    (["⌘", ","], "Einstellungen öffnen"),
-                    (["⌘", "?"], "Diese Tastaturkürzel-Hilfe"),
+                ShortcutSection(title: t("shortcuts.section.app"), rows: [
+                    (["⌃", "⌘", "F"], t("shortcuts.fullscreen")),
+                    (["⌘", "⇧", "S"], t("shortcuts.syncNow")),
+                    (["⌘", ","], t("shortcuts.openSettings")),
+                    (["⌘", "?"], t("shortcuts.thisHelp")),
                 ])
 
-                ShortcutSection(title: "Seiten", rows: [
-                    (["⌘", "O"], "Seite öffnen (Picker)"),
-                    (["⏎"], "Im Picker: ersten Treffer öffnen"),
-                    (["⎋"], "Picker schließen"),
+                ShortcutSection(title: t("shortcuts.section.pages"), rows: [
+                    (["⌘", "O"], t("shortcuts.openPage")),
+                    (["⏎"], t("shortcuts.pickerOpenFirst")),
+                    (["⎋"], t("shortcuts.pickerClose")),
                 ])
 
-                ShortcutSection(title: "Editor", rows: [
-                    (["⌘", "⇧", "E"], "Fokus-Modus ein/aus"),
-                    (["⌘", "L"], "Cursor-Zeile mittig zentrieren"),
-                    (["⌘", "B"], "Fett"),
-                    (["⌘", "I"], "Kursiv"),
-                    (["⌘", "U"], "Unterstrichen"),
-                    (["⎋"], "Fokus-Modus verlassen / Menü schließen"),
+                ShortcutSection(title: t("shortcuts.section.editor"), rows: [
+                    (["⌘", "⇧", "E"], t("shortcuts.focusToggle")),
+                    (["⌘", "L"], t("shortcuts.centerLine")),
+                    (["⌘", "B"], t("shortcuts.bold")),
+                    (["⌘", "I"], t("shortcuts.italic")),
+                    (["⌘", "U"], t("shortcuts.underline")),
+                    (["⎋"], t("shortcuts.focusExit")),
                 ])
 
-                Text("⌘ Befehl · ⌃ Control · ⇧ Umschalt · ⏎ Enter · ⎋ Escape")
+                Text(t("shortcuts.legend"))
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .padding(.top, 4)
@@ -99,4 +102,5 @@ struct ShortcutsHelpView: View {
 
 #Preview {
     ShortcutsHelpView()
+        .environmentObject(LocalizationController())
 }

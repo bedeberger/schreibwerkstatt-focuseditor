@@ -2,8 +2,8 @@
 //  AuthError.swift
 //  schreibwerkstatt-focuseditor
 //
-//  Fehlerfälle der Auth-/Netzwerk-Schicht. UI-Texte folgen der
-//  Schreibwerkstatt-Locale (hier de) — wie im Hauptrepo.
+//  Fehlerfälle der Auth-/Netzwerk-Schicht. UI-Texte sind lokalisiert (de/en)
+//  über das `macclient.*`-Katalog (siehe Localization/).
 //
 
 import Foundation
@@ -26,18 +26,18 @@ enum AuthError: Error, LocalizedError {
     var errorDescription: String? {
         switch self {
         case .malformedToken:
-            return "Ungültiges Token-Format. Erwartet wird „swd_…“ aus deinem Konto-Bereich."
+            return t("auth.err.malformedToken")
         case .unauthorized:
-            return "Token ungültig oder widerrufen. Bitte stelle in der Schreibwerkstatt ein neues Gerätetoken aus."
+            return t("auth.err.unauthorized")
         case .invalidServerURL:
-            return "Server-Adresse ist ungültig."
+            return t("auth.err.invalidServerURL")
         case .network(let underlying):
-            return "Keine Verbindung zum Server: \(underlying.localizedDescription)"
+            return t("auth.err.network", ["detail": underlying.localizedDescription])
         case .server(let status, let code, _):
-            if let code { return "Serverfehler (\(status)): \(code)" }
-            return "Serverfehler (\(status))."
+            if let code { return t("auth.err.serverWithCode", ["status": "\(status)", "code": code]) }
+            return t("auth.err.server", ["status": "\(status)"])
         case .decoding:
-            return "Unerwartete Server-Antwort."
+            return t("auth.err.decoding")
         }
     }
 }

@@ -71,7 +71,7 @@ struct PagePickerOverlay: View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(BrandColor.muted)
-            TextField("Seite suchen …", text: $query)
+            TextField(t("picker.searchPage"), text: $query)
                 .textFieldStyle(.plain)
                 .font(BrandFont.sans(14))
                 .focused($searchFocused)
@@ -94,7 +94,7 @@ struct PagePickerOverlay: View {
             centered { ProgressView() }
         } else if filtered.isEmpty {
             centered {
-                Text(library.activeBookId == nil ? "Kein Buch gewählt" : "Keine Seiten")
+                Text(library.activeBookId == nil ? t("picker.noBookSelected") : t("picker.noPages"))
                     .font(BrandFont.sans(13))
                     .foregroundStyle(BrandColor.muted)
             }
@@ -122,7 +122,7 @@ struct PagePickerOverlay: View {
     private func rowButton(_ row: PagePickerRow, isSelected: Bool) -> some View {
         Button { open(row) } label: {
             VStack(alignment: .leading, spacing: 2) {
-                Text(row.name.isEmpty ? "Ohne Titel" : row.name)
+                Text(row.name.isEmpty ? t("picker.untitled") : row.name)
                     .font(BrandFont.sans(13))
                     .foregroundStyle(BrandColor.text)
                 if let chapter = row.chapterName, !chapter.isEmpty {

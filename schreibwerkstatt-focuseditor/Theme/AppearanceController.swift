@@ -21,12 +21,12 @@ enum AppearanceMode: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
-    /// Menü-Beschriftung (de, wie der Rest der UI).
+    /// Menü-Beschriftung (lokalisiert).
     var label: String {
         switch self {
-        case .system: return "Automatisch (System)"
-        case .light:  return "Hell"
-        case .dark:   return "Dunkel"
+        case .system: return t("appearance.mode.system")
+        case .light:  return t("appearance.mode.light")
+        case .dark:   return t("appearance.mode.dark")
         }
     }
 

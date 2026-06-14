@@ -31,8 +31,8 @@ enum EditorFontFamily: String, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .serif: return "Serif (Source Serif)"
-        case .sans:  return "Sans (Inter)"
+        case .serif: return t("typo.font.serif")
+        case .sans:  return t("typo.font.sans")
         }
     }
 
@@ -60,11 +60,11 @@ enum PaperTone: String, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .system:       return "System (folgt Hell/Dunkel)"
-        case .paper:        return "Papier (warm)"
-        case .sepia:        return "Sepia"
-        case .night:        return "Nacht"
-        case .highContrast: return "Hoher Kontrast"
+        case .system:       return t("paper.system")
+        case .paper:        return t("paper.paper")
+        case .sepia:        return t("paper.sepia")
+        case .night:        return t("paper.night")
+        case .highContrast: return t("paper.highContrast")
         }
     }
 

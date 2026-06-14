@@ -25,9 +25,9 @@ enum SyncPollMode: String, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .active:  return "Aktiv (~5 s)"
-        case .relaxed: return "Sparsam (~30 s)"
-        case .manual:  return "Nur manuell"
+        case .active:  return t("sync.poll.active")
+        case .relaxed: return t("sync.poll.relaxed")
+        case .manual:  return t("sync.poll.manual")
         }
     }
 

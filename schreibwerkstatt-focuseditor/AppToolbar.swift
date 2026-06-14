@@ -60,8 +60,8 @@ struct AppToolbar: View {
             Spacer(minLength: 12)
 
             ToolbarIconButton(systemName: "doc.text.magnifyingglass",
-                              help: "Seite öffnen (⌘O)",
-                              accessibilityLabel: "Seite öffnen") {
+                              help: t("toolbar.openPageHelp"),
+                              accessibilityLabel: t("toolbar.openPage")) {
                 pickerOpen.toggle()
             }
             .keyboardShortcut("o", modifiers: .command)
@@ -80,18 +80,20 @@ struct AppToolbar: View {
 
             overflowMenu
         }
-        .padding(.leading, windowChrome.trafficLightInset)
+        .padding(.leading, 16)
         .padding(.trailing, 16)
         .frame(height: 42)
         .frame(maxWidth: .infinity)
         .background(WindowDragArea())          // leere Flächen ziehen das Fenster
-        // Warm getönte Vibrancy: das Papier-Surface über dem Material gibt der
-        // Leiste den nativen Blur, ohne die warme Markenfläche zu verlieren.
-        .background(BrandColor.surface.opacity(0.7))
-        .background(.ultraThinMaterial)
+        // Sichtbar abgesetzte Leiste: `.regularMaterial` ist das eigentlich
+        // sichtbare, klar vom Editor abgehobene Frosted-Panel (im Dark Mode
+        // deutlich heller als der fast schwarze Editor-`bg`); die warme
+        // `surface`-Tönung davor gibt ihr den Marken-Papierton.
+        .background(BrandColor.surface.opacity(0.35))
+        .background(.regularMaterial)
         .overlay(alignment: .bottom) {
             Rectangle()
-                .fill(BrandColor.faint.opacity(0.6))
+                .fill(BrandColor.faint.opacity(0.9))
                 .frame(height: 1)
         }
     }
@@ -99,7 +101,7 @@ struct AppToolbar: View {
     /// Überlauf: selten gebrauchte Aktionen gebündelt — hält die Leiste ruhig.
     private var overflowMenu: some View {
         Menu {
-            Picker("Darstellung", selection: $appearance.mode) {
+            Picker(t("toolbar.appearance"), selection: $appearance.mode) {
                 ForEach(AppearanceMode.allCases) { mode in
                     Text(mode.label).tag(mode)
                 }
@@ -108,7 +110,7 @@ struct AppToolbar: View {
 
             Divider()
 
-            Button("Abmelden") { auth.signOut() }
+            Button(t("general.signOut")) { auth.signOut() }
         } label: {
             Image(systemName: "ellipsis.circle")
                 .font(.system(size: 14))
@@ -123,8 +125,8 @@ struct AppToolbar: View {
         .menuIndicator(.hidden)
         .fixedSize()
         .onHover { overflowHover = $0 }
-        .help("Weitere Optionen")
-        .accessibilityLabel("Weitere Optionen")
+        .help(t("toolbar.moreOptions"))
+        .accessibilityLabel(t("toolbar.moreOptions"))
     }
 }
 
@@ -171,11 +173,11 @@ struct WritingStatsLabel: View {
         HStack(spacing: 6) {
             Image(systemName: "text.word.spacing")
                 .foregroundStyle(BrandColor.muted)
-            Text("\(words) \(words == 1 ? "Wort" : "Wörter")")
-            Text("· \(signed(wordsToday)) heute")
+            Text(tn(words, "toolbar.words"))
+            Text(t("toolbar.today", ["n": signed(wordsToday)]))
                 .foregroundStyle(wordsToday > 0 ? BrandColor.muted : BrandColor.faint)
             if readingMinutes > 0 {
-                Text("· \(readingMinutes) min")
+                Text(t("toolbar.minutes", ["n": "\(readingMinutes)"]))
                     .foregroundStyle(BrandColor.faint)
             }
             if let progress {
@@ -200,11 +202,12 @@ struct WritingStatsLabel: View {
     }
 
     private var tooltip: String {
-        let heute = "\(signed(wordsToday)) Wörter heute auf dieser Seite"
+        let heute = t("toolbar.tip.todayWords", ["n": signed(wordsToday)])
         if goal > 0 {
-            return "\(words) von \(goal) Wörtern (\(Int(((progress ?? 0) * 100).rounded())) %) · \(heute)"
+            let pct = "\(Int(((progress ?? 0) * 100).rounded()))"
+            return t("toolbar.tip.goal", ["words": "\(words)", "goal": "\(goal)", "pct": pct, "today": heute])
         }
-        return "Wortzahl der offenen Seite · \(heute) · ~\(readingMinutes) min Lesezeit"
+        return t("toolbar.tip.noGoal", ["today": heute, "min": "\(readingMinutes)"])
     }
 }
 
@@ -220,15 +223,15 @@ struct SyncStatusLabel: View {
             if conflicts > 0 {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundStyle(.orange)
-                Text("\(conflicts) Konflikt\(conflicts == 1 ? "" : "e")")
+                Text(tn(conflicts, "toolbar.conflicts"))
             } else {
                 switch status {
                 case .syncing:
                     ProgressView().controlSize(.small)
-                    Text("Synchronisiere …")
+                    Text(t("sync.state.syncing"))
                 case .offline:
                     Image(systemName: "wifi.slash").foregroundStyle(BrandColor.muted)
-                    Text("Offline")
+                    Text(t("sync.state.offline"))
                 case .idle:
                     Image(systemName: "checkmark.circle").foregroundStyle(BrandColor.muted)
                 }
@@ -241,13 +244,13 @@ struct SyncStatusLabel: View {
 
     /// „Zuletzt synchronisiert“ als relative Zeit, sonst der aktuelle Zustand.
     private var tooltip: String {
-        if conflicts > 0 { return "Ungelöste Konflikte — im Editor auflösen" }
+        if conflicts > 0 { return t("toolbar.tip.conflicts") }
         if let last = lastSyncedAt {
             let rel = RelativeDateTimeFormatter()
-            rel.locale = Locale(identifier: "de")
-            return "Zuletzt synchronisiert \(rel.localizedString(for: last, relativeTo: Date()))"
+            rel.locale = Locale(identifier: L10nStore.shared.localeCode)
+            return t("toolbar.tip.lastSynced", ["rel": rel.localizedString(for: last, relativeTo: Date())])
         }
-        return status == .offline ? "Offline — keine Verbindung" : "Noch nicht synchronisiert"
+        return status == .offline ? t("toolbar.tip.offline") : t("toolbar.tip.notSynced")
     }
 }
 

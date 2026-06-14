@@ -12,6 +12,7 @@ import SwiftUI
 
 struct LoginView: View {
     @EnvironmentObject private var auth: AuthStore
+    @EnvironmentObject private var loc: LocalizationController
 
     @State private var serverURL: String = ServerConfig.baseURLString
     @State private var token: String = ""
@@ -24,52 +25,97 @@ struct LoginView: View {
     }
 
     var body: some View {
+        GeometryReader { geo in
+            // Zweispaltiges Hero-Layout füllt die Fensterbreite: links die
+            // markierte Navy-Fläche, rechts das Formular. Bei schmalem Fenster
+            // (< 720) fällt es auf eine einspaltige, zentrierte Ansicht zurück.
+            if geo.size.width >= 720 {
+                HStack(spacing: 0) {
+                    heroPanel
+                        .frame(width: max(300, geo.size.width * 0.42))
+                    formPanel
+                        .frame(maxWidth: .infinity)
+                }
+            } else {
+                ZStack {
+                    BrandColor.bg.ignoresSafeArea()
+                    formPanel
+                }
+            }
+        }
+        .frame(minWidth: 640, minHeight: 460)
+    }
+
+    /// Markierte Hero-Spalte (links) — Navy-Verlauf mit Logo, Name, Tagline.
+    private var heroPanel: some View {
+        ZStack {
+            LinearGradient(
+                colors: [BrandColor.primary, BrandColor.primaryHover],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
+
+            VStack(alignment: .leading, spacing: 18) {
+                Image("AppLogo")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(width: 88, height: 88)
+                    .accessibilityLabel("Schreibwerkstatt")
+
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Schreibwerkstatt")
+                        .font(BrandFont.serif(34, weight: .semibold))
+                        .foregroundStyle(BrandColor.onPrimary)
+
+                    Text(t("login.heroTagline"))
+                        .font(BrandFont.sans(14))
+                        .foregroundStyle(BrandColor.onPrimary.opacity(0.78))
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: 320, alignment: .leading)
+                }
+            }
+            .padding(48)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        }
+    }
+
+    /// Formular-Spalte (rechts) — Eingabefelder + Anmelden auf der warmen Fläche.
+    private var formPanel: some View {
         ZStack {
             BrandColor.bg.ignoresSafeArea()
 
-            VStack(spacing: 0) {
-                Spacer(minLength: 24)
-                card
-                Spacer(minLength: 24)
-            }
-        }
-        .frame(minWidth: 520, minHeight: 460)
-    }
+            VStack(alignment: .leading, spacing: 22) {
+                Text(t("login.signIn"))
+                    .font(BrandFont.serif(26, weight: .semibold))
+                    .foregroundStyle(BrandColor.text)
 
-    /// Anmeldekarte — auf der warmen Fläche zentriert, mit weichem Schatten.
-    private var card: some View {
-        VStack(spacing: 22) {
-            header
-
-            VStack(alignment: .leading, spacing: 14) {
-                    field(title: "Server-Adresse") {
+                VStack(alignment: .leading, spacing: 14) {
+                    field(title: t("login.serverAddress")) {
                         TextField("https://…", text: $serverURL)
                             .textFieldStyle(.roundedBorder)
                             .disableAutocorrection(true)
                             .font(BrandFont.sans(13))
                     }
 
-                    field(title: "Gerätetoken") {
+                    field(title: t("login.deviceToken")) {
                         SecureField("swd_…", text: $token)
                             .textFieldStyle(.roundedBorder)
                             .font(BrandFont.sans(13))
                             .onSubmit { submit() }
                     }
 
-                    Text("Stelle das Token in der Schreibwerkstatt unter „Mein Konto → Gerätetoken“ aus und füge es hier ein. Es wird nur einmal angezeigt.")
+                    Text(t("login.tokenHint"))
                         .font(BrandFont.sans(11))
                         .foregroundStyle(BrandColor.muted)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                .frame(maxWidth: 360)
 
                 if let error = auth.lastError {
                     Text(error)
                         .font(BrandFont.sans(12))
                         .foregroundStyle(.red)
-                        .multilineTextAlignment(.center)
                         .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: 360)
                 }
 
                 Button(action: submit) {
@@ -78,44 +124,18 @@ struct LoginView: View {
                             ProgressView()
                                 .controlSize(.small)
                         }
-                        Text(isBusy ? "Prüfe …" : "Anmelden")
+                        Text(isBusy ? t("login.checking") : t("login.signIn"))
                             .font(BrandFont.sans(14, weight: .medium))
                     }
-                    .frame(maxWidth: 360)
+                    .frame(maxWidth: .infinity)
                     .padding(.vertical, 4)
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(BrandColor.primary)
                 .disabled(!canSubmit)
             }
-            .padding(36)
-            .frame(maxWidth: 420)
-            .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(BrandColor.surface)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .strokeBorder(BrandColor.faint.opacity(0.4))
-            )
-            .shadow(color: .black.opacity(0.12), radius: 24, y: 8)
-    }
-
-    private var header: some View {
-        VStack(spacing: 10) {
-            Image("AppLogo")
-                .resizable()
-                .scaledToFit()
-                .frame(width: 84, height: 84)
-                .accessibilityLabel("Schreibwerkstatt")
-
-            Text("Schreibwerkstatt")
-                .font(BrandFont.serif(28, weight: .semibold))
-                .foregroundStyle(BrandColor.text)
-
-            Text("Anmelden, um deine Seiten zu synchronisieren.")
-                .font(BrandFont.sans(13))
-                .foregroundStyle(BrandColor.muted)
+            .frame(maxWidth: 360)
+            .padding(48)
         }
     }
 
@@ -142,4 +162,5 @@ struct LoginView: View {
 #Preview {
     LoginView()
         .environmentObject(AuthStore())
+        .environmentObject(LocalizationController())
 }

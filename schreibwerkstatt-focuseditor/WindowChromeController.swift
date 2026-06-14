@@ -2,30 +2,29 @@
 //  WindowChromeController.swift
 //  schreibwerkstatt-focuseditor
 //
-//  Fenster-Chrome des randlosen Fensters: hält die Ampel-Buttons trotz
-//  `fullSizeContentView` sichtbar (über dem Content), misst ihren Einzug für die
-//  eigene Toolbar und beobachtet den **nativen** macOS-Vollbild (grüner Button /
-//  View ▸ Vollbild). Die Toolbar bleibt **immer** sichtbar — auch im Vollbild.
-//  Ablenkungsfreies Ausblenden macht allein die Auto-Hide-Option (Toolbar bei
-//  Inaktivität ausblenden), nicht mehr der Vollbild.
+//  Fenster-Chrome des Editor-Fensters: hält die Ampel-Buttons sichtbar und
+//  beobachtet den **nativen** macOS-Vollbild (grüner Button / View ▸ Vollbild).
+//  Die Toolbar bleibt **immer** sichtbar — auch im Vollbild; ablenkungsfreies
+//  Ausblenden macht allein die Auto-Hide-Option (Toolbar bei Inaktivität).
+//
+//  Bewusst KEIN `fullSizeContentView` mehr: damit lag die schwere, transparente
+//  `WKWebView` über der eigenen Toolbar und verschluckte sie optisch (nur ein
+//  paar Pixel der Leiste blieben sichtbar). Mit normaler Titelleiste sitzt der
+//  Inhalt (Toolbar + WebView) verlässlich UNTER der Titelleiste — kein Overlap,
+//  keine Z-Order-Tricks nötig. Die Ampel-Buttons stehen in der Titelleiste, die
+//  eigene Leiste direkt darunter.
 //
 
 import SwiftUI
 import AppKit
 import Combine
 
-/// Verwaltet das Chrome des Editor-Fensters: Ampel-Sichtbarkeit/-Einzug und die
+/// Verwaltet das Chrome des Editor-Fensters: Ampel-Sichtbarkeit und die
 /// Reaktion auf den nativen macOS-Vollbild.
 @MainActor
 final class WindowChromeController: ObservableObject {
-    /// True, solange das Fenster im **nativen** macOS-Vollbild ist. Steuert das
-    /// Ausblenden der Toolbar (ablenkungsfrei) in `ContentView`.
+    /// True, solange das Fenster im **nativen** macOS-Vollbild ist.
     @Published private(set) var isNativeFullscreen = false
-    /// Linker Einzug der `AppToolbar`, damit ihr Inhalt rechts neben den
-    /// Ampel-Buttons beginnt. Aus der echten Button-Geometrie gelesen (statt
-    /// fester Magic-Number) → robust gegen System-/Größenänderungen. Der
-    /// Default greift, solange das Fenster noch nicht vermessen ist.
-    @Published private(set) var trafficLightInset: CGFloat = 78
 
     private weak var window: NSWindow?
 
@@ -43,8 +42,6 @@ final class WindowChromeController: ObservableObject {
 
         applyBaseChrome(window)
 
-        // Nativer Vollbild (grüner Button / View ▸ Vollbild) soll sofort den
-        // ablenkungsfreien Modus auslösen: Ampel-Buttons weg, Toolbar aus.
         let center = NotificationCenter.default
         fullscreenObservers = [
             center.addObserver(forName: NSWindow.didEnterFullScreenNotification,
@@ -55,99 +52,59 @@ final class WindowChromeController: ObservableObject {
                                object: window, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated { self?.nativeFullscreenChanged(false) }
             },
-            // Resize/Key-Wechsel bauen das SwiftUI-Hosting-View neu auf und legen
-            // es wieder über die Titelleiste → Ampeln erneut nach vorne holen.
-            center.addObserver(forName: NSWindow.didResizeNotification,
-                               object: window, queue: .main) { [weak self, weak window] _ in
-                MainActor.assumeIsolated { if let window { self?.reassertTitlebarIfNormal(window) } }
-            },
-            center.addObserver(forName: NSWindow.didBecomeKeyNotification,
-                               object: window, queue: .main) { [weak self, weak window] _ in
-                MainActor.assumeIsolated { if let window { self?.reassertTitlebarIfNormal(window) } }
-            },
         ]
     }
 
-    /// Ampeln nur im normalen Fenster wieder nach vorne holen — im nativen
-    /// Vollbild sollen sie ausgeblendet bleiben.
-    private func reassertTitlebarIfNormal(_ window: NSWindow) {
-        guard !isNativeFullscreen else { return }
-        raiseTitlebar(window)
-        updateTrafficLightInset(window)
-    }
-
-    /// Basis-Chrome des normalen Fensters: randloser Inhalt bis ganz nach oben,
-    /// transparente/leere Titelleiste — die eigene `AppToolbar` sitzt direkt
-    /// unter den Ampel-Buttons. Idempotent (wird vom WindowAccessor mehrfach
-    /// gereicht); die Ampel-Buttons bleiben sichtbar.
+    /// Basis-Chrome: normale (transparente, titellose) Titelleiste mit sichtbaren
+    /// Ampel-Buttons — der Inhalt sitzt darunter. Idempotent (wird vom
+    /// WindowAccessor mehrfach gereicht).
     private func applyBaseChrome(_ window: NSWindow) {
-        // Native Fenster-Tabs deaktivieren: ablenkungsfreies Schreiben auf genau
-        // einer Seite (CLAUDE.md) verträgt keine Tab-Leiste. Global ausschalten
-        // entfernt die View-Menüpunkte („Tab-Leiste einblenden", „Alle Tabs
-        // zeigen", „Fenster zusammenführen"), pro Fenster verhindert es das
-        // Zusammenführen in Tab-Gruppen.
-        NSWindow.allowsAutomaticWindowTabbing = false
+        // Native Fenster-Tabs: das globale Abschalten passiert früh im App-`init`
+        // (sonst zu spät — Tabs/Menüpunkte sind dann schon installiert). Hier
+        // pro Fenster zusätzlich das Zusammenführen in Tab-Gruppen verbieten.
         window.tabbingMode = .disallowed
 
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
-        // Titled-Stil + randloser Inhalt: ohne `.titled` zeigt macOS keine
-        // Ampel-Buttons. Beides setzen, damit die Knöpfe oben links erscheinen.
-        window.styleMask.insert([.titled, .fullSizeContentView])
-        // Ampel-Buttons im normalen Fenster explizit einblenden (nur der
-        // native Vollbild versteckt sie wieder).
+        // Titled-Stil OHNE fullSizeContentView: Inhalt unter der Titelleiste
+        // (s. Datei-Kopf — fullSize ließ die WebView die Toolbar verdecken).
+        window.styleMask.insert(.titled)
+        window.styleMask.remove(.fullSizeContentView)
         for kind in Self.buttons {
             window.standardWindowButton(kind)?.isHidden = false
         }
-        raiseTitlebar(window)
-        updateTrafficLightInset(window)
 
-        // Nach dem Aufbau der SwiftUI-Hierarchie erneut nach vorne holen: das
-        // randlose `NSHostingView` (Toolbar-Vibrancy/WebView) wird sonst ÜBER
-        // den Titelleisten-Container gelegt und verdeckt die Ampel-Buttons.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self, weak window] in
-            guard let self, let window else { return }
-            self.raiseTitlebar(window)
-            self.updateTrafficLightInset(window)
+        // Dienste-Menü entfernen — für eine Ein-Seiten-Schreib-Shell ohne
+        // Selektions-/Dokumentdienste sinnlos (erst hier, das App-Menü baut
+        // SwiftUI nach dem ersten Fenster auf).
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            self?.removeServicesMenu()
         }
     }
 
-    /// Hebt den Titelleisten-Container (Eltern der Ampel-Buttons) über den
-    /// Inhalts-View. Bei `fullSizeContentView` + `.ignoresSafeArea()` legt
-    /// SwiftUI das layer-gestützte `NSHostingView` (Toolbar-Vibrancy/WebView)
-    /// sonst darüber → die Knöpfe sind unsichtbar. Reines Subview-Umsortieren
-    /// überlebt ein SwiftUI-Relayout (z. B. Fenster-Resize) nicht, darum
-    /// zusätzlich die Layer-`zPosition` anheben (überlebt das Relayout) und bei
-    /// jedem Resize erneut anwenden.
-    private func raiseTitlebar(_ window: NSWindow) {
-        // `closeButton.superview` ist die `NSTitlebarView` INNERHALB des
-        // `NSTitlebarContainerView`; Geschwister des Content-Views im ThemeFrame
-        // ist erst der Container — darum eine Ebene höher anheben.
-        guard let container = window.standardWindowButton(.closeButton)?.superview?.superview,
-              let themeFrame = container.superview else { return }
-        // SwiftUI blendet den Titelleisten-Container (inkl. Ampeln) zeitweise
-        // aus (isHidden/alpha 0) — wieder sichtbar erzwingen und über den Content
-        // legen, damit die Knöpfe trotz `fullSizeContentView` nicht verdeckt sind.
-        container.isHidden = false
-        container.alphaValue = 1
-        themeFrame.addSubview(container, positioned: .above, relativeTo: nil)
-        container.wantsLayer = true
-        container.layer?.zPosition = 1_000
-    }
-
-    /// Liest den rechten Rand des Zoom-Buttons (= breitester Ampel-Knopf) und
-    /// leitet daraus den Toolbar-Einzug ab. Fällt still auf den Default zurück,
-    /// solange die Knöpfe noch nicht vermessen sind (Frame == 0).
-    private func updateTrafficLightInset(_ window: NSWindow) {
-        guard let zoom = window.standardWindowButton(.zoomButton) else { return }
-        let trailing = zoom.frame.maxX
-        if trailing > 0 { trafficLightInset = trailing + 14 }
+    /// Entfernt das „Dienste"/„Services"-Untermenü aus dem App-Menü. SwiftUI
+    /// bietet dafür keinen `CommandGroup`, darum direkt über AppKit: die
+    /// `servicesMenu`-Zuordnung lösen und den Menüpunkt (samt nun doppeltem
+    /// Trenner) aus dem App-Menü ziehen. Idempotent — findet nach dem ersten
+    /// Lauf nichts mehr.
+    private func removeServicesMenu() {
+        let services = NSApp.servicesMenu
+        NSApp.servicesMenu = nil
+        guard let appMenu = NSApp.mainMenu?.items.first?.submenu,
+              let index = appMenu.items.firstIndex(where: {
+                  $0.submenu === services || $0.title == "Services" || $0.title == "Dienste"
+              }) else { return }
+        appMenu.removeItem(at: index)
+        // Durch das Entfernen können zwei Trenner aufeinandertreffen → einen weg.
+        if index < appMenu.items.count, appMenu.items[index].isSeparatorItem,
+           index > 0, appMenu.items[index - 1].isSeparatorItem {
+            appMenu.removeItem(at: index)
+        }
     }
 
     /// Schaltet den nativen macOS-Vollbild um. Pendant zum grünen Ampel-Button /
     /// ⌃⌘F als Menüpunkt — die Toolbar bleibt im Vollbild sichtbar, der Rückweg
-    /// in die normale Fensteransicht ist also auch über das Überlauf-Menü/Menü
-    /// jederzeit erreichbar.
+    /// in die normale Fensteransicht ist also auch über das Menü erreichbar.
     func toggleFullscreen() {
         window?.toggleFullScreen(nil)
     }
@@ -157,19 +114,14 @@ final class WindowChromeController: ObservableObject {
         fullscreenObservers.removeAll()
     }
 
-    /// Reaktion auf nativen Vollbild-Wechsel. Die Toolbar bleibt jetzt auch im
-    /// Vollbild sichtbar (CLAUDE.md), darum werden die Ampel-Buttons **nicht**
-    /// mehr versteckt — im Vollbild verwaltet macOS die Titelleiste als
-    /// einblendbares Overlay selbst. Beim Verlassen das normale Chrome
-    /// (Buttons sichtbar, Titelleiste über dem Content) wiederherstellen.
+    /// Reaktion auf nativen Vollbild-Wechsel. Die Toolbar bleibt auch im Vollbild
+    /// sichtbar (CLAUDE.md); beim Verlassen die Ampel-Buttons wieder einblenden.
     private func nativeFullscreenChanged(_ entered: Bool) {
         isNativeFullscreen = entered
         if !entered, let window {
             for kind in Self.buttons {
                 window.standardWindowButton(kind)?.isHidden = false
             }
-            raiseTitlebar(window)
-            updateTrafficLightInset(window)
         }
     }
 }

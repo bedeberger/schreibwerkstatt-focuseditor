@@ -19,7 +19,11 @@
 import Foundation
 
 enum WebAssets {
-    static let handlerName = EditorBridge.handlerName
+    /// Name des WKScriptMessage-Handlers — Single Source of Truth. Hier (im
+    /// dependency-freien Asset-Modul) verankert, damit `WebAssets` ohne den
+    /// schweren `EditorBridge` (WebKit/LocalStore/APIClient) testbar/kompilierbar
+    /// bleibt. `EditorBridge.handlerName` referenziert diesen Wert.
+    static let handlerName = "swBridge"
 
     /// At-document-start injiziert. Definiert `window.__focusBridge.call(op, params)`
     /// → Promise mit dem Swift-Reply. Leitet zusätzlich `console.*` an den

@@ -15,13 +15,13 @@ struct BookPicker: View {
     var body: some View {
         Menu {
             if library.books.isEmpty {
-                Text(library.isLoadingBooks ? "Lade Bücher …" : "Keine Bücher")
+                Text(library.isLoadingBooks ? t("library.loadingBooks") : t("library.noBooks"))
             } else {
                 ForEach(library.books, id: \.id) { book in
                     Button {
                         library.selectBook(book.id)
                     } label: {
-                        let name = book.name ?? "Buch \(book.id)"
+                        let name = book.name ?? t("library.bookFallback", ["id": "\(book.id)"])
                         if book.id == library.activeBookId {
                             Label(name, systemImage: "checkmark")
                         } else {
@@ -33,11 +33,11 @@ struct BookPicker: View {
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: "books.vertical")
-                Text(library.activeBookName ?? "Buch wählen")
+                Text(library.activeBookName ?? t("library.chooseBook"))
                     .font(BrandFont.sans(12))
             }
         }
         .menuStyle(.borderlessButton)
-        .help("Buch wählen")
+        .help(t("library.chooseBook"))
     }
 }

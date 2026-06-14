@@ -59,8 +59,8 @@ enum MiniZip {
             let compSize = readU32(data, p + 20)
             let rawSize  = readU32(data, p + 24)
             let nameLen  = Int(readU16(data, p + 28))
-            let extraLen = Int(readU16(data, p + 32))
-            let commLen  = Int(readU16(data, p + 34))
+            let extraLen = Int(readU16(data, p + 30))
+            let commLen  = Int(readU16(data, p + 32))
             let lhOffset = Int(readU32(data, p + 42))
 
             if compSize == 0xFFFF_FFFF || rawSize == 0xFFFF_FFFF || lhOffset == 0xFFFF_FFFF {

@@ -37,13 +37,13 @@ enum FocusGranularity: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
-    /// Menü-/Settings-Beschriftung (de, gespiegelt aus der Mutter-App-i18n).
+    /// Menü-/Settings-Beschriftung (lokalisiert).
     var label: String {
         switch self {
-        case .paragraph:      return "Absatz (Standard)"
-        case .sentence:       return "Satz"
-        case .window3:        return "Drei Absätze (vor + aktiv + nach)"
-        case .typewriterOnly: return "Nur Typewriter-Scroll (kein Dim)"
+        case .paragraph:      return t("focus.granularity.paragraph")
+        case .sentence:       return t("focus.granularity.sentence")
+        case .window3:        return t("focus.granularity.window3")
+        case .typewriterOnly: return t("focus.granularity.typewriterOnly")
         }
     }
 }

@@ -9,6 +9,9 @@ import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject private var auth: AuthStore
+    /// Beobachtet die App-Sprache: ein Sprachwechsel rendert den ganzen Baum neu
+    /// (frische `t()`-Werte), ohne den Editor-WebView neu zu laden.
+    @EnvironmentObject private var loc: LocalizationController
 
     var body: some View {
         switch auth.state {
@@ -88,19 +91,18 @@ private struct EditorHostView: View {
     }
 
     /// Editor + Toolbar im Ready-Zustand. Zwei Layouts:
-    ///  • normal     — Toolbar oben im Fluss (Webview darunter).
-    ///  • Auto-Hide  — Toolbar als Overlay, das ein-/ausgeblendet wird; sie bleibt
-    ///    IMMER im View-Baum (nur visuell verschoben), damit ⌘O & Co. weiter
-    ///    greifen. Ein dünner Hover-Streifen ÜBER der WebView blendet sie ein
-    ///    (über dem WKWebView feuert der Streifen zuverlässig, die WebView selbst
-    ///    fängt Hover sonst ab).
+    ///  • normal     — Toolbar oben im Fluss, WebView darunter (keine Overlap-
+    ///    Probleme: das Fenster nutzt KEIN `fullSizeContentView` mehr, die WebView
+    ///    sitzt sauber unter der Titelleiste — s. `WindowChromeController`).
+    ///  • Auto-Hide  — Toolbar als Overlay über der WebView, das bei Inaktivität
+    ///    weggeblendet wird; sie bleibt IMMER im Baum, damit ⌘O & Co. greifen.
+    ///    Ein dünner Hover-Streifen am oberen Rand blendet sie wieder ein.
     @ViewBuilder
     private var editorReady: some View {
         let autoHideActive = autoHideToolbar && chromeAllowed
         VStack(spacing: 0) {
             if chromeAllowed && !autoHideActive {
                 AppToolbar(pickerOpen: $pickerOpen)
-                    .transition(.move(edge: .top).combined(with: .opacity))
             }
             ZStack(alignment: .top) {
                 // App-weiter, geteilter Store — dieselbe Instanz, die die SyncEngine bedient.
@@ -116,9 +118,7 @@ private struct EditorHostView: View {
                         .onContinuousHover { phase in
                             if case .active = phase { revealToolbar() }
                         }
-                    // Toolbar-Overlay: immer im Baum (Shortcuts!), nur verschoben.
                     AppToolbar(pickerOpen: $pickerOpen)
-                        .background(.ultraThinMaterial)
                         .opacity(toolbarRevealed ? 1 : 0)
                         .offset(y: toolbarRevealed ? 0 : -52)
                         .allowsHitTesting(toolbarRevealed)
@@ -131,7 +131,6 @@ private struct EditorHostView: View {
                 }
             }
         }
-        .ignoresSafeArea()
     }
 
     /// Blendet die Toolbar ein und plant das erneute Ausblenden nach Inaktivität.
@@ -153,7 +152,7 @@ private struct BundleLoadingView: View {
             BrandColor.bg.ignoresSafeArea()
             VStack(spacing: 14) {
                 ProgressView().controlSize(.large)
-                Text("Editor wird geladen …")
+                Text(t("content.loadingEditor"))
                     .font(BrandFont.sans(13))
                     .foregroundStyle(BrandColor.muted)
             }
@@ -174,14 +173,14 @@ private struct BundleUnavailableView: View {
                 Image(systemName: "wifi.slash")
                     .font(.system(size: 32))
                     .foregroundStyle(BrandColor.muted)
-                Text("Editor konnte nicht geladen werden")
+                Text(t("content.editorUnavailableTitle"))
                     .font(BrandFont.serif(18))
                 Text(message)
                     .font(BrandFont.sans(12))
                     .foregroundStyle(BrandColor.muted)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 360)
-                Button("Erneut versuchen", action: retry)
+                Button(t("content.retry"), action: retry)
             }
             .padding(40)
         }
@@ -192,4 +191,5 @@ private struct BundleUnavailableView: View {
 #Preview {
     ContentView()
         .environmentObject(AuthStore())
+        .environmentObject(LocalizationController())
 }

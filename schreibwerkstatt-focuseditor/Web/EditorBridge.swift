@@ -43,7 +43,8 @@ import OSLog
 final class EditorBridge: NSObject, WKScriptMessageHandlerWithReply, EditorCoordinating {
     /// Name, unter dem die Bridge in JS erreichbar ist:
     /// `window.webkit.messageHandlers.swBridge.postMessage(...)`.
-    static let handlerName = "swBridge"
+    /// Single Source of Truth in `WebAssets` (dependency-frei, testbar).
+    static let handlerName = WebAssets.handlerName
 
     private let store: any LocalStore
     /// HTTP-Client für den LanguageTool-/Wörterbuch-Proxy. Optional, damit die
@@ -296,6 +297,17 @@ final class EditorBridge: NSObject, WKScriptMessageHandlerWithReply, EditorCoord
         return cfg?.userSettings?.focus_granularity
     }
 
+    /// Liest die serverseitige UI-Sprache aus `/config`
+    /// (`userSettings.locale`, die Web-Profil-Einstellung des Users — Werte
+    /// `de`/`en`). Dient dem `LocalizationController` als Initial-Default,
+    /// solange keine lokale Wahl vorliegt. `nil` bei Netz-/Auth-Fehler oder
+    /// fehlendem User-Kontext.
+    func serverLocale() async -> String? {
+        guard let api else { return nil }
+        let cfg = try? await api.send("/config", decode: ConfigDTO.self)
+        return cfg?.userSettings?.locale
+    }
+
     /// Proxyt den Prüf-Request an `POST /languagetool/check`. `404` (LT
     /// serverseitig aus) wird als `{ disabled: true }` zurückgegeben — kein
     /// Fehler. Die `matches` werden als roher JSON-Baum durchgereicht
@@ -475,6 +487,7 @@ private struct ConfigDTO: Decodable {
     }
     struct UserSettings: Decodable {
         let focus_granularity: String?
+        let locale: String?
     }
     let languagetool: LanguageTool?
     /// Pro-User-Einstellungen (nur mit aufgelöstem User, also auch per
@@ -556,13 +569,13 @@ enum SpellcheckLanguage: String, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .auto: return "Automatisch (Buch-Sprache)"
-        case .deCH: return "Deutsch (Schweiz)"
-        case .deDE: return "Deutsch (Deutschland)"
-        case .frCH: return "Französisch (Schweiz)"
-        case .fr:   return "Französisch"
-        case .it:   return "Italienisch"
-        case .enGB: return "Englisch (UK)"
+        case .auto: return t("spell.lang.auto")
+        case .deCH: return t("spell.lang.deCH")
+        case .deDE: return t("spell.lang.deDE")
+        case .frCH: return t("spell.lang.frCH")
+        case .fr:   return t("spell.lang.fr")
+        case .it:   return t("spell.lang.it")
+        case .enGB: return t("spell.lang.enGB")
         }
     }
 }

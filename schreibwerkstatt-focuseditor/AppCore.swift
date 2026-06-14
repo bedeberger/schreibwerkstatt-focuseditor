@@ -27,6 +27,9 @@ final class AppCore: ObservableObject {
     let library: LibraryStore
     /// OTA-Bundle des Focus-Editors (lädt/cacht die Editor-Assets vom Server).
     let editorBundle: EditorBundleStore
+    /// OTA-Override der Oberflächen-Strings (macclient.*); gebündelte Kataloge
+    /// bleiben der Offline-Fallback.
+    let i18n: I18nBundleStore
 
     init() {
         let auth = AuthStore()
@@ -49,6 +52,7 @@ final class AppCore: ObservableObject {
         self.content = content
         self.library = LibraryStore(content: content, store: store, bridge: bridge)
         self.editorBundle = EditorBundleStore(api: auth.api)
+        self.i18n = I18nBundleStore(api: auth.api)
         let sync = SyncEngine(api: auth.api,
                               content: content,
                               store: store,
@@ -61,5 +65,8 @@ final class AppCore: ObservableObject {
     func bootstrap() async {
         await auth.bootstrap()
         sync.start()
+        // String-Override still im Hintergrund ziehen (greift beim nächsten
+        // Start; gebündelte Kataloge bleiben der Offline-Fallback).
+        Task { await i18n.refresh() }
     }
 }

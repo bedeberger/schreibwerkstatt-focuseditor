@@ -6,15 +6,29 @@
 //
 
 import SwiftUI
+import AppKit
 
 @main
 struct schreibwerkstatt_focuseditorApp: App {
+    init() {
+        // Native Fenster-Tabs komplett abschalten — und zwar VOR der ersten
+        // Fenstererzeugung. Spät gesetzt (im WindowChromeController, nach
+        // Fensteraufbau) installiert AppKit den „Tab-Leiste einblenden"-
+        // Menüpunkt und das automatische Tabbing bereits → Tabs tauchen wieder
+        // auf. Im App-`init` greift es früh genug, damit die View-Menüpunkte
+        // („Tab-Leiste einblenden", „Alle Tabs zeigen", „Fenster zusammenführen")
+        // gar nicht erst erscheinen. Ablenkungsfreies Schreiben auf genau einer
+        // Seite (CLAUDE.md) verträgt keine Tab-Leiste.
+        NSWindow.allowsAutomaticWindowTabbing = false
+    }
+
     @StateObject private var core = AppCore()
     @StateObject private var windowChrome = WindowChromeController()
     @StateObject private var appearance = AppearanceController()
     @StateObject private var focus = FocusController()
     @StateObject private var typography = TypographyController()
     @StateObject private var writingStats = WritingStatsStore()
+    @StateObject private var loc = LocalizationController()
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.openWindow) private var openWindow
 
@@ -31,6 +45,7 @@ struct schreibwerkstatt_focuseditorApp: App {
                 .environmentObject(focus)
                 .environmentObject(typography)
                 .environmentObject(writingStats)
+                .environmentObject(loc)
                 .background(WindowAccessor { windowChrome.bind($0) })
                 .task {
                     // Fokus- + Typografie-Controller an die app-weite Bridge
@@ -38,6 +53,7 @@ struct schreibwerkstatt_focuseditorApp: App {
                     // dann Auth/Sync hochfahren.
                     focus.bind(core.bridge)
                     typography.bind(core.bridge)
+                    loc.bind(core.bridge)
                     writingStats.attach(to: core.bridge)
                     await core.bootstrap()
                 }
@@ -47,7 +63,10 @@ struct schreibwerkstatt_focuseditorApp: App {
                 // frischem Login (der `/config`-Request braucht das Token).
                 .onReceive(core.auth.$state) { state in
                     if state == .signedIn {
-                        Task { await focus.seedFromServerIfNeeded() }
+                        Task {
+                            await focus.seedFromServerIfNeeded()
+                            await loc.seedFromServerIfNeeded()
+                        }
                     }
                 }
         }
@@ -57,6 +76,15 @@ struct schreibwerkstatt_focuseditorApp: App {
             core.sync.setActive(phase == .active)
         }
         .commands {
+            // „Über …" — Standard-Panel mit eigenem Credits-Text: Kurzbeschreibung
+            // der App + klickbare Repo-Links (Mutterprojekt + dieser Client).
+            // Name/Version/Copyright zieht das Panel weiter aus der Info.plist.
+            CommandGroup(replacing: .appInfo) {
+                Button(t("menu.about")) {
+                    AboutPanel.show()
+                }
+            }
+
             // Standard-Menüpunkte entfernen, die für eine Ein-Fenster-/Ein-Seiten-
             // Schreib-Shell sinnlos sind: kein Dokumentmodell (kein „Neu"/„Sichern"),
             // kein Import/Export (Inhalte fließen nur über Sync), keine Seitenleiste.
@@ -68,7 +96,7 @@ struct schreibwerkstatt_focuseditorApp: App {
             // Manueller Light/Dark/System-Umschalter. Inline-Picker rendert
             // als Menüpunkte mit Häkchen beim aktiven Modus.
             CommandGroup(after: .toolbar) {
-                Picker("Darstellung", selection: $appearance.mode) {
+                Picker(t("menu.appearance"), selection: $appearance.mode) {
                     ForEach(AppearanceMode.allCases) { mode in
                         Text(mode.label).tag(mode)
                     }
@@ -79,7 +107,7 @@ struct schreibwerkstatt_focuseditorApp: App {
             // Fokus-Granularität — bestimmt, wie stark der Editor die Umgebung
             // des aktiven Absatzes abblendet. Wirkt sofort bei offenem Editor.
             CommandGroup(after: .toolbar) {
-                Picker("Fokus", selection: $focus.granularity) {
+                Picker(t("menu.focus"), selection: $focus.granularity) {
                     ForEach(FocusGranularity.allCases) { g in
                         Text(g.label).tag(g)
                     }
@@ -93,8 +121,8 @@ struct schreibwerkstatt_focuseditorApp: App {
             // Label folgt dem Zustand, damit der Rückweg klar benannt ist.
             CommandGroup(after: .toolbar) {
                 Button(windowChrome.isNativeFullscreen
-                       ? "Vollbild verlassen (Fensteransicht)"
-                       : "Vollbild (ablenkungsfrei)") {
+                       ? t("menu.exitFullscreen")
+                       : t("menu.enterFullscreen")) {
                     windowChrome.toggleFullscreen()
                 }
                 .keyboardShortcut("f", modifiers: [.control, .command])
@@ -102,7 +130,7 @@ struct schreibwerkstatt_focuseditorApp: App {
 
             // Manueller Sync (⌘⇧S) — wirkt auch bei pausiertem/manuellem Modus.
             CommandGroup(after: .toolbar) {
-                Button("Jetzt synchronisieren") {
+                Button(t("menu.syncNow")) {
                     core.sync.syncManually()
                 }
                 .keyboardShortcut("s", modifiers: [.command, .shift])
@@ -111,7 +139,7 @@ struct schreibwerkstatt_focuseditorApp: App {
             // Help-Menü: die Standard-„App-Hilfe" (toter Help-Book-Eintrag)
             // durch unsere Tastaturkürzel-Hilfe ersetzen (⌘?).
             CommandGroup(replacing: .help) {
-                Button("Tastaturkürzel") {
+                Button(t("menu.shortcuts")) {
                     openWindow(id: "shortcuts-help")
                 }
                 .keyboardShortcut("?", modifiers: .command)
@@ -119,8 +147,9 @@ struct schreibwerkstatt_focuseditorApp: App {
         }
 
         // Tastaturkürzel-Hilfe als eigenes, einfaches Fenster.
-        Window("Tastaturkürzel", id: "shortcuts-help") {
+        Window(t("window.shortcutsTitle"), id: "shortcuts-help") {
             ShortcutsHelpView()
+                .environmentObject(loc)
         }
         .windowResizability(.contentSize)
 
@@ -137,6 +166,55 @@ struct schreibwerkstatt_focuseditorApp: App {
                 .environmentObject(focus)
                 .environmentObject(typography)
                 .environmentObject(writingStats)
+                .environmentObject(loc)
         }
+    }
+}
+
+/// Eigenes „Über …"-Panel: nutzt das native macOS-About-Panel und reicht nur
+/// einen Credits-Text nach (Kurzbeschreibung + klickbare Repo-Links). Name,
+/// Version und Copyright kommen weiter aus der Info.plist (CFBundleName,
+/// CFBundleShortVersionString, NSHumanReadableCopyright) — nicht hier doppeln.
+enum AboutPanel {
+    @MainActor
+    static func show() {
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        NSApplication.shared.orderFrontStandardAboutPanel(options: [
+            .credits: credits
+        ])
+    }
+
+    private static var credits: NSAttributedString {
+        let body = NSFont.systemFont(ofSize: NSFont.smallSystemFontSize)
+        let bold = NSFont.boldSystemFont(ofSize: NSFont.smallSystemFontSize)
+        let para = NSMutableParagraphStyle()
+        para.alignment = .center
+        para.paragraphSpacing = 6
+
+        let s = NSMutableAttributedString()
+
+        func line(_ text: String, font: NSFont = body) {
+            s.append(NSAttributedString(string: text + "\n", attributes: [
+                .font: font,
+                .paragraphStyle: para,
+                .foregroundColor: NSColor.labelColor,
+            ]))
+        }
+        func link(_ label: String, _ url: String) {
+            s.append(NSAttributedString(string: label + "\n", attributes: [
+                .font: body,
+                .paragraphStyle: para,
+                .link: url,
+            ]))
+        }
+
+        line(t("about.tagline"), font: bold)
+        line(t("about.body"))
+        line(" ")
+        line(t("about.motherProject"), font: bold)
+        link("github.com/bedeberger/schreibwerkstatt",
+             "https://github.com/bedeberger/schreibwerkstatt")
+
+        return s
     }
 }

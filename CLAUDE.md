@@ -4,6 +4,16 @@ Nativer macOS-Client für den **Focus-Editor** der Schreibwerkstatt: eine SwiftU
 
 **Zweck:** ablenkungsfreies Schreiben auf genau einer Seite, voll offline-fähig. Kein Buchorganizer, keine Analyse-Karten, keine KI-Jobs — nur der Schreibmodus.
 
+## Über dieses Projekt
+
+Die **Schreibwerkstatt** ist eine Web-Plattform zum strukturierten Schreiben von Büchern (Express-Server, Editor, Buch-/Kapitel-Organisation, Lektorat, Analyse-Karten, KI-Jobs). Dieser **Focus-Editor-Client** ist eine eigenständige, abgespeckte native macOS-App, die *nur* den Schreibmodus der Plattform herausschält: eine Seite, kein Drumherum, voll offline-fähig. Er ersetzt die Web-Plattform nicht, sondern ist ein fokussierter Schreib-Frontend für dieselben Inhalte — Seiten, die hier entstehen, leben über den Sync im selben Datenbestand wie die Web-App.
+
+**Verhältnis zum Mutterprojekt:** Der Editor-Code (JS/CSS, Block-Merge) wird **nicht** kopiert, sondern zur Laufzeit als OTA-Bundle vom Server gezogen — die Schreibwerkstatt bleibt Single Source of Truth (Details unten unter „Quellprojekt"). Dieser Client liefert nur die native Hülle: Shell, Bridge, Offline-Store, Sync, Auth, OTA-Lader.
+
+**Repositories:**
+- **Mutterprojekt (Schreibwerkstatt, SSoT):** GitHub [`bedeberger/schreibwerkstatt`](https://github.com/bedeberger/schreibwerkstatt) (public) · lokal `/Users/bd/ClaudeProjects/schreibwerkstatt`
+- **Dieser Client:** GitHub `bedeberger/schreibwerkstatt-focuseditor` (private) · lokal `/Users/bd/xcode-projects/schreibwerkstatt-focuseditor`
+
 ## Quellprojekt (Single Source of Truth)
 
 - Hauptrepo: `/Users/bd/ClaudeProjects/schreibwerkstatt`
@@ -138,9 +148,10 @@ schreibwerkstatt-focuseditor/        App-Sources (Swift)
   Focus/      FocusController (lokale Fokus-Granularität)
   Writing/    WritingStatsStore (Live-Wortzahl/Lesezeit/Schreibziel/Tages-Delta)
   Settings/   SettingsView (⌘, — 7 Tabs)
+  Localization/  Zweisprachigkeit de/en: Localization.swift (t()/tn() + L10nStore + LocalizationController) + mac-de.json/mac-en.json (gebündelt) + I18nBundleStore (OTA-Override)
 ```
 
-**Einstellungen (alle gerätelokal, UserDefaults):** Server-URL + Lieblingsbuch (Allgemein) · Hell/Dunkel/System + Fokus-Granularität + Auto-Hide-Toolbar (Darstellung) · Schriftgrösse/-art, Zeilenhöhe, Spaltenbreite (measure), Papier-Ton (Typografie) · Wortzahl-Anzeige + Wort-Ziel pro Seite (Schreiben) · Poll-Kadenz/Pause/manueller Sync (Sync) · LanguageTool an-aus + Sprach-Override (Rechtschreibung) · Abmelden + Editor-Bundle-Version/Update + Cache leeren (Konto). Editor-wirksame Werte (Typografie, Fokus) fliessen über die Bridge als CSS — **kein Editor-Fork**.
+**Einstellungen (alle gerätelokal, UserDefaults):** App-Sprache (de/en/System) + Server-URL + Lieblingsbuch (Allgemein) · Hell/Dunkel/System + Fokus-Granularität + Auto-Hide-Toolbar (Darstellung) · Schriftgrösse/-art, Zeilenhöhe, Spaltenbreite (measure), Papier-Ton (Typografie) · Wortzahl-Anzeige + Wort-Ziel pro Seite (Schreiben) · Poll-Kadenz/Pause/manueller Sync (Sync) · LanguageTool an-aus + Sprach-Override (Rechtschreibung) · Abmelden + Editor-Bundle-Version/Update + Cache leeren (Konto). Editor-wirksame Werte (Typografie, Fokus) fliessen über die Bridge als CSS — **kein Editor-Fork**.
 
 Der App-Sources-Ordner ist eine `PBXFileSystemSynchronizedRootGroup` (Xcode 16+) → neue Swift-Dateien kommen **automatisch** ins Target (kein pbxproj-Edit nötig).
 
@@ -155,7 +166,7 @@ Der App-Sources-Ordner ist eine `PBXFileSystemSynchronizedRootGroup` (Xcode 16+)
 - **Konflikte über Block-Merge.** 409-Auflösung läuft über `block-merge.js` (3-Wege, `data-bid`), nicht über naives Last-Write-Wins. `data-bid`-Attribute nie strippen.
 - **Datenverlust-Schutz vor allem.** Bei Auth-/Sync-Fehlern lokale Inhalte behalten; kein automatisches Verwerfen, kein Überschreiben ohne Merge.
 - **Tastaturkürzel-Hilfe pflegen.** Wird ein Tastaturkürzel neu hinzugefügt, geändert oder entfernt (Swift `.keyboardShortcut` **oder** ein Editor-Shortcut, der für den Nutzer im Client greift), muss es in der Hilfe-Liste [ShortcutsHelpView.swift](schreibwerkstatt-focuseditor/ShortcutsHelpView.swift) (Help-Menü → „Tastaturkürzel", ⌘?) im selben Schritt aktualisiert werden. Die Liste ist die Single Source of Truth für die Nutzer-Hilfe — nie veralten lassen.
-- **Sprache:** UI-Texte folgen der Locale der Schreibwerkstatt (de/en). Code-Kommentare auf Deutsch (wie Hauptrepo).
+- **Lokalisierung (de/en) — kein hartkodierter UI-String.** Jeder nutzersichtbare Text läuft über `t("key")` (Plural: `tn(count, "baseKey")`) aus [Localization/Localization.swift](schreibwerkstatt-focuseditor/Localization/Localization.swift). Neue/geänderte Strings **immer** in **beide** gebündelten Kataloge [mac-de.json](schreibwerkstatt-focuseditor/Localization/mac-de.json) **und** [mac-en.json](schreibwerkstatt-focuseditor/Localization/mac-en.json) (Namespace `macclient.*`, flach, `{param}`-Platzhalter wie die Web-i18n). Fallback-Kette: `OTA[locale] → bundled[locale] → bundled["de"] → key`. Markennamen (z. B. „Schreibwerkstatt") bleiben literal. Die gebündelten Kataloge sind der Offline-Pflicht-Fallback; der Server-Override (`GET /content/macclient-i18n.json`, `I18nBundleStore`) ist optional und greift wie das Editor-Bundle erst beim **nächsten** Start. Die aktive Sprache: lokale Wahl (Settings → Allgemein) gewinnt; ohne lokale Wahl seedet `LocalizationController.seedFromServerIfNeeded()` aus dem Server-Profil (`/config` → `userSettings.locale`), sonst Systemsprache. Code-Kommentare auf Deutsch (wie Hauptrepo).
 - **Nach jeder Swift-Änderung builden.** Nach jeder Anpassung an Swift-Code den Build laufen lassen (s. „Build & Run") und Fehler/Warnings zurückmelden, bevor es weitergeht. Nicht ungeprüft mehrere Änderungen stapeln.
 
 ## Build & Run
