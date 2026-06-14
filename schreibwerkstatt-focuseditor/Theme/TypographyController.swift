@@ -96,12 +96,15 @@ final class TypographyController: ObservableObject {
         static let measure = "typo.measure"       // 0 = aus (keine Spaltenbreite)
         static let fontFamily = "typo.fontFamily"
         static let paperTone = "typo.paperTone"
+        static let focusDimEnabled = "typo.focusDimEnabled"
+        static let focusDimOpacity = "typo.focusDimOpacity"
     }
 
     // Grenzen (auch in der Settings-UI verwendet).
     static let fontSizeRange: ClosedRange<Double> = 14...30
     static let lineHeightRange: ClosedRange<Double> = 1.3...2.2
     static let measureRange: ClosedRange<Double> = 40...100   // in `ch`; 0 = aus
+    static let focusDimRange: ClosedRange<Double> = 0.05...0.6   // Opazität der abgeblendeten Umgebung
 
     @Published var fontSize: Double { didSet { persist(fontSize, Key.fontSize); apply() } }
     @Published var lineHeight: Double { didSet { persist(lineHeight, Key.lineHeight); apply() } }
@@ -113,6 +116,15 @@ final class TypographyController: ObservableObject {
     @Published var paperTone: PaperTone {
         didSet { UserDefaults.standard.set(paperTone.rawValue, forKey: Key.paperTone); apply() }
     }
+    /// Eigene Fokus-Abdunklung aktiv? Aus = Editor-Default (theme-korrekt, kein
+    /// Override). An = überschreibt die Opazität der nicht-aktiven Absätze.
+    @Published var focusDimEnabled: Bool {
+        didSet { UserDefaults.standard.set(focusDimEnabled, forKey: Key.focusDimEnabled); apply() }
+    }
+    /// Opazität der abgeblendeten Umgebung (kleiner = stärker abgedunkelt).
+    @Published var focusDimOpacity: Double {
+        didSet { persist(focusDimOpacity, Key.focusDimOpacity); apply() }
+    }
 
     init() {
         let d = UserDefaults.standard
@@ -123,6 +135,8 @@ final class TypographyController: ObservableObject {
         measure = (m == 0) ? 0 : min(max(m, Self.measureRange.lowerBound), Self.measureRange.upperBound)
         fontFamily = EditorFontFamily(rawValue: d.string(forKey: Key.fontFamily) ?? "") ?? .serif
         paperTone = PaperTone(rawValue: d.string(forKey: Key.paperTone) ?? "") ?? .system
+        focusDimEnabled = (d.object(forKey: Key.focusDimEnabled) as? Bool) ?? false
+        focusDimOpacity = Self.read(d, Key.focusDimOpacity, default: 0.35, in: Self.focusDimRange)
     }
 
     /// Verbindet den Controller mit der app-weiten Bridge und spiegelt den
@@ -139,6 +153,8 @@ final class TypographyController: ObservableObject {
         measure = 64
         fontFamily = .serif
         paperTone = .system
+        focusDimEnabled = false
+        focusDimOpacity = 0.35
     }
 
     // MARK: - Bridge-Payload
@@ -158,6 +174,9 @@ final class TypographyController: ObservableObject {
             dict["paperBg"] = NSNull()
             dict["paperText"] = NSNull()
         }
+        // Fokus-Abdunklung: nur überschreiben, wenn eingeschaltet — sonst null
+        // (Editor-Default, theme-korrekt). Wert als Opazitäts-String.
+        dict["focusDim"] = focusDimEnabled ? String(format: "%.2f", focusDimOpacity) : NSNull()
         return dict
     }
 

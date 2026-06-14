@@ -274,6 +274,8 @@ private struct TypographySettingsTab: View {
 
 private struct WritingSettingsTab: View {
     @EnvironmentObject private var stats: WritingStatsStore
+    /// Auto-Save-Debounce in ms (an mountStandaloneFocus durchgereicht).
+    @AppStorage(EditorBehaviorPrefs.autosaveKey) private var autosaveMs = 1500.0
 
     var body: some View {
         Form {
@@ -289,6 +291,23 @@ private struct WritingSettingsTab: View {
                     }
                 }
                 Text("Zeigt einen Fortschrittsbalken in der Toolbar, bis die offene Seite das Ziel erreicht. Die App ist auf genau eine Seite ausgelegt — das Ziel gilt darum pro Seite.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            Section("Automatisches Speichern") {
+                LabeledContent("Verzögerung") {
+                    HStack {
+                        Slider(value: $autosaveMs,
+                               in: EditorBehaviorPrefs.autosaveRange, step: 250)
+                        Text(String(format: "%.2g s", autosaveMs / 1000))
+                            .font(.callout.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                            .frame(width: 52, alignment: .trailing)
+                    }
+                }
+                Text("Wartezeit nach der letzten Eingabe, bis der Entwurf gespeichert wird. Wirkt beim nächsten Öffnen des Editors. Lokal gespeichert wird trotzdem immer zuerst (kein Datenverlust).")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

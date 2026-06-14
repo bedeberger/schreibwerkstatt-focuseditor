@@ -186,6 +186,13 @@ final class EditorBridge: NSObject, WKScriptMessageHandlerWithReply, EditorCoord
             // Boot-Pull: der Editor-Glue liest die lokale Typografie beim Mounten.
             return typography
 
+        case "editorBehavior":
+            // Boot-Pull: Editor-Verhalten (Auto-Save-Debounce). `mountStandaloneFocus`
+            // nimmt `autosaveMs` als Parameter (Default 1500 ms im Editor) — wir
+            // reichen den lokal gewählten Wert beim Mounten durch. Wirkt beim
+            // nächsten Editor-Mount/App-Start (kein Live-Remount).
+            return ["autosaveMs": EditorBehaviorPrefs.autosaveMs]
+
         case "reportStats":
             // WebView meldet Wort-/Zeichenzahl der offenen Seite (Live-Stats +
             // Ziel + Tages-Delta). pageId trägt den Seitenbezug für „heute".
@@ -517,6 +524,25 @@ enum SpellcheckPrefs {
 
 /// Auswahl für den Sprach-Override in den Einstellungen. RawValue = der
 /// LanguageTool-Sprachcode (bzw. „auto" für die serverseitige Auflösung).
+// MARK: - Editor-Verhalten (UserDefaults)
+
+/// Gerätelokales Editor-Verhalten, das der Boot-Glue beim Mount durchreicht.
+/// Aktuell nur das Auto-Save-Debounce (`mountStandaloneFocus({ autosaveMs })`).
+enum EditorBehaviorPrefs {
+    static let autosaveKey = "editor.autosaveMs"
+    /// Erlaubter Bereich des Auto-Save-Debounce (auch in der Settings-UI genutzt).
+    static let autosaveRange: ClosedRange<Double> = 500...5000
+
+    /// Auto-Save-Verzögerung in ms. Default 1500 (= Editor-Default), in die
+    /// erlaubte Spanne geklemmt.
+    static var autosaveMs: Int {
+        guard UserDefaults.standard.object(forKey: autosaveKey) != nil else { return 1500 }
+        let v = UserDefaults.standard.double(forKey: autosaveKey)
+        let clamped = min(max(v, autosaveRange.lowerBound), autosaveRange.upperBound)
+        return Int(clamped.rounded())
+    }
+}
+
 enum SpellcheckLanguage: String, CaseIterable, Identifiable {
     case auto
     case deCH = "de-CH"

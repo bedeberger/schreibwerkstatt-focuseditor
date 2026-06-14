@@ -13,6 +13,8 @@ Nativer macOS-Client für den **Focus-Editor** der Schreibwerkstatt: eine SwiftU
 
 ## Architektur
 
+> **Detaillierte Implementierungs-Referenz: [ARCHITECTURE.md](ARCHITECTURE.md)** — konkrete Typen, Besitzverhältnisse (`AppCore`-Komposition), Datenflüsse und „wo was hingehört". Dieser Abschnitt gibt den Überblick; ARCHITECTURE.md geht in den Code.
+
 ```
 AppKit/SwiftUI-Shell
   └─ WKWebView  ──lädt (swk-app://)──>  web-cache/  (lokal gecachtes Focus-Editor-Build)
@@ -114,36 +116,27 @@ Der Sync hält den lokalen Spiegel **aktuell, auch wenn eine Seite in einer ande
 
 **Deletes:** `/sync` meldet nur geänderte/neue Seiten, **keine Löschungen**. Gelöschte Seiten reconciled der Client über `GET /content/books/:book_id/tree` (Soll-Bestand abgleichen).
 
-**Ort des Codes:** `Sync/SyncEngine.swift` (Poll-Loop + Push + Pull), `Sync/SyncState.swift` (persistente Cursor + Server-ISO-Basis je Seite, eigener JSON-Snapshot), `Sync/Reachability.swift` (`NWPathMonitor`), `Sync/SyncModels.swift` (DTOs + ISO↔ms). Instanziiert app-weit in [AppCore.swift](schreibwerkstatt-focuseditor/AppCore.swift) (ein geteilter LocalStore für Bridge **und** Sync); Scene-Phase wird in [schreibwerkstatt_focuseditorApp.swift](schreibwerkstatt-focuseditor/schreibwerkstatt_focuseditorApp.swift) per `.onChange(of: scenePhase)` an `setActive(_:)` gereicht. Der Pull-Merge in den Store läuft über `applyServerPage(...)` (setzt `baseUpdatedAt` auf den Server-Stand, **kein** Outbox-Eintrag); der Push quittiert über `markPushed(...)`.
+**Ort des Codes:** [Sync/](schreibwerkstatt-focuseditor/Sync/) (Engine + State + Reachability + Models). Der konkrete Ablauf (Push/409-Merge/Pull/Delete-Reconcile, `applyServerPage`/`markPushed`-Semantik, Scene-Phase-Verdrahtung) steht in [ARCHITECTURE.md](ARCHITECTURE.md) §5.
 
 - Inhalte fließen ausschließlich über die Content-Store-Semantik des Servers — kein Voll-Buch-`.swbook` für den Live-Sync (zu grob).
 
-## Verzeichnislayout (Soll)
+## Verzeichnislayout
+
+App-Sources unter [schreibwerkstatt-focuseditor/](schreibwerkstatt-focuseditor/), nach Verantwortung gruppiert. Die Datei-für-Datei-Karte (welcher Typ wo, wer wen besitzt) steht in [ARCHITECTURE.md](ARCHITECTURE.md) §2–§10.
 
 ```
-schreibwerkstatt-focuseditor/
-  schreibwerkstatt-focuseditor/        App-Sources (Swift)
-    *App.swift                         @main, Scene/Window
-    AppCore.swift                      App-weite Instanziierung (geteilter LocalStore für Bridge + Sync)
-    ContentView.swift                  Shell-Root (WebView-Host + Bundle-Lade-/Fehlerzustand)
-    KioskFullscreen.swift              ablenkungsfreier Vollbild (Menüleiste UND Dock ausgeblendet)
-    Web/                               WKWebView-Host + Bridge (WKScriptMessageHandler)
-      FocusWebView.swift               NSViewRepresentable-Host des WKWebView
-      EditorBridge.swift               die EINZIGE Kopplungsschicht WebView ⇄ Swift-Kern
-      EditorCoordinating.swift         Protokoll/Koordination zwischen Shell und Bridge
-      EditorBundleStore.swift          OTA-Lader: Download + Entpacken + atomarer Cache-Swap + ETag
-      MiniZip.swift                    bordeigener ZIP/DEFLATE-Reader (sandbox-tauglich, dependency-frei)
-      WebAssets.swift                  Bridge-Facade-JS + index.html-Boot (Client-Glue) + Dev-Harness
-      AppSchemeHandler.swift           liefert den Cache unter EINER Origin (swk-app://) an die WebView
-    Store/                             GRDB-LocalStore + Outbox
-    Sync/                              SyncEngine + Reachability + SyncState (Cursor/Basis) + SyncModels + SyncPreferences (Poll-Modus)
-    Auth/                              Keychain + Device-Token + Login-Flow + APIClient + ServerConfig
-    Content/                           ContentAPI: Lese-Zugriff auf Buch-/Kapitel-Struktur (Server-Soll)
-    Library/                           Buch-/Seitenauswahl-State (LibraryStore) + native Picker (BookPicker, PagePickerOverlay)
-    Theme/                             AppearanceController (Light/Dark/System) + TypographyController (Schrift/Layout/Papier) + BrandColor + BrandFont
-    Focus/                             FocusController (lokale Fokus-Granularität)
-    Writing/                           WritingStatsStore (Live-Wortzahl/Lesezeit/Schreibziel/Tages-Delta)
-    Settings/                          SettingsView (⌘, Tabs: Allgemein/Darstellung/Typografie/Schreiben/Sync/Rechtschreibung/Konto)
+schreibwerkstatt-focuseditor/        App-Sources (Swift)
+  *App.swift · AppCore.swift · ContentView.swift · AppToolbar.swift · KioskFullscreen.swift
+  Web/        WKWebView-Host + Bridge + OTA-Lader (EINZIGE Kopplungsschicht WebView ⇄ Swift)
+  Store/      GRDB-LocalStore + Outbox
+  Sync/       SyncEngine + Reachability + SyncState + SyncModels + SyncPreferences
+  Auth/       Keychain + Device-Token + Login + APIClient + ServerConfig
+  Content/    ContentAPI (Lese-Zugriff Buch-/Kapitel-Struktur, Server-Soll)
+  Library/    LibraryStore + native Picker (BookPicker, PagePickerOverlay)
+  Theme/      Appearance + Typography (Controller) + BrandColor + BrandFont
+  Focus/      FocusController (lokale Fokus-Granularität)
+  Writing/    WritingStatsStore (Live-Wortzahl/Lesezeit/Schreibziel/Tages-Delta)
+  Settings/   SettingsView (⌘, — 7 Tabs)
 ```
 
 **Einstellungen (alle gerätelokal, UserDefaults):** Server-URL + Lieblingsbuch (Allgemein) · Hell/Dunkel/System + Fokus-Granularität + Kiosk-beim-Start + Auto-Hide-Toolbar (Darstellung) · Schriftgrösse/-art, Zeilenhöhe, Spaltenbreite (measure), Papier-Ton (Typografie) · Wortzahl-Anzeige + Wort-Ziel pro Seite (Schreiben) · Poll-Kadenz/Pause/manueller Sync (Sync) · LanguageTool an-aus + Sprach-Override (Rechtschreibung) · Abmelden + Editor-Bundle-Version/Update + Cache leeren (Konto). Editor-wirksame Werte (Typografie, Fokus) fliessen über die Bridge als CSS — **kein Editor-Fork**.

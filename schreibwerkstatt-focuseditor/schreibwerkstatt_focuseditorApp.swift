@@ -10,7 +10,7 @@ import SwiftUI
 @main
 struct schreibwerkstatt_focuseditorApp: App {
     @StateObject private var core = AppCore()
-    @StateObject private var fullscreen = KioskFullscreen()
+    @StateObject private var windowChrome = WindowChromeController()
     @StateObject private var appearance = AppearanceController()
     @StateObject private var focus = FocusController()
     @StateObject private var typography = TypographyController()
@@ -26,12 +26,12 @@ struct schreibwerkstatt_focuseditorApp: App {
                 .environmentObject(core.sync)
                 .environmentObject(core.library)
                 .environmentObject(core.editorBundle)
-                .environmentObject(fullscreen)
+                .environmentObject(windowChrome)
                 .environmentObject(appearance)
                 .environmentObject(focus)
                 .environmentObject(typography)
                 .environmentObject(writingStats)
-                .background(WindowAccessor { fullscreen.bind($0) })
+                .background(WindowAccessor { windowChrome.bind($0) })
                 .task {
                     // Fokus- + Typografie-Controller an die app-weite Bridge
                     // koppeln (Push der Live-Umschaltung), Stats-Kanal anhängen,
@@ -57,16 +57,6 @@ struct schreibwerkstatt_focuseditorApp: App {
             core.sync.setActive(phase == .active)
         }
         .commands {
-            // Ablenkungsfreier Vollbild per ⌘⌃F (Menüleiste/Dock komplett aus);
-            // Escape verlässt ihn ebenfalls (KioskFullscreen).
-            CommandGroup(after: .windowArrangement) {
-                Button(fullscreen.isActive ? "Ablenkungsfreien Vollbild verlassen"
-                                           : "Ablenkungsfreier Vollbild") {
-                    fullscreen.toggle()
-                }
-                .keyboardShortcut("f", modifiers: [.command, .control])
-            }
-
             // Manueller Light/Dark/System-Umschalter. Inline-Picker rendert
             // als Menüpunkte mit Häkchen beim aktiven Modus.
             CommandGroup(after: .toolbar) {

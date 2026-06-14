@@ -66,6 +66,10 @@ enum WebAssets {
         // zusätzlich als 'editorTypography'-Event.
         editorTypography: () => call('editorTypography', {}),
 
+        // Editor-Verhalten (Auto-Save-Debounce) — Boot-Pull, wird an
+        // mountStandaloneFocus({ autosaveMs }) durchgereicht.
+        editorBehavior: () => call('editorBehavior', {}),
+
         // Lebende Schreibstatistik (Wörter/Zeichen) der offenen Seite an Swift
         // melden (Live-Stats + Schreibziel + Tages-Delta). Die pageId hängt mit,
         // damit Swift den „heute geschrieben"-Delta korrekt PRO Seite führt
@@ -151,6 +155,19 @@ enum WebAssets {
             #mount { height: 100vh; display: flex; flex-direction: column; }
             #boot-status { font: 13px/1.5 -apple-system, system-ui, sans-serif; padding: 24px; }
             .err { color: #c62828; }
+            /* LanguageTool-Status-Badge ans Fenster-Eck pinnen. Der Editor-Controller
+               positioniert .lt-badge per Inline-Style an die rechte Kante der
+               .focus-editor__content (offsetLeft+offsetWidth). Da wir die Spalte
+               zentriert + schmal (measure) auf breiter Fläche rendern, schwebte es
+               sonst mitten über dem Text. position:fixed + !important überschreibt
+               die Inline-Top/Left ohne Editor-Fork (Override-Schicht, CLAUDE.md). */
+            .lt-badge {
+              position: fixed !important;
+              top: 12px !important;
+              right: 16px !important;
+              left: auto !important;
+              transform: none !important;
+            }
           </style>
         </head>
         <body>
@@ -230,7 +247,18 @@ enum WebAssets {
                 },
               };
 
-              window.__standalone = await mountStandaloneFocus({ mount: document.getElementById('mount'), bridge });
+              // Auto-Save-Debounce (lokale Vorliebe) beim Mount durchreichen.
+              // mountStandaloneFocus nutzt den Editor-Default (1500 ms), wenn
+              // autosaveMs fehlt — darum nur setzen, wenn ein gültiger Wert kommt.
+              let autosaveMs;
+              try {
+                const eb = await fb.editorBehavior();
+                if (eb && Number.isFinite(Number(eb.autosaveMs))) autosaveMs = Number(eb.autosaveMs);
+              } catch (_) {}
+
+              const mountOpts = { mount: document.getElementById('mount'), bridge };
+              if (autosaveMs != null) mountOpts.autosaveMs = autosaveMs;
+              window.__standalone = await mountStandaloneFocus(mountOpts);
               status.remove();
               fb.log?.('Standalone-Focus gemountet');
 
@@ -326,6 +354,15 @@ enum WebAssets {
                 if (t.paperText) root.style.setProperty('--sw-paper-text', t.paperText);
                 else             root.style.removeProperty('--sw-paper-text');
                 root.setAttribute('data-sw-paper', (t.paperBg ? 'custom' : 'system'));
+                // Fokus-Abdunklung: null = Editor-Default (kein Override, theme-
+                // korrekt); sonst Opazität der nicht-aktiven Absätze überschreiben.
+                if (t.focusDim != null) {
+                  root.style.setProperty('--sw-focus-dim', t.focusDim);
+                  root.setAttribute('data-sw-dim', 'custom');
+                } else {
+                  root.style.removeProperty('--sw-focus-dim');
+                  root.removeAttribute('data-sw-dim');
+                }
 
                 let style = document.getElementById('sw-native-typography');
                 if (!style) {
@@ -345,6 +382,12 @@ enum WebAssets {
                     ':root[data-sw-paper="custom"] .focus-editor {',
                     '  background: var(--sw-paper-bg) !important;',
                     '  color: var(--sw-paper-text) !important;',
+                    '}',
+                    // Fokus-Abdunklung: spiegelt den Selektor aus focus-mode.css
+                    // (nicht-aktive Blöcke im Fokus-Modus, ausser typewriter-only)
+                    // und überschreibt nur, wenn data-sw-dim="custom" gesetzt ist.
+                    ':root[data-sw-dim="custom"] .focus-editor.is-active:not(.focus-mode--typewriter-only) .focus-editor__content :is(p,h1,h2,h3,h4,h5,h6,blockquote,li,pre):not(.focus-paragraph-active):not(.focus-paragraph-near) {',
+                    '  opacity: var(--sw-focus-dim) !important;',
                     '}',
                   ].join('\\n');
                   document.head.appendChild(style);

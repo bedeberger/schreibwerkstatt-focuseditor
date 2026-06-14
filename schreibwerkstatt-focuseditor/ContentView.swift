@@ -47,25 +47,22 @@ private struct EditorHostView: View {
     @EnvironmentObject private var core: AppCore
     @EnvironmentObject private var sync: SyncEngine
     @EnvironmentObject private var library: LibraryStore
-    @EnvironmentObject private var fullscreen: KioskFullscreen
+    @EnvironmentObject private var windowChrome: WindowChromeController
     @EnvironmentObject private var editorBundle: EditorBundleStore
     /// Sichtbarkeit des beschwörbaren Seiten-Pickers (⌘O).
     @State private var pickerOpen = false
 
-    /// „Beim Start in den Vollbild" + „Toolbar bei Inaktivität ausblenden"
-    /// (gerätelokal, gleiche Keys wie der Darstellungs-Tab der Settings).
-    @AppStorage("kiosk.startInKiosk") private var startInKiosk = false
+    /// „Toolbar bei Inaktivität ausblenden" (gerätelokal, gleicher Key wie der
+    /// Darstellungs-Tab der Settings).
     @AppStorage("toolbar.autoHide") private var autoHideToolbar = false
-    /// Verhindert wiederholtes Auto-Vollbild bei jedem View-Erscheinen.
-    @State private var autoKioskApplied = false
     /// Steuert die eingeblendete Toolbar im Auto-Hide-Modus.
     @State private var toolbarRevealed = true
     @State private var hideTask: Task<Void, Never>?
 
-    /// Darf überhaupt Chrome (Toolbar) gezeigt werden? Im ablenkungsfreien/
-    /// nativen Vollbild nie (CLAUDE.md, „ablenkungsfreies Schreiben").
+    /// Darf überhaupt Chrome (Toolbar) gezeigt werden? Im nativen Vollbild nie
+    /// (CLAUDE.md, „ablenkungsfreies Schreiben").
     private var chromeAllowed: Bool {
-        !(fullscreen.isActive || fullscreen.isNativeFullscreen)
+        !windowChrome.isNativeFullscreen
     }
 
     var body: some View {
@@ -84,8 +81,6 @@ private struct EditorHostView: View {
         .animation(.easeOut(duration: 0.12), value: pickerOpen)
         .animation(.easeOut(duration: 0.18), value: toolbarRevealed)
         .task { await editorBundle.ensureReady() }
-        // Native Fenster-Toolbar bleibt aus — wir nutzen die eigene AppToolbar.
-        .toolbar(.hidden, for: .windowToolbar)
         .task { await library.loadBooks() }
         // Beim Ausschalten von Auto-Hide die Toolbar wieder dauerhaft zeigen.
         .onChange(of: autoHideToolbar) { _, on in
@@ -138,7 +133,6 @@ private struct EditorHostView: View {
             }
         }
         .ignoresSafeArea()
-        .onAppear { applyAutoKioskIfNeeded() }
     }
 
     /// Blendet die Toolbar ein und plant das erneute Ausblenden nach Inaktivität.
@@ -149,16 +143,6 @@ private struct EditorHostView: View {
             try? await Task.sleep(for: .seconds(2.5))
             guard !Task.isCancelled else { return }
             if autoHideToolbar && chromeAllowed { toolbarRevealed = false }
-        }
-    }
-
-    /// Geht beim ersten Erscheinen des Editors in den Vollbild, wenn so gewählt.
-    private func applyAutoKioskIfNeeded() {
-        guard startInKiosk, !autoKioskApplied, !fullscreen.isActive else { return }
-        autoKioskApplied = true
-        // Ein Tick warten, bis das NSWindow gebunden + vermessen ist.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-            if startInKiosk && !fullscreen.isActive { fullscreen.enter() }
         }
     }
 }

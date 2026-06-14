@@ -8,8 +8,8 @@
 //  randlos (`fullSizeContentView`), darum die Aussparung links für die Ampeln.
 //
 //  Inhalt: Buch-Picker (links), Öffnen (⌘O), Sync-Status und ein Überlauf-Menü
-//  (Darstellung + Abmelden) rechts. Im ablenkungsfreien/nativen Vollbild wird
-//  die Leiste vom Host komplett ausgeblendet.
+//  (Darstellung + Abmelden) rechts. Im nativen Vollbild wird die Leiste vom
+//  Host komplett ausgeblendet.
 //
 
 import SwiftUI
