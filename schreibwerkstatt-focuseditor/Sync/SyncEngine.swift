@@ -44,6 +44,12 @@ final class SyncEngine: ObservableObject {
         let serverEditorName: String?
     }
 
+    /// Seiten-ID der UI-Platzhalter-Seite („Neue Seite", Boot-Fallback bei
+    /// leerem/ungesynctem Buch). Kein echter Datensatz — wird nie gepusht und
+    /// beim Push-Tick getilgt, falls sie aus einem früheren Build zurückblieb.
+    /// Muss mit dem Boot-Fallback in WebAssets.indexHTML übereinstimmen.
+    static let placeholderPageId = "default"
+
     @Published private(set) var status: Status = .idle
     @Published private(set) var lastSyncedAt: Date?
     @Published private(set) var lastError: String?
@@ -291,6 +297,24 @@ final class SyncEngine: ObservableObject {
         let entries = try await store.pendingOutbox()
         let now = Date()
         for entry in entries {
+            // Selbstheilung: die 'default'-Platzhalter-Seite (Boot-Fallback bei
+            // leerem/ungesynctem Buch) ist kein echter Datensatz — kein Buch,
+            // keine Server-Basis. Frühere Builds persistierten sie und sie blieb
+            // als nie-pushbarer „default"-Konflikt zurück. Solche Leichen hier
+            // restlos tilgen (Store + Outbox + State + evtl. Konflikt), statt sie
+            // erneut als Konflikt zu erfassen. (Prävention: WebAssets.savePage
+            // speichert 'default' gar nicht mehr.)
+            if entry.pageId == Self.placeholderPageId {
+                try await store.deletePage(id: entry.pageId)
+                stateStore.mutate {
+                    $0.serverBaseISO[entry.pageId] = nil
+                    $0.serverBaseHtml[entry.pageId] = nil
+                }
+                clearConflict(pageId: entry.pageId)
+                log.info("Platzhalter-Seite '\(entry.pageId, privacy: .public)' getilgt (kein echter Datensatz)")
+                continue
+            }
+
             // Unaufgelöste Konflikte nicht erneut blind pushen.
             if conflicts.contains(where: { $0.pageId == entry.pageId }) { continue }
 

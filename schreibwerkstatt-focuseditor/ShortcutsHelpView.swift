@@ -68,7 +68,7 @@ struct ShortcutsHelpView: View {
             VStack(alignment: .leading, spacing: 22) {
                 ShortcutSection(title: t("shortcuts.section.app"), rows: [
                     (["⌃", "⌘", "F"], t("shortcuts.fullscreen")),
-                    (["⌘", "⇧", "S"], t("shortcuts.syncNow")),
+                    (["⌘", "S"], t("shortcuts.syncNow")),
                     (["⌘", ","], t("shortcuts.openSettings")),
                     (["⌘", "?"], t("shortcuts.thisHelp")),
                 ])

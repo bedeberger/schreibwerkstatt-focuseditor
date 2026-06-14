@@ -84,6 +84,7 @@ private struct GeneralSettingsTab: View {
             Section(t("settings.general.serverSection")) {
                 TextField(t("settings.general.serverAddress"), text: $serverDraft, prompt: Text("https://…"))
                     .textFieldStyle(.roundedBorder)
+                    .multilineTextAlignment(.leading)
                     .disableAutocorrection(true)
 
                 Text(t("settings.general.serverHint"))

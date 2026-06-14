@@ -267,6 +267,32 @@ enum WebAssets {
               const showEmpty = () => document.body.classList.add('sw-no-page');
               const hideEmpty = () => document.body.classList.remove('sw-no-page');
 
+              // Cursor in die Schreibfläche setzen, damit eine frisch geöffnete
+              // (oft leere) Seite sofort beschreibbar ist — ohne dass der Nutzer
+              // erst hineinklicken muss. Der Standalone-Editor mountet direkt im
+              // Fokus-Modus, setzt aber selbst keinen Caret (im Web-SPA kommt der
+              // Nutzer schon mit gesetztem Cursor aus dem Edit-Modus). rAF, damit
+              // enterFocusMode (läuft im $nextTick) den Container fertig aufgesetzt
+              // hat, bevor wir die Selektion setzen.
+              function focusEditor() {
+                requestAnimationFrame(() => {
+                  try {
+                    const content = document.querySelector('.focus-editor.is-active .focus-editor__content')
+                      || document.querySelector('.focus-editor__content');
+                    if (!content) return;
+                    content.focus();
+                    const sel = document.getSelection();
+                    if (!sel) return;
+                    // Ans Ende des Inhalts setzen (leerer Absatz: einzige Position).
+                    const range = document.createRange();
+                    range.selectNodeContents(content);
+                    range.collapse(false);
+                    sel.removeAllRanges();
+                    sel.addRange(range);
+                  } catch (_) {}
+                });
+              }
+
               // Offene Seite + Dirty-Flag an den Swift-Kern melden (`editorState`).
               // Treibt die Seiten-Anzeige in der Toolbar UND die Sync-Logik:
               // Open-Page-Reload der sauberen offenen Seite + Datenverlust-Schutz
@@ -330,8 +356,11 @@ enum WebAssets {
                 savePage: async ({ id, html }) => {
                   // „Geschlossene" (leere) Seite nach einem Buchwechsel nie
                   // persistieren — sonst legte ein Autosave-Tick einen Junk-
-                  // Eintrag mit leerer id an.
-                  if (id == null || id === '') return null;
+                  // Eintrag mit leerer id an. Ebenso die 'default'-Platzhalter-
+                  // Seite (Boot-Fallback bei leerem/ungesynctem Buch): sie ist
+                  // kein echter Datensatz, hat kein Buch & keine Server-Basis →
+                  // würde sonst als nie-pushbarer „default"-Konflikt landen.
+                  if (id == null || id === '' || id === 'default') return null;
                   const base = bases.get(String(id)) ?? null;
                   const res = await fb.save(id, html, base);
                   if (res && res.updatedAt != null) bases.set(String(id), res.updatedAt);
@@ -361,6 +390,7 @@ enum WebAssets {
               // ruhigen Leerfläche statt mit einer leeren Schreibfläche.
               if (bootHadPage) {
                 reportEditorState(currentPageId, false);
+                focusEditor();   // Cursor in die geladene Seite setzen
               } else {
                 currentPageId = null;
                 showEmpty();
@@ -381,7 +411,7 @@ enum WebAssets {
               // einer Seite NICHTS (Event ohne Listener) → kein Seitenwechsel.
               // Inhalt frisch aus dem LocalStore ziehen (offline-first), damit
               // name/bookId/updatedAt konsistent zur loadPage-Logik sind.
-              async function applyPage(pageId, { save }) {
+              async function applyPage(pageId, { save, focus }) {
                 // Beim Picker-Wechsel den aktuellen Stand zuerst sichern
                 // (local-first): setPage verwirft den Autosave-Timer, sonst
                 // gingen offene Änderungen der bisherigen Seite verloren.
@@ -401,12 +431,15 @@ enum WebAssets {
                 reportEditorState(String(pageId), false);
                 // Stats nach dem Seitenwechsel neu zählen (setPage feuert kein input).
                 try { window.__countStats && window.__countStats(); } catch (_) {}
+                // Beim aktiven Öffnen (Picker) Cursor setzen — beim stillen
+                // Server-Refresh NICHT (würde den Fokus aus Toolbar/anderer App klauen).
+                if (focus) focusEditor();
               }
 
               // Nativer Picker → andere Seite öffnen (vorher aktuellen Stand sichern).
               fb.on('openPage', (p) => {
                 if (!p || p.pageId == null) return;
-                applyPage(p.pageId, { save: true });
+                applyPage(p.pageId, { save: true, focus: true });
               });
               // Saubere offene Seite wurde serverseitig aktualisiert → still neu
               // laden (Swift sendet das nur für die nicht-dirty offene Seite, also
