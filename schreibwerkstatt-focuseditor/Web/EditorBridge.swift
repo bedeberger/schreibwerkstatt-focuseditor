@@ -114,10 +114,19 @@ final class EditorBridge: NSObject, WKScriptMessageHandlerWithReply, EditorCoord
         didSet {
             guard openPageId != oldValue else { return }
             onOpenPageChange?(openPageId)
+            // Genau EIN echtes Öffnen einer Seite (nicht beim Schliessen → nil):
+            // treibt den gezielten Einzelseiten-Pull (Frische beim Öffnen, statt
+            // aufs Poll-Intervall zu warten). Folgemeldungen (dirty/Stats) für
+            // dieselbe Seite refeuern nicht (didSet-Guard auf Wertwechsel).
+            if let pid = openPageId { onPageOpened?(pid) }
         }
     }
     /// Benachrichtigung bei Wechsel der offenen Seite (treibt die Toolbar-Anzeige).
     var onOpenPageChange: ((String?) -> Void)?
+    /// Benachrichtigung beim Öffnen einer (echten) Seite — triggert den gezielten
+    /// Einzelseiten-Pull der SyncEngine („sicherheitshalber frisch beim Öffnen").
+    /// Feuert NICHT beim Schliessen (nil) und nicht bei Folgemeldungen derselben Seite.
+    var onPageOpened: ((String) -> Void)?
     /// Benachrichtigung, wenn sich der Dirty-Zustand der OFFENEN Seite ändert
     /// (treibt den lokalen Save-Indikator in der Toolbar). `true` = ungespeicherte
     /// Änderung offen, `false` = lokal gesichert / keine Seite offen.

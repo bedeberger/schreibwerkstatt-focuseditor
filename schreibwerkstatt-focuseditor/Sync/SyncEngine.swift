@@ -204,6 +204,63 @@ final class SyncEngine: ObservableObject {
         Task { await syncNow() }
     }
 
+    /// Gezielter Einzelseiten-Pull beim ÖFFNEN einer Seite („sicherheitshalber"):
+    /// holt sofort den frischen Server-Stand genau dieser Seite, statt aufs
+    /// Poll-Intervall (~5 s) zu warten — und unabhängig von Pause/manuellem Modus
+    /// (Frische beim Öffnen ist eine bewusste Nutzeraktion). Gleiche Guards wie
+    /// `pullBook`: eine lokal ungepushte Änderung (Outbox ODER dirty offene Seite)
+    /// wird NIE überschrieben (Datenverlust-Schutz), das Echo des eigenen Edits
+    /// (gleiche Basis) wird übersprungen (kein Flackern). Best-effort und still:
+    /// kein Status-Spinner; offline/404/Transport-Fehler werden nur geloggt
+    /// (der reguläre Poll holt die Seite ohnehin nach).
+    func pullPage(pageId pid: String) async {
+        guard shouldSync(), reachability.isOnline else { return }
+
+        // Lokal ungepushte Änderung → nicht anfassen; die Divergenz löst der
+        // nächste Push per 409/Block-Merge auf.
+        let pending = (try? await store.pendingOutbox().map(\.pageId)) ?? []
+        let isDirtyOpen = (editor?.openPageId == pid) && (editor?.isDirty(pid) ?? false)
+        if pending.contains(pid) || isDirtyOpen { return }
+
+        // pid kommt aus der (nicht vertrauenswürdigen) WebView → für den URL-Pfad
+        // kodieren (sonst könnten `/`, `?`, `#`, `..` den Pfad verbiegen).
+        guard let encodedId = pid.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else { return }
+        let resp: PushResponse
+        do {
+            resp = try await reachableSend {
+                try await api.send("/content/pages/\(encodedId)", method: .GET, decode: PushResponse.self)
+            }
+        } catch {
+            // offline/404/Transport → still degradieren; der reguläre Poll erfasst
+            // die Seite. 401 beendet die Session ohnehin im APIClient.
+            log.info("Einzel-Pull \(pid, privacy: .public) übersprungen: \(error.localizedDescription, privacy: .public)")
+            return
+        }
+        guard let html = resp.html else { return }
+
+        // Echo: gleiche Basis = kein neuer Inhalt → nicht erneut mergen/neu laden.
+        let serverUpdatedAt = resp.updated_at
+        if stateStore.state.serverBaseISO[pid] == serverUpdatedAt { return }
+
+        let ms = ISOTime.millis(serverUpdatedAt) ?? 0
+        // ISO als Push-Basis + HTML als Merge-Ancestor mitführen (wie `pullBook`).
+        stateStore.mutate {
+            $0.serverBaseISO[pid] = serverUpdatedAt
+            $0.serverBaseHtml[pid] = html
+        }
+        // bookId/chapterId liefert `GET /content/pages/:id` ggf. nicht — nil lässt
+        // `applyServerPage` den vorhandenen Wert stehen (keine Waise), der
+        // Reconcile-Backfill trägt es sonst über den Buch-Tree nach.
+        try? await store.applyServerPage(id: pid, html: html,
+                                         pageName: resp.name,
+                                         bookId: resp.book_id, chapterId: resp.chapter_id,
+                                         serverUpdatedAtMillis: ms)
+        // Ist die Seite (weiterhin) sauber offen, still in der WebView neu laden.
+        if editor?.openPageId == pid {
+            await editor?.reloadPage(pageId: pid, html: html, baseUpdatedAt: ms)
+        }
+    }
+
     /// Startet den Poll-Loop, sofern der Auto-Poll erlaubt ist; sonst No-op
     /// (manueller Modus/pausiert → kein automatischer Tick).
     private func startPolling() {

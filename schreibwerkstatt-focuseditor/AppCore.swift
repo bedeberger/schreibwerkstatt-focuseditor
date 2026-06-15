@@ -64,6 +64,12 @@ final class AppCore: ObservableObject {
                               shouldSync: { auth.state == .signedIn })
         sync.editor = bridge   // SyncEngine ↔ Editor-Kopplung (schwach gehalten)
         self.sync = sync
+        // Beim Öffnen einer Seite gezielt deren frischen Server-Stand ziehen
+        // („sicherheitshalber"), statt aufs Poll-Intervall zu warten. Best-effort
+        // und still; respektiert den Datenverlust-Schutz (dirty/Outbox bleibt).
+        bridge.onPageOpened = { [weak sync] pid in
+            Task { await sync?.pullPage(pageId: pid) }
+        }
     }
 
     /// Server-Wechsel (in-place): den lokalen Spiegel, den Sync-Zustand und die
