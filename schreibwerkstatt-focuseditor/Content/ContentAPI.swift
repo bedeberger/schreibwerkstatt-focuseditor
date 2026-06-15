@@ -74,18 +74,29 @@ struct BookTreeDTO: Decodable {
 // MARK: - Flache Picker-Zeile
 
 /// Eine Zeile für den Seiten-Picker: depth-first abgeflachter Tree, in
-/// book_order-Reihenfolge. `chapterName` ist das direkt umschließende Kapitel
-/// (nil für Top-Level-Seiten); `depth` erlaubt eine eingerückte Darstellung.
+/// book_order-Reihenfolge.
+///
+/// `chapterPath` ist der VOLLE Kapitelpfad von der Wurzel bis zum direkt
+/// umschließenden Kapitel — z. B. `["2026", "Januar"]` für eine Seite im
+/// Unterkapitel „Januar" des Jahres-Kapitels „2026". Leer (`[]`) für
+/// Top-Level-Seiten ohne Kapitel. Der volle Pfad erlaubt dem Picker, das
+/// übergeordnete Kapitel als Breadcrumb anzuzeigen (auch wenn es selbst keine
+/// direkten Seiten hat) und gleichnamige Unterkapitel verschiedener Eltern
+/// auseinanderzuhalten (sonst verschmelzen z. B. zwei „Januar" zu einer Gruppe).
 struct PagePickerRow: Identifiable, Equatable {
     let id: Int
     let name: String
-    let chapterName: String?
-    let depth: Int
+    let chapterPath: [String]
     /// Letzte Änderung (Server-`updated_at`, sonst lokaler Spiegel) — treibt die
     /// dezente Relativ-Zeit pro Picker-Zeile (Orientierung im grossen Buch).
     /// `nil`, wenn kein Zeitstempel vorliegt. Default-Wert hält bestehende
     /// Initializer (ohne Zeitstempel) gültig.
     var updatedAt: Date? = nil
+
+    /// Direkt umschließendes Kapitel (Leaf des Pfads) — `nil` für Top-Level-Seiten.
+    var chapterName: String? { chapterPath.last }
+    /// Verschachtelungstiefe: 0 = Top-Level-Seite, 1 = Top-Kapitel, 2+ = Unterkapitel.
+    var depth: Int { chapterPath.count }
 }
 
 // MARK: - API
@@ -109,8 +120,9 @@ final class ContentAPI {
     }
 
     /// Lädt den Tree und flacht ihn depth-first in Picker-Zeilen ab —
-    /// identische Semantik zu `flattenTree` im Hauptrepo (Top-Level-Kapitel
-    /// auf depth 1, deren Seiten tragen den Kapitelnamen; Top-Pages depth 0).
+    /// Semantik wie `flattenTree`/der Buch-Organizer im Hauptrepo: Top-Level-Seiten
+    /// zuerst, danach die Kapitel-Hierarchie depth-first; jede Seite trägt ihren
+    /// vollen Kapitelpfad (für Breadcrumb + korrekte Gruppierung).
     func pickerRows(bookId: Int) async throws -> [PagePickerRow] {
         Self.flatten(try await tree(bookId: bookId))
     }
@@ -134,30 +146,37 @@ final class ContentAPI {
     }
 
     /// Tree → depth-first-Liste (Pure-Funktion, für Tests/Wiederverwendung).
+    ///
+    /// Reihenfolge wie der Buch-Organizer im Hauptrepo
+    /// (public/js/book/tree.js: „Seiten ohne Kapitel immer zuerst — danach Kapitel
+    /// in Tree-Reihenfolge"): erst die Top-Level-Seiten, dann die Kapitel-Hierarchie
+    /// depth-first. Innerhalb eines Kapitels stehen die direkten Seiten vor den
+    /// Unterkapiteln. Jede Zeile trägt ihren VOLLEN Kapitelpfad (`chapterPath`),
+    /// damit auch Eltern-Kapitel ohne eigene Seiten im Breadcrumb sichtbar bleiben.
     static func flatten(_ tree: BookTreeDTO) -> [PagePickerRow] {
         var rows: [PagePickerRow] = []
 
-        func walk(_ chapters: [TreeChapterDTO], depth: Int) {
-            for ch in chapters {
-                for p in ch.pages {
-                    rows.append(PagePickerRow(id: p.id,
-                                              name: p.name ?? "Ohne Titel",
-                                              chapterName: ch.name,
-                                              depth: depth,
-                                              updatedAt: date(from: p.updated_at)))
-                }
-                walk(ch.subchapters, depth: depth + 1)
-            }
-        }
-
-        walk(tree.chapters, depth: 1)
         for p in tree.topPages {
             rows.append(PagePickerRow(id: p.id,
                                       name: p.name ?? "Ohne Titel",
-                                      chapterName: nil,
-                                      depth: 0,
+                                      chapterPath: [],
                                       updatedAt: date(from: p.updated_at)))
         }
+
+        func walk(_ chapters: [TreeChapterDTO], path: [String]) {
+            for ch in chapters {
+                let childPath = path + [ch.name ?? "Ohne Titel"]
+                for p in ch.pages {
+                    rows.append(PagePickerRow(id: p.id,
+                                              name: p.name ?? "Ohne Titel",
+                                              chapterPath: childPath,
+                                              updatedAt: date(from: p.updated_at)))
+                }
+                walk(ch.subchapters, path: childPath)
+            }
+        }
+
+        walk(tree.chapters, path: [])
         return rows
     }
 

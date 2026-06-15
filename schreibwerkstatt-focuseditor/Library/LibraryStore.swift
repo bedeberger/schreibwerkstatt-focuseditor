@@ -182,7 +182,7 @@ final class LibraryStore: ObservableObject {
         return summaries.compactMap { s in
             guard let pid = Int(s.id) else { return nil }
             // `updatedAt` im Spiegel ist Epoch-Millis (s. PageSummary).
-            return PagePickerRow(id: pid, name: s.displayName, chapterName: nil, depth: 0,
+            return PagePickerRow(id: pid, name: s.displayName, chapterPath: [],
                                  updatedAt: Date(timeIntervalSince1970: s.updatedAt / 1000))
         }
     }

@@ -32,9 +32,11 @@ struct PagePickerOverlay: View {
 
     private var filtered: [PagePickerRow] {
         guard !query.isEmpty else { return library.pages }
-        return library.pages.filter {
-            $0.name.localizedCaseInsensitiveContains(query)
-            || ($0.chapterName?.localizedCaseInsensitiveContains(query) ?? false)
+        return library.pages.filter { row in
+            row.name.localizedCaseInsensitiveContains(query)
+            // Treffer in JEDEM Pfad-Segment (Jahr ODER Monat), nicht nur im Leaf —
+            // so findet „2026" auch die Seiten unter dem Jahres-Kapitel.
+            || row.chapterPath.contains { $0.localizedCaseInsensitiveContains(query) }
         }
     }
 
@@ -46,38 +48,35 @@ struct PagePickerOverlay: View {
         var id: Int { row.id }
     }
 
-    /// Ein Kapitelblock: zusammenhängender Lauf gleicher `chapterName` in der
-    /// depth-first-Reihenfolge (Top-Level-Seiten → `header == nil`, kein Titel).
+    /// Ein Kapitelblock: zusammenhängender Lauf gleichen `path` in der
+    /// depth-first-Reihenfolge (Top-Level-Seiten → leerer Pfad, kein Header).
     private struct PickerGroup: Identifiable {
         let id: Int          // erster Index im Lauf (stabil pro Filterung)
-        let header: String?
-        let depth: Int
+        let path: [String]   // voller Kapitelpfad; leer = Top-Level
         let rows: [IndexedRow]
+        var depth: Int { path.count }
     }
 
     /// Gruppiert `filtered` in Kapitelblöcke. Da `pickerRows` depth-first abflacht
     /// (alle Seiten eines Kapitels stehen am Stück), genügt das Aufbrechen bei
-    /// jedem Wechsel des Kapitelnamens — Unterkapitel werden zu eigenen Blöcken,
-    /// ihre `depth` rückt Header + Zeilen ein.
+    /// jedem Wechsel des VOLLEN Pfads — gleichnamige Unterkapitel verschiedener
+    /// Eltern (z. B. „Januar" in 2025 und 2026) bleiben so getrennte Blöcke, statt
+    /// fälschlich zu verschmelzen.
     private var groups: [PickerGroup] {
         var result: [PickerGroup] = []
         var current: [IndexedRow] = []
-        var currentHeader: String?
+        var currentPath: [String] = []
         var groupStart = 0
 
         func flush() {
             guard !current.isEmpty else { return }
-            result.append(PickerGroup(id: groupStart,
-                                      header: currentHeader,
-                                      depth: current.first?.row.depth ?? 0,
-                                      rows: current))
+            result.append(PickerGroup(id: groupStart, path: currentPath, rows: current))
             current = []
         }
 
         for (index, row) in filtered.enumerated() {
-            let header = (row.chapterName?.isEmpty ?? true) ? nil : row.chapterName
-            if !current.isEmpty && header != currentHeader { flush() }
-            if current.isEmpty { currentHeader = header; groupStart = index }
+            if !current.isEmpty && row.chapterPath != currentPath { flush() }
+            if current.isEmpty { currentPath = row.chapterPath; groupStart = index }
             current.append(IndexedRow(index: index, row: row))
         }
         flush()
@@ -171,8 +170,8 @@ struct PagePickerOverlay: View {
                                     Divider().opacity(0.4)
                                 }
                             } header: {
-                                if let title = group.header {
-                                    chapterHeader(title, depth: group.depth)
+                                if !group.path.isEmpty {
+                                    chapterHeader(group.path)
                                 }
                             }
                         }
@@ -217,21 +216,42 @@ struct PagePickerOverlay: View {
         .frame(maxWidth: 280)
     }
 
-    /// Pinned Kapitel-Überschrift — gruppiert die Seiten darunter, statt den
-    /// Kapitelnamen auf jeder Zeile zu wiederholen. Bleibt beim Scrollen oben
-    /// kleben, damit auch mitten im Kapitel klar ist, wo man steht.
-    private func chapterHeader(_ title: String, depth: Int) -> some View {
-        Text(title.uppercased())
-            .font(BrandFont.sans(10, weight: .semibold))
-            .tracking(0.5)
-            .foregroundStyle(BrandColor.muted)
+    /// Pinned Kapitel-Überschrift als Breadcrumb über den vollen Pfad
+    /// (z. B. „2026 › JANUAR"). Eltern-Segmente sind gedimmt, das Blatt-Kapitel
+    /// betont — so bleibt das übergeordnete Kapitel sichtbar (auch wenn es selbst
+    /// keine Seiten hat) und gleichnamige Kapitel verschiedener Jahre sind
+    /// unterscheidbar. Bleibt beim Scrollen oben kleben; bei Platzmangel wird in
+    /// der Mitte gekürzt, damit Jahr (vorn) und Monat (hinten) sichtbar bleiben.
+    private func chapterHeader(_ path: [String]) -> some View {
+        breadcrumb(path)
             .lineLimit(1)
-            .truncationMode(.tail)
+            .truncationMode(.middle)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, 5)
-            .padding(.leading, CGFloat(max(0, depth - 1)) * 14 + 14)
+            .padding(.leading, CGFloat(max(0, path.count - 1)) * 14 + 14)
             .padding(.trailing, 14)
             .background(.regularMaterial)
+    }
+
+    /// Baut den Breadcrumb-`Text` aus dem Kapitelpfad: Trennzeichen „›" und
+    /// Eltern-Segmente gedimmt, das letzte Segment (aktuelles Kapitel) betont.
+    private func breadcrumb(_ path: [String]) -> Text {
+        var out = AttributedString()
+        for (i, segment) in path.enumerated() {
+            if i > 0 {
+                var sep = AttributedString(" › ")
+                sep.font = BrandFont.sans(10)
+                sep.foregroundColor = BrandColor.faint
+                out += sep
+            }
+            let isLeaf = i == path.count - 1
+            var seg = AttributedString(segment.uppercased())
+            seg.font = BrandFont.sans(10, weight: isLeaf ? .semibold : .regular)
+            seg.foregroundColor = isLeaf ? BrandColor.muted : BrandColor.faint
+            seg.tracking = 0.5
+            out += seg
+        }
+        return Text(out)
     }
 
     private func rowButton(_ row: PagePickerRow, isSelected: Bool) -> some View {
