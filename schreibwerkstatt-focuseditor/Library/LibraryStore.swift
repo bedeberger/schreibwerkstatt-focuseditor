@@ -99,8 +99,12 @@ final class LibraryStore: ObservableObject {
     /// `nil`, wenn nie eine Seite geöffnet wurde oder sie nicht (mehr) im aktiven
     /// Buch liegt.
     var lastOpenPageRow: PagePickerRow? {
-        guard let raw = UserDefaults.standard.string(forKey: EditorBridge.lastOpenPageKey),
-              let id = Int(raw) else { return nil }
+        // Buch-skopierte Erinnerung (pro aktivem Buch), Fallback auf den globalen
+        // Legacy-Wert — beide werden gegen die Seitenliste des aktiven Buchs
+        // aufgelöst, sodass nie eine Seite eines anderen Buchs erscheint.
+        let raw = activeBookId.flatMap { EditorBridge.lastOpenPageId(forBook: $0) }
+            ?? UserDefaults.standard.string(forKey: EditorBridge.lastOpenPageKey)
+        guard let raw, let id = Int(raw) else { return nil }
         return pages.first { $0.id == id }
     }
 

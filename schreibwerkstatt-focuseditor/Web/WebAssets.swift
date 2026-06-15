@@ -50,9 +50,10 @@ enum WebAssets {
         list: (bookId) => call('list', bookId == null ? {} : { bookId }),
         log:  (message, level) => call('log', { message: String(message), level: level || 'info' }),
 
-        // Zuletzt geöffnete Seite (gerätelokal, pro Server) — Boot-Restore.
-        // loadPage bevorzugt sie, fällt sonst auf die erste Seite zurück.
-        lastOpenPage: () => call('lastOpenPage', {}),
+        // Zuletzt geöffnete Seite (gerätelokal, pro Buch) — Boot-Restore.
+        // loadPage bevorzugt sie für das aktive Buch, fällt sonst auf die erste
+        // Seite des Buchs zurück. Ohne bookId: globaler (legacy) Wert.
+        lastOpenPage: (bookId) => call('lastOpenPage', bookId == null ? {} : { bookId }),
 
         // In der Toolbar gewähltes Buch (gerätelokal, pro Server). loadPage
         // skopiert die initiale Seitenauswahl darauf, damit beim Start nie eine
@@ -60,8 +61,12 @@ enum WebAssets {
         activeBook: () => call('activeBook', {}),
 
         // Editor meldet offene Seite + Dirty-Flag an Swift (Open-Page-Reload/-Schutz).
-        reportState: (pageId, dirty) =>
-          call('editorState', { pageId: pageId == null ? null : String(pageId), dirty: !!dirty }),
+        // bookId hängt mit, damit Swift die zuletzt geöffnete Seite PRO Buch merkt
+        // (Boot-Restore ohne Buch-Verwechslung).
+        reportState: (pageId, dirty, bookId) =>
+          call('editorState', { pageId: pageId == null ? null : String(pageId),
+                                dirty: !!dirty,
+                                bookId: bookId == null ? null : Number(bookId) }),
 
         // Rechtschreibprüfung (LanguageTool) — Proxy über den Swift-Kern. Die
         // WebView macht NIE direkten fetch; Settings (enabled/url/picky/rules)
@@ -311,7 +316,7 @@ enum WebAssets {
                 if (pid === reportedPageId && dirty === reportedDirty) return;
                 reportedPageId = pid;
                 reportedDirty = dirty;
-                try { fb.reportState(pid, dirty); } catch (_) {}
+                try { fb.reportState(pid, dirty, currentBookId); } catch (_) {}
               }
 
               // Lokale Fokus-Granularität: beim Boot aus dem Swift-Kern ziehen
@@ -338,17 +343,22 @@ enum WebAssets {
                   } catch (_) {}
                   let pages = [];
                   try { pages = bookId != null ? await fb.list(bookId) : await fb.list(); } catch (_) {}
-                  // Zuletzt geöffnete Seite bevorzugen (gerätelokal gemerkt) —
-                  // nur, wenn sie noch in der (buch-skopierten) Liste steht (sonst
-                  // gelöscht/anderes Buch). Sonst die erste Seite des Buchs.
+                  // Zuletzt geöffnete Seite bevorzugen (gerätelokal, PRO Buch
+                  // gemerkt) — nur für das aktive Buch und nur, wenn sie noch in
+                  // dessen Seitenliste steht (sonst gelöscht). Ohne aktives Buch
+                  // (Erststart-Race, bevor die Toolbar ein Buch gewählt hat) NIE
+                  // restoren — sonst öffnete sich eine Seite aus einem anderen
+                  // Buch. Fallback: erste Seite des Buchs.
                   let id = null;
-                  try {
-                    const last = await fb.lastOpenPage();
-                    if (last && last.pageId != null) {
-                      const lid = String(last.pageId);
-                      if (Array.isArray(pages) && pages.some((p) => String(p.id) === lid)) id = lid;
-                    }
-                  } catch (_) {}
+                  if (bookId != null) {
+                    try {
+                      const last = await fb.lastOpenPage(bookId);
+                      if (last && last.pageId != null) {
+                        const lid = String(last.pageId);
+                        if (Array.isArray(pages) && pages.some((p) => String(p.id) === lid)) id = lid;
+                      }
+                    } catch (_) {}
+                  }
                   if (id == null) {
                     const first = Array.isArray(pages) && pages.length ? pages[0] : null;
                     id = first ? first.id : 'default';

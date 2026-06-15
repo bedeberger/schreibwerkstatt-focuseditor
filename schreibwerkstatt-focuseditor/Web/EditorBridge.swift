@@ -51,7 +51,28 @@ final class EditorBridge: NSObject, WKScriptMessageHandlerWithReply, EditorCoord
     /// UserDefaults-Key für die zuletzt geöffnete Seite — pro Server-Namespace
     /// (eine Seiten-ID gilt nur am Server, der sie vergeben hat; sonst öffnete der
     /// Client am neuen Server eine Seite des alten). Analog zu `LibraryStore`.
+    /// Legacy/Fallback: der buch-skopierte Restore läuft über `lastOpenByBookKey`.
     static var lastOpenPageKey: String { "editor.lastOpenPageId.\(ServerNamespace.currentSlug)" }
+
+    /// UserDefaults-Key für die zuletzt geöffnete Seite PRO Buch — pro Server-
+    /// Namespace. Wert ist ein `[String(bookId): String(pageId)]`-Dict. Der Boot-
+    /// Restore (`lastOpenPage(bookId)`) liest hier, damit nie eine Seite eines
+    /// anderen Buchs geöffnet wird (der globale Key oben gilt server-, nicht
+    /// buchweit und wurde bei jedem Seitenwechsel über alle Bücher überschrieben).
+    static var lastOpenByBookKey: String { "editor.lastOpenByBook.\(ServerNamespace.currentSlug)" }
+
+    /// Zuletzt geöffnete Seite des Buchs (gerätelokal), oder `nil`.
+    static func lastOpenPageId(forBook bookId: Int) -> String? {
+        let map = UserDefaults.standard.dictionary(forKey: lastOpenByBookKey) as? [String: String]
+        return map?[String(bookId)]
+    }
+
+    /// Zuletzt geöffnete Seite des Buchs merken (gerätelokal).
+    static func setLastOpenPageId(_ pageId: String, forBook bookId: Int) {
+        var map = (UserDefaults.standard.dictionary(forKey: lastOpenByBookKey) as? [String: String]) ?? [:]
+        map[String(bookId)] = pageId
+        UserDefaults.standard.set(map, forKey: lastOpenByBookKey)
+    }
 
     /// UserDefaults-Key des in der Toolbar gewählten Buchs — pro Server-Namespace,
     /// exakt wie in `LibraryStore` (dort die SSoT). Die Bridge liest ihn beim Boot,
@@ -198,15 +219,25 @@ final class EditorBridge: NSObject, WKScriptMessageHandlerWithReply, EditorCoord
                 // Zuletzt geöffnete Seite gerätelokal merken (Boot-Restore via
                 // `lastOpenPage`). Nur echte Seiten — `nil`/„default" nie merken,
                 // damit eine geschlossene/leere Fläche die Erinnerung nicht löscht.
+                // PRO Buch merken (bookId reicht der Editor mit), damit der Restore
+                // nie ein fremdes Buch öffnet; globaler Key bleibt als Fallback.
                 UserDefaults.standard.set(pageId, forKey: Self.lastOpenPageKey)
+                if let bookId = params["bookId"] as? Int {
+                    Self.setLastOpenPageId(pageId, forBook: bookId)
+                }
             }
             notifyDirty()
             return nil
 
         case "lastOpenPage":
-            // Boot-Pull: zuletzt geöffnete Seite (gerätelokal, pro Server). Der
-            // Editor-Glue bevorzugt sie in `loadPage`, fällt sonst auf die erste
-            // Seite zurück. `nil`, wenn noch nie eine Seite geöffnet wurde.
+            // Boot-Pull: zuletzt geöffnete Seite (gerätelokal). Mit `bookId`
+            // buch-skopiert (so öffnet der Restore nie eine Seite eines anderen
+            // Buchs); ohne `bookId` der globale Legacy-Wert. Der Editor-Glue
+            // bevorzugt sie in `loadPage`, fällt sonst auf die erste Seite zurück.
+            // `nil`, wenn (für dieses Buch) noch nie eine Seite geöffnet wurde.
+            if let bookId = params["bookId"] as? Int {
+                return ["pageId": Self.lastOpenPageId(forBook: bookId) as Any]
+            }
             return ["pageId": UserDefaults.standard.string(forKey: Self.lastOpenPageKey) as Any]
 
         case "activeBook":
