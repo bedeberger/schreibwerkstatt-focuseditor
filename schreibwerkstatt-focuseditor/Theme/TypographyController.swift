@@ -7,6 +7,9 @@
 //  Schriftgrösse, Zeilenhöhe, Spaltenbreite (measure), Schriftfamilie und
 //  Papier-Ton. Bewusst LOKAL (UserDefaults) — reine Anzeige-Vorlieben pro
 //  Gerät, kein Inhalt, kein Netzwerk (Speicherort-Entscheid: client-lokal).
+//  Anders als FocusController/LocalizationController gibt es hier BEWUSST KEIN
+//  `seedFromServerIfNeeded()`: Typografie ist rein gerätelokal (kein Server-
+//  Profil dafür), die scheinbare Symmetrie zu jenen Controllern endet hier.
 //
 //  Kein Editor-Fork (HARTE REGEL): Die Werte fliessen als FERTIGE CSS-Strings
 //  über die Bridge in die WebView; der Boot-Glue (WebAssets.indexHTML) setzt sie

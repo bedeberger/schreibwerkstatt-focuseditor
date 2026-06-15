@@ -14,6 +14,7 @@
 //
 
 import Foundation
+import OSLog
 
 /// Eine Seite im lokalen Spiegel. `updatedAt` ist ein Epoch-Millis-Zeitstempel
 /// (Double) — passt 1:1 zu `Date.now()` in der WebView und zur Sync-Basis.
@@ -63,16 +64,32 @@ protocol LocalStore: AnyObject {
     /// Noch nicht gepushte Outbox-Einträge (für die spätere SyncEngine).
     func pendingOutbox() async throws -> [OutboxEntry]
 
-    /// Quittiert einen erfolgreichen Push: setzt die lokale Server-Basis der
-    /// Seite auf `serverUpdatedAtMillis` und entfernt den Outbox-Eintrag —
-    /// aber nur, wenn er seit `queuedAt` nicht erneut geändert wurde (sonst
-    /// liegt eine neuere lokale Änderung vor, die noch gepusht werden muss).
-    func markPushed(id: String, queuedAt: Double, serverUpdatedAtMillis: Double) async throws
+    /// Quittiert einen erfolgreichen Push: entfernt den Outbox-Eintrag und setzt
+    /// die lokale Server-Basis der Seite auf `serverUpdatedAtMillis` — aber nur,
+    /// wenn der Eintrag seit `queuedAt` nicht erneut geändert wurde. Beides
+    /// (Match-Prüfung + Löschen + Basis-Update) läuft in EINER Transaktion.
+    /// Rückgabe: `true`, wenn tatsächlich quittiert wurde; `false`, wenn
+    /// zwischenzeitlich ein neuerer Eintrag entstand (oder keiner vorlag) — dann
+    /// bleibt Basis UND Eintrag unangetastet, der Aufrufer darf die Server-Basis
+    /// NICHT vorrücken (Datenverlust-Schutz: die neuere lokale Änderung trägt eine
+    /// andere Basis und muss separat gepusht werden).
+    @discardableResult
+    func markPushed(id: String, queuedAt: Double, serverUpdatedAtMillis: Double) async throws -> Bool
 
     /// Schreibt eine vom Server gezogene Seite in den Spiegel, OHNE einen
     /// Outbox-Eintrag zu erzeugen (Pull ist keine lokale Änderung). Setzt
     /// `updatedAt` und `baseUpdatedAt` auf den Server-Stand.
     func applyServerPage(id: String, html: String, pageName: String?, bookId: Int?, chapterId: Int?, serverUpdatedAtMillis: Double) async throws
+
+    /// Wie `applyServerPage`, aber datenverlust-sicher gegen ein TOCTOU-Rennen:
+    /// schreibt den Server-Stand NUR, wenn KEIN Outbox-Eintrag für die Seite
+    /// vorliegt (also keine lokal ungepushte Änderung). Outbox-Check und Write
+    /// laufen in DERSELBEN Transaktion — schliesst das Fenster, in dem zwischen
+    /// dem Lesen der Outbox-Liste und diesem Write ein lokaler Save einging.
+    /// Rückgabe: `true` = Server-Stand übernommen; `false` = wegen vorliegender
+    /// Outbox übersprungen (der Push/409-Merge löst die Divergenz auf).
+    @discardableResult
+    func applyServerPageIfClean(id: String, html: String, pageName: String?, bookId: Int?, chapterId: Int?, serverUpdatedAtMillis: Double) async throws -> Bool
 
     /// Entfernt eine Seite aus dem Spiegel (serverseitig gelöscht, Delete-Reconcile).
     /// Räumt einen evtl. vorhandenen Outbox-Eintrag mit weg. Der Aufrufer stellt
@@ -201,21 +218,43 @@ final class InMemoryLocalStore: LocalStore {
         outbox
     }
 
-    func markPushed(id: String, queuedAt: Double, serverUpdatedAtMillis: Double) async throws {
+    @discardableResult
+    func markPushed(id: String, queuedAt: Double, serverUpdatedAtMillis: Double) async throws -> Bool {
+        // Nur quittieren, wenn der Outbox-Eintrag unverändert seit dem Push ist.
+        guard let idx = outbox.firstIndex(where: { $0.pageId == id }),
+              outbox[idx].queuedAt == queuedAt else {
+            // Kein passender Eintrag mehr → Basis NICHT vorrücken (s. Protokoll).
+            return false
+        }
+        outbox.remove(at: idx)
         // Server-Basis übernehmen (Inhalt/updatedAt bleiben unangetastet).
         if var page = pages[id] {
             page.baseUpdatedAt = serverUpdatedAtMillis
             pages[id] = page
         }
-        // Outbox-Eintrag nur entfernen, wenn unverändert seit dem Push.
-        if let idx = outbox.firstIndex(where: { $0.pageId == id }),
-           outbox[idx].queuedAt == queuedAt {
-            outbox.remove(at: idx)
-        }
         persistSnapshot()
+        return true
     }
 
     func applyServerPage(id: String, html: String, pageName: String?, bookId: Int?, chapterId: Int?, serverUpdatedAtMillis: Double) async throws {
+        applyServerPageInternal(id: id, html: html, pageName: pageName,
+                                bookId: bookId, chapterId: chapterId,
+                                serverUpdatedAtMillis: serverUpdatedAtMillis)
+        persistSnapshot()
+    }
+
+    @discardableResult
+    func applyServerPageIfClean(id: String, html: String, pageName: String?, bookId: Int?, chapterId: Int?, serverUpdatedAtMillis: Double) async throws -> Bool {
+        // Lokal ungepushte Änderung → nicht überschreiben (Datenverlust-Schutz).
+        guard !outbox.contains(where: { $0.pageId == id }) else { return false }
+        applyServerPageInternal(id: id, html: html, pageName: pageName,
+                                bookId: bookId, chapterId: chapterId,
+                                serverUpdatedAtMillis: serverUpdatedAtMillis)
+        persistSnapshot()
+        return true
+    }
+
+    private func applyServerPageInternal(id: String, html: String, pageName: String?, bookId: Int?, chapterId: Int?, serverUpdatedAtMillis: Double) {
         let derived = PageTitle.derive(from: html) ?? pages[id]?.title
         pages[id] = StoredPage(id: id,
                                html: html,
@@ -225,7 +264,6 @@ final class InMemoryLocalStore: LocalStore {
                                chapterId: chapterId ?? pages[id]?.chapterId,
                                updatedAt: serverUpdatedAtMillis,
                                baseUpdatedAt: serverUpdatedAtMillis)
-        persistSnapshot()
     }
 
     func deletePage(id: String) async throws {
@@ -269,7 +307,15 @@ final class InMemoryLocalStore: LocalStore {
 
     private func persistSnapshot() {
         let snap = Snapshot(pages: Array(pages.values), outbox: outbox)
-        guard let data = try? JSONEncoder().encode(snap) else { return }
-        try? data.write(to: snapshotURL, options: .atomic)
+        do {
+            let data = try JSONEncoder().encode(snap)
+            try data.write(to: snapshotURL, options: .atomic)
+        } catch {
+            // Datenverlust-Schutz: einen fehlgeschlagenen Snapshot-Write NICHT
+            // verschlucken (Platte voll/Permissions) — der local-first-Save hätte
+            // sonst „Erfolg" gemeldet, ohne dass etwas persistiert wurde.
+            Logger(subsystem: "ch.schreibwerkstatt.focuseditor", category: "store")
+                .error("Snapshot-Persistenz fehlgeschlagen: \(error.localizedDescription, privacy: .public)")
+        }
     }
 }

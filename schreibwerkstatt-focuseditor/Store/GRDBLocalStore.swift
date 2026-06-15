@@ -133,35 +133,61 @@ final class GRDBLocalStore: LocalStore {
         }
     }
 
-    func markPushed(id: String, queuedAt: Double, serverUpdatedAtMillis: Double) async throws {
+    @discardableResult
+    func markPushed(id: String, queuedAt: Double, serverUpdatedAtMillis: Double) async throws -> Bool {
         try await dbQueue.write { db in
+            // Match-Prüfung + Löschen + Basis-Update atomar in EINER Transaktion.
+            // Nur quittieren, wenn der Outbox-Eintrag unverändert seit dem Push ist.
+            guard let entry = try OutboxEntry.fetchOne(db, key: id), entry.queuedAt == queuedAt else {
+                // Inzwischen neuerer Eintrag (oder keiner) → Basis NICHT vorrücken,
+                // Eintrag NICHT löschen (s. Protokoll: Datenverlust-Schutz).
+                return false
+            }
+            try entry.delete(db)
             // Server-Basis übernehmen (Inhalt/updatedAt bleiben unangetastet).
             if var page = try StoredPage.fetchOne(db, key: id) {
                 page.baseUpdatedAt = serverUpdatedAtMillis
                 try page.update(db)
             }
-            // Outbox-Eintrag nur entfernen, wenn unverändert seit dem Push.
-            if let entry = try OutboxEntry.fetchOne(db, key: id), entry.queuedAt == queuedAt {
-                try entry.delete(db)
-            }
+            return true
         }
     }
 
     func applyServerPage(id: String, html: String, pageName: String?, bookId: Int?, chapterId: Int?, serverUpdatedAtMillis: Double) async throws {
         try await dbQueue.write { db in
-            let existing = try StoredPage.fetchOne(db, key: id)
-            let derived = PageTitle.derive(from: html) ?? existing?.title
-            let page = StoredPage(id: id,
-                                  html: html,
-                                  title: derived,
-                                  pageName: pageName ?? existing?.pageName,
-                                  bookId: bookId ?? existing?.bookId,
-                                  chapterId: chapterId ?? existing?.chapterId,
-                                  updatedAt: serverUpdatedAtMillis,
-                                  baseUpdatedAt: serverUpdatedAtMillis)
-            // Pull erzeugt KEINEN Outbox-Eintrag.
-            try page.save(db)
+            try Self.writeServerPage(db, id: id, html: html, pageName: pageName,
+                                     bookId: bookId, chapterId: chapterId,
+                                     serverUpdatedAtMillis: serverUpdatedAtMillis)
         }
+    }
+
+    @discardableResult
+    func applyServerPageIfClean(id: String, html: String, pageName: String?, bookId: Int?, chapterId: Int?, serverUpdatedAtMillis: Double) async throws -> Bool {
+        try await dbQueue.write { db in
+            // Outbox-Check + Write atomar: liegt eine lokal ungepushte Änderung
+            // vor, NICHT überschreiben (der Push/409-Merge löst die Divergenz auf).
+            if try OutboxEntry.fetchOne(db, key: id) != nil { return false }
+            try Self.writeServerPage(db, id: id, html: html, pageName: pageName,
+                                     bookId: bookId, chapterId: chapterId,
+                                     serverUpdatedAtMillis: serverUpdatedAtMillis)
+            return true
+        }
+    }
+
+    /// Gemeinsamer Server-Stand-Write (Pull erzeugt KEINEN Outbox-Eintrag).
+    /// `nonisolated`, weil GRDB die Closure im DB-Writer-Thread ausführt.
+    nonisolated private static func writeServerPage(_ db: Database, id: String, html: String, pageName: String?, bookId: Int?, chapterId: Int?, serverUpdatedAtMillis: Double) throws {
+        let existing = try StoredPage.fetchOne(db, key: id)
+        let derived = PageTitle.derive(from: html) ?? existing?.title
+        let page = StoredPage(id: id,
+                              html: html,
+                              title: derived,
+                              pageName: pageName ?? existing?.pageName,
+                              bookId: bookId ?? existing?.bookId,
+                              chapterId: chapterId ?? existing?.chapterId,
+                              updatedAt: serverUpdatedAtMillis,
+                              baseUpdatedAt: serverUpdatedAtMillis)
+        try page.save(db)
     }
 
     func deletePage(id: String) async throws {

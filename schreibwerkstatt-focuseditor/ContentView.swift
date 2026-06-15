@@ -62,11 +62,6 @@ private struct EditorHostView: View {
     @State private var toolbarRevealed = true
     @State private var hideTask: Task<Void, Never>?
 
-    /// Die Toolbar wird **immer** gezeigt — auch im nativen Vollbild. Das
-    /// ablenkungsfreie Ausblenden übernimmt ausschließlich die „Toolbar bei
-    /// Inaktivität ausblenden"-Option (Auto-Hide), nicht mehr der Vollbild.
-    private var chromeAllowed: Bool { true }
-
     var body: some View {
         Group {
             switch editorBundle.state {
@@ -89,6 +84,8 @@ private struct EditorHostView: View {
         .onChange(of: autoHideToolbar) { _, on in
             if !on { hideTask?.cancel(); toolbarRevealed = true }
         }
+        // Verwaisten Hide-Timer beim Teardown (z. B. Abmelden → LoginView) stoppen.
+        .onDisappear { hideTask?.cancel() }
         // Buchwechsel: die LibraryStore schliesst die offene Seite und signalisiert
         // hier, den Seiten-Picker zu öffnen (Seite des neuen Buchs wählen).
         .onChange(of: library.pickerOpenRequest) { _, _ in
@@ -105,9 +102,9 @@ private struct EditorHostView: View {
     ///    Ein dünner Hover-Streifen am oberen Rand blendet sie wieder ein.
     @ViewBuilder
     private var editorReady: some View {
-        let autoHideActive = autoHideToolbar && chromeAllowed
+        let autoHideActive = autoHideToolbar
         VStack(spacing: 0) {
-            if chromeAllowed && !autoHideActive {
+            if !autoHideActive {
                 AppToolbar(pickerOpen: $pickerOpen)
             }
             ZStack(alignment: .top) {
@@ -155,7 +152,7 @@ private struct EditorHostView: View {
         hideTask = Task {
             try? await Task.sleep(for: .seconds(2.5))
             guard !Task.isCancelled else { return }
-            if autoHideToolbar && chromeAllowed { toolbarRevealed = false }
+            if autoHideToolbar { toolbarRevealed = false }
         }
     }
 }

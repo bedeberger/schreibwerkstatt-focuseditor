@@ -72,8 +72,16 @@ enum AppSupport {
         guard !fm.fileExists(atPath: target.path) else { return }
         let legacy = baseDir().appendingPathComponent(name)
         guard fm.fileExists(atPath: legacy.path) else { return }
-        // Hauptdatei + evtl. SQLite-Sidecars mitnehmen.
-        for suffix in ["", "-wal", "-shm"] {
+        // ZUERST die Hauptdatei verschieben. Scheitert das, GAR NICHTS anfassen —
+        // sonst landete ein verwaistes `-wal`/`-shm` ohne Hauptdatei im Ziel und
+        // GRDB öffnete dort eine inkonsistente DB (halbe Migration).
+        do {
+            try fm.moveItem(at: legacy, to: target)
+        } catch {
+            return
+        }
+        // Hauptdatei ist drüben → die SQLite-Sidecars best-effort nachziehen.
+        for suffix in ["-wal", "-shm"] {
             let from = baseDir().appendingPathComponent(name + suffix)
             let to = serverDir(slug: slug).appendingPathComponent(name + suffix)
             guard fm.fileExists(atPath: from.path) else { continue }

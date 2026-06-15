@@ -131,13 +131,29 @@ final class WindowChromeController: ObservableObject {
 struct WindowAccessor: NSViewRepresentable {
     let onResolve: (NSWindow?) -> Void
 
+    /// Merkt sich das zuletzt gemeldete Fenster, damit `updateNSView` (feuert bei
+    /// JEDER SwiftUI-Invalidierung) nur bei einem ECHTEN Fensterwechsel erneut
+    /// meldet — sonst würde der Chrome-Setup (inkl. verzögerter Menü-Mutation)
+    /// bei jedem Re-Render unnötig erneut angestoßen.
+    final class Coordinator {
+        weak var lastWindow: NSWindow?
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
     func makeNSView(context: Context) -> NSView {
         let view = NSView()
-        DispatchQueue.main.async { onResolve(view.window) }
+        DispatchQueue.main.async { resolve(view.window, context.coordinator) }
         return view
     }
 
     func updateNSView(_ nsView: NSView, context: Context) {
-        DispatchQueue.main.async { onResolve(nsView.window) }
+        DispatchQueue.main.async { resolve(nsView.window, context.coordinator) }
+    }
+
+    private func resolve(_ window: NSWindow?, _ coordinator: Coordinator) {
+        guard window !== coordinator.lastWindow else { return }
+        coordinator.lastWindow = window
+        onResolve(window)
     }
 }

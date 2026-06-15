@@ -19,8 +19,6 @@ struct AppToolbar: View {
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var sync: SyncEngine
     @EnvironmentObject private var library: LibraryStore
-    @EnvironmentObject private var appearance: AppearanceController
-    @EnvironmentObject private var focus: FocusController
     @EnvironmentObject private var writingStats: WritingStatsStore
 
     /// Steuert den beschwörbaren Seiten-Picker (⌘O) im Host.
@@ -29,17 +27,27 @@ struct AppToolbar: View {
     /// Hover-Zustand des Überlauf-Menüs (Material-Highlight).
     @State private var overflowHover = false
 
+    /// Gemessene Breite der Leiste — treibt das responsive Zusammenfalten des
+    /// Breadcrumbs auf schmalen Fenstern (s. `showChapter`).
+    @State private var toolbarWidth: CGFloat = 0
+
+    /// Das Kapitel-Segment des Breadcrumbs nur zeigen, wenn die Leiste breit
+    /// genug ist — sonst kollidiert es auf schmalen Fenstern mit dem
+    /// Status-Cluster und wird hart abgeschnitten. Der Seitenname (wichtiger)
+    /// bleibt immer. `0` = noch nicht gemessen → zunächst zeigen.
+    private var showChapter: Bool { toolbarWidth == 0 || toolbarWidth >= 900 }
+
     var body: some View {
         HStack(spacing: 14) {
             BookPicker()
 
-            if let chapter = library.openChapterName {
+            if showChapter, let chapter = library.openChapterName {
                 Image(systemName: "chevron.right")
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(BrandColor.faint)
                 Text(chapter)
                     .font(BrandFont.sans(12))
-                    .foregroundStyle(BrandColor.faint)
+                    .foregroundStyle(BrandColor.muted)
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .layoutPriority(1)
@@ -69,7 +77,7 @@ struct AppToolbar: View {
             // Seite schliessen — nur sichtbar, wenn eine Seite offen ist. Schliesst
             // die Seite (lokal gesichert) und öffnet den Picker für die nächste Wahl.
             if library.openPageId != nil {
-                ToolbarIconButton(systemName: "xmark.circle",
+                ToolbarIconButton(systemName: "xmark",
                                   help: t("toolbar.closePageHelp"),
                                   accessibilityLabel: t("toolbar.closePage")) {
                     library.closePage()
@@ -104,12 +112,25 @@ struct AppToolbar: View {
                                 Task { await sync.resolveConflict(pageId: pageId, keepLocal: keepLocal) }
                             })
 
+            // Fokus-Stufe + Darstellung direkt in der Leiste (statt zwei Klicks
+            // tief im Überlauf): immer sichtbar — auch im nativen Vollbild, wo die
+            // Menüleiste weg ist. Direktwahl per Inline-Picker mit Häkchen.
+            FocusMenuButton()
+            AppearanceMenuButton()
+
             overflowMenu
         }
         .padding(.leading, 16)
         .padding(.trailing, 16)
         .frame(height: 42)
         .frame(maxWidth: .infinity)
+        // Breite messen (treibt `showChapter`); Color.clear ist unsichtbar.
+        .background(
+            GeometryReader { geo in
+                Color.clear.preference(key: ToolbarWidthKey.self, value: geo.size.width)
+            }
+        )
+        .onPreferenceChange(ToolbarWidthKey.self) { toolbarWidth = $0 }
         .background(WindowDragArea())          // leere Flächen ziehen das Fenster
         // Sichtbar abgesetzte Leiste: `.regularMaterial` ist das eigentlich
         // sichtbare, klar vom Editor abgehobene Frosted-Panel (im Dark Mode
@@ -125,10 +146,9 @@ struct AppToolbar: View {
     }
 
     /// Überlauf: selten gebrauchte Aktionen gebündelt — hält die Leiste ruhig.
-    /// Die hier gebündelten Aktionen sind sonst nur über die Menüleiste
-    /// erreichbar — die im nativen Vollbild aber ausgeblendet ist. Darum sitzen
-    /// die im Schreibmodus wichtigen Einstiege (Einstellungen, Darstellung,
-    /// Fokus, manueller Sync) zusätzlich in dieser immer sichtbaren Leiste.
+    /// Darstellung + Fokus sitzen jetzt als eigene Inline-Knöpfe in der Leiste
+    /// (direkt erreichbar, auch im Vollbild) — der Überlauf trägt nur noch die
+    /// selten gebrauchten Einstiege (Einstellungen, manueller Sync, Abmelden).
     private var overflowMenu: some View {
         Menu {
             // Natives Einstellungen-Fenster (⌘,). `SettingsLink` öffnet die
@@ -136,22 +156,6 @@ struct AppToolbar: View {
             SettingsLink {
                 Label(t("toolbar.settings"), systemImage: "gearshape")
             }
-
-            Divider()
-
-            Picker(t("toolbar.appearance"), selection: $appearance.mode) {
-                ForEach(AppearanceMode.allCases) { mode in
-                    Text(mode.label).tag(mode)
-                }
-            }
-            .pickerStyle(.inline)
-
-            Picker(t("menu.focus"), selection: $focus.granularity) {
-                ForEach(FocusGranularity.allCases) { g in
-                    Text(g.label).tag(g)
-                }
-            }
-            .pickerStyle(.inline)
 
             Divider()
 
@@ -219,6 +223,90 @@ private struct ToolbarSeparator: View {
             .frame(width: 1, height: 18)
             .padding(.horizontal, 2)
             .accessibilityHidden(true)
+    }
+}
+
+/// Misst die Breite der Toolbar — Quelle für das responsive Zusammenfalten des
+/// Breadcrumbs (`AppToolbar.showChapter`).
+private struct ToolbarWidthKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
+/// Inline-Knopf für die Fokus-Stufe (Direktwahl per Häkchen-Picker). Sitzt fest
+/// in der Leiste, damit die häufig gewechselte Einstellung auch im Vollbild ohne
+/// Umweg übers Menü erreichbar bleibt. Stiltreu zum `ToolbarIconButton`.
+private struct FocusMenuButton: View {
+    @EnvironmentObject private var focus: FocusController
+    @State private var hovering = false
+
+    var body: some View {
+        Menu {
+            Picker(t("menu.focus"), selection: $focus.granularity) {
+                ForEach(FocusGranularity.allCases) { g in
+                    Text(g.label).tag(g)
+                }
+            }
+            .pickerStyle(.inline)
+        } label: {
+            Image(systemName: "scope")
+                .font(.system(size: 14))
+                .foregroundStyle(BrandColor.muted)
+                .frame(width: 28, height: 28)
+                .background(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(hovering ? BrandColor.faint.opacity(0.25) : .clear)
+                )
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .onHover { hovering = $0 }
+        .help(t("toolbar.focusControlHelp"))
+        .accessibilityLabel(t("toolbar.focusControl"))
+    }
+}
+
+/// Inline-Knopf für Hell/Dunkel/System (Direktwahl per Häkchen-Picker). Das Icon
+/// spiegelt den aktiven Modus, damit der Zustand ohne Öffnen ablesbar ist.
+private struct AppearanceMenuButton: View {
+    @EnvironmentObject private var appearance: AppearanceController
+    @State private var hovering = false
+
+    private var icon: String {
+        switch appearance.mode {
+        case .system: return "circle.lefthalf.filled"
+        case .light:  return "sun.max"
+        case .dark:   return "moon"
+        }
+    }
+
+    var body: some View {
+        Menu {
+            Picker(t("menu.appearance"), selection: $appearance.mode) {
+                ForEach(AppearanceMode.allCases) { mode in
+                    Text(mode.label).tag(mode)
+                }
+            }
+            .pickerStyle(.inline)
+        } label: {
+            Image(systemName: icon)
+                .font(.system(size: 14))
+                .foregroundStyle(BrandColor.muted)
+                .frame(width: 28, height: 28)
+                .background(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(hovering ? BrandColor.faint.opacity(0.25) : .clear)
+                )
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .onHover { hovering = $0 }
+        .help(t("toolbar.appearanceHelp"))
+        .accessibilityLabel(t("toolbar.appearance"))
     }
 }
 
@@ -306,12 +394,25 @@ struct SyncStatusLabel: View {
     /// lokalen Stand erzwingen (Server überschreiben); `false` → Server übernehmen.
     var onResolve: (String, Bool) -> Void = { _, _ in }
 
+    /// Reservierter Mindest-Slot: hält die Nachbarn (Fokus-/Darstellungs-Knopf,
+    /// Überlauf) ruhig, wenn der häufige idle↔syncing-Wechsel kurz den Spinner
+    /// einblendet. Bemessen am Spinner; die selteneren, anhaltenden Text-Zustände
+    /// (offline / „Server nicht erreichbar") dürfen ihn nach links überschreiten.
+    private static let slotWidth: CGFloat = 22
+
     var body: some View {
-        if conflicts.isEmpty {
-            statusLabel
-        } else {
-            conflictMenu
+        Group {
+            if !conflicts.isEmpty {
+                conflictMenu
+            } else if status == .idle {
+                // „Alles ok" zeigt bewusst NICHTS — kein Dauer-Häkchen (weniger
+                // Chrome). Nur syncing/offline/Fehler/Konflikte sind sichtbar.
+                Color.clear.frame(width: 0, height: 0)
+            } else {
+                statusLabel
+            }
         }
+        .frame(minWidth: Self.slotWidth, alignment: .trailing)
     }
 
     /// Klickbares Konflikt-Menü: pro betroffener Seite die Auflösungs-Wahl.
@@ -354,7 +455,9 @@ struct SyncStatusLabel: View {
                 Image(systemName: "exclamationmark.icloud").foregroundStyle(.orange)
                 Text(t("sync.state.serverUnreachable"))
             case .idle:
-                Image(systemName: "checkmark.circle").foregroundStyle(BrandColor.muted)
+                // Wird via `body` nie erreicht (idle = unsichtbar); nur für die
+                // Vollständigkeit des Switch.
+                EmptyView()
             }
         }
         .font(BrandFont.sans(11))

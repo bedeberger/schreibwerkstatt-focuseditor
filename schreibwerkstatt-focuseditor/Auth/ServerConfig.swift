@@ -40,6 +40,9 @@ enum ServerConfig {
               let host = url.host else {
             return nil
         }
+        // Eingebettete Credentials (http://user:pass@host) ablehnen: sie landeten
+        // sonst im Klartext in UserDefaults und in jeder Request-URL.
+        guard url.user == nil, url.password == nil else { return nil }
         // `localhost` deterministisch auf IPv4 zwingen (s. `fallback`).
         if host.lowercased() == "localhost",
            var comps = URLComponents(url: url, resolvingAgainstBaseURL: false) {

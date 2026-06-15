@@ -32,7 +32,15 @@ enum AuthError: Error, LocalizedError {
         case .invalidServerURL:
             return t("auth.err.invalidServerURL")
         case .network(let underlying):
-            return t("auth.err.network", ["detail": underlying.localizedDescription])
+            // Datenschutz (Repo public): nur eine URL-freie Kategorie zeigen.
+            // `URLError.localizedDescription` ist per Apple-Design URL-frei; ein
+            // beliebiger anderer Error könnte dagegen sensible Details (URL etc.)
+            // tragen → dann generisch bleiben. Der rohe Fehler wird hier NICHT
+            // gerendert (Logging erfolgt anderswo mit `privacy: .private`).
+            if let urlError = underlying as? URLError {
+                return t("auth.err.network", ["detail": urlError.localizedDescription])
+            }
+            return t("auth.err.networkGeneric")
         case .server(let status, let code, _):
             if let code { return t("auth.err.serverWithCode", ["status": "\(status)", "code": code]) }
             return t("auth.err.server", ["status": "\(status)"])

@@ -47,7 +47,10 @@ final class LibraryStore: ObservableObject {
     /// Aktives Buch ist server-spezifisch (eine Buch-ID gilt nur am Server, der
     /// sie vergeben hat) → Key pro Server-Namespace. Sonst wählt der Client am
     /// neuen Server eine Buch-ID des alten (→ `NO_BOOK_ACCESS`).
-    private var defaultsKey: String { "library.activeBookId.\(ServerNamespace.currentSlug)" }
+    /// EINE Quelle für den buch-skopierten Key (kein inline-Literal mehr — sonst
+    /// driftet ein Aufrufer bei einer Prefix-Änderung still ab).
+    private static func bookDefaultsKey() -> String { "library.activeBookId.\(ServerNamespace.currentSlug)" }
+    private var defaultsKey: String { Self.bookDefaultsKey() }
     private static let legacyDefaultsKey = "library.activeBookId"
 
     init(content: ContentAPI, store: any LocalStore, bridge: EditorBridge) {
@@ -57,16 +60,23 @@ final class LibraryStore: ObservableObject {
         // Alt-Key (global) einmalig in den Namespace des aktuellen Servers ziehen.
         Self.migrateLegacyBookKeyIfNeeded()
         // Aktives Buch wiederherstellen (0 = nicht gesetzt).
-        let saved = UserDefaults.standard.integer(forKey: "library.activeBookId.\(ServerNamespace.currentSlug)")
+        let saved = UserDefaults.standard.integer(forKey: Self.bookDefaultsKey())
         self.activeBookId = saved == 0 ? nil : saved
         // Offene Seite vom Editor übernehmen (per Picker geöffnet oder beim Boot
         // wiederhergestellt) — hält die Toolbar-Anzeige aktuell.
         bridge.onOpenPageChange = { [weak self] pageId in
-            self?.openPageId = pageId.flatMap(Int.init)
+            guard let self else { return }
+            // Der optimistische `openPage`-Write setzt `openPageId` bereits; die
+            // spätere `editorState`-Bestätigung darf NICHT erneut publizieren, wenn
+            // sich nichts ändert (sonst zweite View-Invalidierung → Flackern des
+            // Leerzustands über `.animation(value: openPageId)`).
+            let newValue = pageId.flatMap(Int.init)
+            if self.openPageId != newValue { self.openPageId = newValue }
         }
         // Dirty-Zustand der offenen Seite → Save-Indikator in der Toolbar.
         bridge.onOpenDirtyChange = { [weak self] dirty in
-            self?.openPageDirty = dirty
+            guard let self else { return }
+            if self.openPageDirty != dirty { self.openPageDirty = dirty }
         }
     }
 
@@ -243,7 +253,7 @@ final class LibraryStore: ObservableObject {
         let defaults = UserDefaults.standard
         let legacy = defaults.integer(forKey: legacyDefaultsKey)
         guard legacy != 0 else { return }
-        let targetKey = "library.activeBookId.\(ServerNamespace.currentSlug)"
+        let targetKey = bookDefaultsKey()
         if defaults.integer(forKey: targetKey) == 0 {
             defaults.set(legacy, forKey: targetKey)
         }

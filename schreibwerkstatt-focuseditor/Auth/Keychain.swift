@@ -37,6 +37,10 @@ enum Keychain {
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
             kSecValueData as String: data,
+            // Explizit NICHT über iCloud synchronisieren — derselbe Default-Wert,
+            // den auch `read`/`delete` setzen, damit alle drei Queries deterministisch
+            // denselben Eintrag treffen (sonst greift der Duplikat-Fallback unten).
+            kSecAttrSynchronizable as String: false,
             // Nur bei entsperrtem Gerät lesbar und nicht in Backups/iCloud. Der
             // Sync läuft nur bei aktivem Fenster (nie im Hintergrund/gesperrt),
             // darum genügt `WhenUnlocked` — strenger als `AfterFirstUnlock`, ohne
@@ -57,6 +61,7 @@ enum Keychain {
                 kSecClass as String: kSecClassGenericPassword,
                 kSecAttrService as String: service,
                 kSecAttrAccount as String: account,
+                kSecAttrSynchronizable as String: false,
             ]
             let attrs: [String: Any] = [
                 kSecValueData as String: data,
@@ -78,6 +83,7 @@ enum Keychain {
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
+            kSecAttrSynchronizable as String: false,
             kSecReturnData as String: true,
             kSecMatchLimit as String: kSecMatchLimitOne,
         ]
@@ -99,6 +105,7 @@ enum Keychain {
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
+            kSecAttrSynchronizable as String: false,
         ]
         let status = SecItemDelete(query as CFDictionary)
         return status == errSecSuccess || status == errSecItemNotFound

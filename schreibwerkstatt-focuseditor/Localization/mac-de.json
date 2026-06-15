@@ -176,6 +176,9 @@
   "toolbar.closePage": "Seite schließen",
   "toolbar.closePageHelp": "Seite schließen — zur ruhigen Leerfläche",
   "toolbar.appearance": "Darstellung",
+  "toolbar.appearanceHelp": "Darstellung wählen (Hell / Dunkel / System)",
+  "toolbar.focusControl": "Fokus-Stufe",
+  "toolbar.focusControlHelp": "Fokus-Stufe wählen",
   "toolbar.moreOptions": "Weitere Optionen",
   "toolbar.settings": "Einstellungen …",
   "toolbar.words.one": "{n} Wort",
@@ -252,6 +255,7 @@
   "auth.err.unauthorized": "Token ungültig oder widerrufen. Bitte stelle in der Schreibwerkstatt ein neues Gerätetoken aus.",
   "auth.err.invalidServerURL": "Server-Adresse ist ungültig.",
   "auth.err.network": "Keine Verbindung zum Server: {detail}",
+  "auth.err.networkGeneric": "Keine Verbindung zum Server.",
   "auth.err.serverWithCode": "Serverfehler ({status}): {code}",
   "auth.err.server": "Serverfehler ({status}).",
   "auth.err.decoding": "Unerwartete Server-Antwort."

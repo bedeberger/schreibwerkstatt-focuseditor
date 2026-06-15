@@ -34,6 +34,9 @@ final class AppCore: ObservableObject {
     /// Server-Namespace, auf den die Stores aktuell zeigen. Erkennt einen Wechsel
     /// (Settings ODER URL-Edit im Login) gegen `ServerNamespace.currentSlug`.
     private var boundSlug: String
+    /// Reentrancy-Schutz: der Sign-in-Status-Publisher kann mehrfach feuern
+    /// (Start-mit-Token UND Login) → einen laufenden Wechsel nicht doppelt fahren.
+    private var switchInFlight = false
 
     init() {
         self.boundSlug = ServerNamespace.currentSlug
@@ -81,6 +84,10 @@ final class AppCore: ObservableObject {
     /// Objekt-Identitäten bleiben erhalten (Store/Sync/Library tauschen nur ihre
     /// zugrundeliegenden Dateien) → Bridge- und Controller-Bindungen bleiben gültig.
     func switchServer() async {
+        // Sync VOR dem Store-Tausch anhalten und einen laufenden Durchlauf
+        // abwarten — sonst committet ein in-flight DB-Write evtl. noch in die
+        // alte Namespace-DB (Datenverlust für den neuen Server).
+        await sync.suspendForServerSwitch()
         do {
             try await store.switchToCurrentServer()
         } catch {
@@ -94,9 +101,13 @@ final class AppCore: ObservableObject {
 
     /// Schaltet nur um, wenn sich der Server-Namespace seit dem letzten Binden
     /// geändert hat. Deckt den Login-Pfad ab (URL im Login-Screen editiert, dann
-    /// angemeldet) und ist nach einem direkten `switchServer()` ein No-op.
+    /// angemeldet) und ist nach einem direkten `switchServer()` ein No-op. Der
+    /// Reentrancy-Guard verhindert, dass der mehrfach feuernde Sign-in-Publisher
+    /// zwei Wechsel überlappend fährt (Race auf Store/Sync-Zustand).
     func switchServerIfNeeded() async {
-        guard boundSlug != ServerNamespace.currentSlug else { return }
+        guard !switchInFlight, boundSlug != ServerNamespace.currentSlug else { return }
+        switchInFlight = true
+        defer { switchInFlight = false }
         await switchServer()
     }
 

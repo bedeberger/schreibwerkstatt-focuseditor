@@ -560,11 +560,28 @@ final class EditorBridge: NSObject, WKScriptMessageHandlerWithReply, EditorCoord
     /// WebView/kein Bundle verfügbar ist → Aufrufer behandelt das als Konflikt.
     func merge3(base: String?, local: String, server: String) async throws -> MergeOutcome {
         guard let webView else { throw BridgeError.webViewUnavailable }
-        let result = try await webView.callAsyncJavaScript(
-            "return await window.__focusBridge._merge3(base, local, server);",
-            arguments: ["base": base ?? "", "local": local, "server": server],
-            in: nil,
-            contentWorld: .page)
+        // Timeout-Schutz: `_merge3` macht ein dynamisches `import(block-merge.js)`.
+        // Hängt das Modul (z. B. stockender Import), würde der awaitende 409-Push
+        // des Syncs SONST UNBEGRENZT blockieren. Race gegen einen Timeout; greift
+        // er, behandelt der Aufrufer es wie „Merge nicht verfügbar" (→ Konflikt-UI).
+        let result: Any?
+        do {
+            result = try await withThrowingTaskGroup(of: Any?.self) { group in
+                group.addTask { @MainActor in
+                    try await webView.callAsyncJavaScript(
+                        "return await window.__focusBridge._merge3(base, local, server);",
+                        arguments: ["base": base ?? "", "local": local, "server": server],
+                        in: nil,
+                        contentWorld: .page)
+                }
+                group.addTask {
+                    try await Task.sleep(for: .seconds(8))
+                    throw BridgeError.mergeTimedOut
+                }
+                defer { group.cancelAll() }
+                return try await group.next() ?? nil
+            }
+        }
         guard let dict = result as? [String: Any],
               let merged = dict["merged"] as? String else {
             throw BridgeError.mergeFailed
@@ -603,6 +620,7 @@ enum BridgeError: LocalizedError {
     case missingParam(String)
     case webViewUnavailable
     case mergeFailed
+    case mergeTimedOut
     case languagetool(status: Int)
 
     var errorDescription: String? {
@@ -611,6 +629,7 @@ enum BridgeError: LocalizedError {
         case .missingParam(let key): return "Bridge: Parameter '\(key)' fehlt"
         case .webViewUnavailable:    return "Bridge: keine WebView verfügbar (Swift→JS)"
         case .mergeFailed:           return "Bridge: Block-Merge lieferte kein Ergebnis"
+        case .mergeTimedOut:         return "Bridge: Block-Merge zeitüberschritten"
         case .languagetool(let s):   return "Bridge: LanguageTool-Proxy antwortete mit Status \(s)"
         }
     }

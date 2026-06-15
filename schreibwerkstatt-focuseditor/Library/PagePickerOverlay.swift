@@ -304,9 +304,10 @@ struct PagePickerOverlay: View {
             .padding(.leading, CGFloat(row.depth) * 14 + 14)
             .padding(.trailing, 14)
             .contentShape(Rectangle())
-            // Tastatur-/Hover-Fokus → Marken-Gold (Akzent); hebt sich klar vom
-            // Navy „offen"-Badge ab.
-            .background(isSelected ? BrandColor.accent.opacity(0.16) : Color.clear)
+            // Tastatur-/Hover-Fokus → Marken-Navy (primary). Gold bleibt dem
+            // „etwas passiert gerade"-Zustand vorbehalten (ungespeichert /
+            // Ziel erreicht); die Auswahl ist Navigation, kein Zustandswechsel.
+            .background(isSelected ? BrandColor.primary.opacity(0.14) : Color.clear)
         }
         .buttonStyle(.plain)
     }

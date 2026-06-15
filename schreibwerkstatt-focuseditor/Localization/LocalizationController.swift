@@ -66,8 +66,11 @@ final class LocalizationController: ObservableObject {
     /// persistiert, damit die „folgt dem Server"-Semantik erhalten bleibt.
     func seedFromServerIfNeeded() async {
         guard !hasLocalOverride, let bridge else { return }
-        guard let raw = await bridge.serverLocale(),
-              let server = AppLanguage(rawValue: raw) else { return }
+        guard let raw = await bridge.serverLocale() else { return }
+        // Server liefert ggf. eine regionale Locale (z. B. "de-CH", s. CLAUDE.md
+        // getBookLocale) — exakte `rawValue`-Zuordnung würde daran scheitern. Auf
+        // de/en normalisieren (gleiche Regel wie `resolveLocale`).
+        let server: AppLanguage = raw.lowercased().hasPrefix("de") ? .de : .en
         guard !hasLocalOverride, server != language else { return }
         isSeeding = true
         language = server      // aktualisiert UI + Locale, ohne zu persistieren

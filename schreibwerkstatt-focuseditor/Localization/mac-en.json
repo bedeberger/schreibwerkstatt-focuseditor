@@ -176,6 +176,9 @@
   "toolbar.closePage": "Close page",
   "toolbar.closePageHelp": "Close page — return to the calm canvas",
   "toolbar.appearance": "Appearance",
+  "toolbar.appearanceHelp": "Choose appearance (Light / Dark / System)",
+  "toolbar.focusControl": "Focus level",
+  "toolbar.focusControlHelp": "Choose focus level",
   "toolbar.moreOptions": "More options",
   "toolbar.settings": "Settings …",
   "toolbar.words.one": "{n} word",
@@ -252,6 +255,7 @@
   "auth.err.unauthorized": "Token invalid or revoked. Please issue a new device token in Schreibwerkstatt.",
   "auth.err.invalidServerURL": "Server address is invalid.",
   "auth.err.network": "No connection to the server: {detail}",
+  "auth.err.networkGeneric": "No connection to the server.",
   "auth.err.serverWithCode": "Server error ({status}): {code}",
   "auth.err.server": "Server error ({status}).",
   "auth.err.decoding": "Unexpected server response."

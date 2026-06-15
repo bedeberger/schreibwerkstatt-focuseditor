@@ -166,7 +166,7 @@ Zwei Implementierungen:
 
 ## 5. Sync-Schicht: Poll, Push, Pull, Merge
 
-Alle Dateien unter [Sync/](schreibwerkstatt-focuseditor/Sync/). Kern ist [SyncEngine.swift](schreibwerkstatt-focuseditor/Sync/SyncEngine.swift) — `@MainActor final class`, ~530 Zeilen.
+Alle Dateien unter [Sync/](schreibwerkstatt-focuseditor/Sync/). Kern ist [SyncEngine.swift](schreibwerkstatt-focuseditor/Sync/SyncEngine.swift) — `@MainActor final class`, ~1030 Zeilen, gegliedert über `// MARK:`-Abschnitte (Lifecycle · Durchlauf · Push · Pull · Delete-Reconcile · Konflikte).
 
 ### Poll-Loop
 

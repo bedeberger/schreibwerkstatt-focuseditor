@@ -111,7 +111,11 @@ enum WebAssets {
         // dynamisch geladen). Von Swift via callAsyncJavaScript aufgerufen.
         // Wirft, wenn kein Bundle vorliegt (Dev-Harness) → Swift wertet das als Konflikt.
         _merge3: async function (baseHtml, localHtml, serverHtml) {
-          const m = await import('/js/editor/shared/block-merge.js');
+          // Relativer Specifier wie der restliche Boot-Glue (./js/…). Ein
+          // root-absoluter Pfad (/js/…) bräche, sobald der Cache-Root nicht der
+          // Origin-Root ist — und würde JEDEN 409 still zum harten Konflikt
+          // degradieren. Konsistent halten zu standalone.js/controller.js unten.
+          const m = await import('./js/editor/shared/block-merge.js');
           const res = m.mergeBlocks(baseHtml || '', localHtml || '', serverHtml || '');
           return { merged: m.mergedToHtml(res.merged), conflictCount: res.conflicts.length };
         },
