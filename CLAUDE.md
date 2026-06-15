@@ -183,10 +183,3 @@ Der App-Sources-Ordner ist eine `PBXFileSystemSynchronizedRootGroup` (Xcode 16+)
   ```
 
   Für kompakte Ausgabe `-quiet` anhängen. Verifiziert lauffähig am 2026-06-14 (`** BUILD SUCCEEDED **`).
-
-## Roadmap (offene Punkte)
-
-Der funktionale Kern steht (OTA-Bundle, Device-Token-Auth inkl. Web-`/me`-Ausstell-UI, inkrementeller Sync, macOS-Shell + Offline-Kern, nativer Feinschliff). Offen ist nur noch die Distributions-Kette:
-
-1. **Verteilung (Signing/Notarization)** — *Skripte vorbereitet, Apple-Setup offen*: Hardened Runtime + App Sandbox + Netzwerk-Entitlement stehen im Projekt; [scripts/notarize.sh](scripts/notarize.sh) (App signieren/notarisieren/stapeln) + `scripts/release-dmg.sh` (Release → signiertes, notarisiertes `.dmg`) sind fertig. **Offen — einmalig (s. [SIGNING.md](SIGNING.md)):** Apple Developer Program Enrollment (~99 $/Jahr), „Developer ID Application"-Zertifikat (aktuell `0 Identities`), `DEVELOPMENT_TEAM` im Projekt, `notarytool`-Credentials (`swk-notary`).
-2. **Sparkle-Auto-Update** — *geplant, noch nicht integriert*: SPM-Dependency + EdDSA-Keypair (eigener Sparkle-Schlüssel, unabhängig vom Apple-Zertifikat) + Appcast-Feed. Baut auf der notarisierten `.app` aus Punkt 1 auf.

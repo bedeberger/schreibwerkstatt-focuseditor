@@ -20,6 +20,15 @@ struct schreibwerkstatt_focuseditorApp: App {
         // gar nicht erst erscheinen. Ablenkungsfreies Schreiben auf genau einer
         // Seite (CLAUDE.md) verträgt keine Tab-Leiste.
         NSWindow.allowsAutomaticWindowTabbing = false
+
+        // Tooltip-Verzögerung verkürzen. Die SwiftUI-`.help(…)`-Tooltips hängen am
+        // AppKit-`toolTip`-Mechanismus, dessen initiale Verzögerung system-weit bei
+        // ~2–3 s liegt — in der schmalen Toolbar fühlt sich das träge an. Der
+        // (private, aber seit Jahren stabile) Default `NSInitialToolTipDelay` steuert
+        // die Verzögerung in Millisekunden; früh im App-`init` registriert greift er,
+        // bevor der erste Tooltip aufgebaut wird. `register` statt `set`, damit eine
+        // explizite Nutzer-/System-Einstellung Vorrang behält.
+        UserDefaults.standard.register(defaults: ["NSInitialToolTipDelay": 400])
     }
 
     @StateObject private var core = AppCore()

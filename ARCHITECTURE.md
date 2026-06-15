@@ -166,7 +166,7 @@ Zwei Implementierungen:
 
 ## 5. Sync-Schicht: Poll, Push, Pull, Merge
 
-Alle Dateien unter [Sync/](schreibwerkstatt-focuseditor/Sync/). Kern ist [SyncEngine.swift](schreibwerkstatt-focuseditor/Sync/SyncEngine.swift) — `@MainActor final class`, ~1030 Zeilen, gegliedert über `// MARK:`-Abschnitte (Lifecycle · Durchlauf · Push · Pull · Delete-Reconcile · Konflikte).
+Alle Dateien unter [Sync/](schreibwerkstatt-focuseditor/Sync/). Kern ist die `@MainActor final class SyncEngine`, aus Lesbarkeitsgründen über drei Dateien gesplittet (ein Typ, `extension`-Aufteilung, kein Verhaltensunterschied): [SyncEngine.swift](schreibwerkstatt-focuseditor/Sync/SyncEngine.swift) (Typen · State · Lifecycle · Durchlauf `syncNow` · Konflikt-UI), [SyncEngine+Push.swift](schreibwerkstatt-focuseditor/Sync/SyncEngine+Push.swift) (`pushOutbox` · Auto-Merge) und [SyncEngine+Pull.swift](schreibwerkstatt-focuseditor/Sync/SyncEngine+Pull.swift) (Pull · Delete-Reconcile). Weil `private` in Swift dateiweit ist, sind die von den Extensions geteilten Member `internal` statt `private` (Single-Module — nichts außerhalb referenziert `SyncEngine`).
 
 ### Poll-Loop
 

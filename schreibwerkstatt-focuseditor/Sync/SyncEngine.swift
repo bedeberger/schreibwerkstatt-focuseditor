@@ -18,6 +18,10 @@
 //  ohne Merge überschrieben. Bei Auth-Fehlern (401) beendet der APIClient die
 //  Session; lokale Inhalte bleiben.
 //
+//  Aufteilung: Der Push-Pfad liegt in SyncEngine+Push.swift, der Pull- und
+//  Delete-Reconcile-Pfad in SyncEngine+Pull.swift. Diese Datei hält Typen,
+//  State, Lifecycle/Polling, den Durchlauf (`syncNow`) und die Konflikt-UI.
+//
 
 import Foundation
 import Combine
@@ -75,17 +79,22 @@ final class SyncEngine: ObservableObject {
         }
     }
 
-    private let api: APIClient
-    private let content: ContentAPI
-    private let store: any LocalStore
+    // Hinweis: Mehrere Member sind `internal` (kein `private`), weil der Push- und
+    // der Pull-Pfad in eigene Dateien ausgelagert sind (SyncEngine+Push.swift,
+    // SyncEngine+Pull.swift). `private` ist in Swift dateiweit — diese Extensions
+    // brauchen Zugriff auf den geteilten Engine-State. Single-Module: nichts
+    // außerhalb referenziert SyncEngine, die Kapselung bleibt praktisch erhalten.
+    let api: APIClient
+    let content: ContentAPI
+    let store: any LocalStore
     private let reachability: Reachability
-    private let stateStore: SyncStateStore
+    let stateStore: SyncStateStore
     /// Editor-Kopplung (Open-Page-Reload, Block-Merge). Schwach: AppCore besitzt
     /// die Bridge. `nil` solange keine WebView läuft → Merge fällt auf Konflikt zurück.
     weak var editor: EditorCoordinating?
     /// Liefert, ob synchronisiert werden darf (z. B. nur bei `signedIn`).
     private let shouldSync: () -> Bool
-    private let log = Logger(subsystem: "ch.schreibwerkstatt.focuseditor", category: "sync")
+    let log = Logger(subsystem: "ch.schreibwerkstatt.focuseditor", category: "sync")
 
     /// Aktive Poll-Periode aus dem gewählten Modus (`nil` = manuell, kein Loop).
     private var pollInterval: Duration? { isPaused ? nil : pollMode.interval }
@@ -93,23 +102,23 @@ final class SyncEngine: ObservableObject {
     private var autoPollEnabled: Bool { isActive && !isPaused && pollMode.interval != nil }
     /// Delete-Reconcile ist teurer (ein Tree-Fetch je Buch) → seltener als der
     /// Poll. Mindestabstand zwischen zwei Reconcile-Durchläufen.
-    private let reconcileInterval: TimeInterval = 60
-    private var lastReconcileAt: Date?
+    let reconcileInterval: TimeInterval = 60
+    var lastReconcileAt: Date?
     /// Die Bücherliste wird (anders als früher) nicht nur einmal gebootstrappt,
     /// sondern gedrosselt aufgefrischt — sonst würden in der Web-App neu
     /// angelegte Bücher nie gepullt. Gleiche Kadenz wie der Reconcile.
-    private let booksRefreshInterval: TimeInterval = 60
-    private var lastBooksRefreshAt: Date?
+    let booksRefreshInterval: TimeInterval = 60
+    var lastBooksRefreshAt: Date?
     /// Serverseitig gesperrte Seiten (423 PAGE_LOCKED): nicht bei jedem Tick
     /// erneut pushen, sondern bis zum Ablauf der Sperrfrist überspringen
     /// (vermeidet Dauer-PUTs + Log-Spam bei langem Lektorats-Lock).
-    private let lockBackoff: TimeInterval = 60
-    private var lockedUntil: [String: Date] = [:]
+    let lockBackoff: TimeInterval = 60
+    var lockedUntil: [String: Date] = [:]
     /// Wie oft ein Auto-Merge in Folge erneut am 409-Rennen scheitern darf, bevor
     /// die Seite als SICHTBARER Konflikt erfasst wird (statt jeden Tick einen
     /// vollen Merge-Roundtrip zu fahren, der nie konvergiert → Live-Lock-Schutz).
-    private let maxAutoMergeRetries = 3
-    private var autoMergeRe409: [String: Int] = [:]
+    let maxAutoMergeRetries = 3
+    var autoMergeRe409: [String: Int] = [:]
 
     private var isRunning = false
     private var isActive = false
@@ -377,7 +386,7 @@ final class SyncEngine: ObservableObject {
     /// Flag unverändert. Der Fehler wird unverändert weitergereicht — die
     /// bestehende Fehlerbehandlung (409-Merge, 404/423-Skip, 401-Abbruch) bleibt.
     @discardableResult
-    private func reachableSend<T>(_ call: () async throws -> T) async throws -> T {
+    func reachableSend<T>(_ call: () async throws -> T) async throws -> T {
         do {
             let result = try await call()
             serverReachedThisRun = true
@@ -392,512 +401,9 @@ final class SyncEngine: ObservableObject {
         }
     }
 
-    // MARK: - Push
-
-    private func pushOutbox() async throws {
-        let entries = try await store.pendingOutbox()
-        let now = Date()
-        for entry in entries {
-            // Selbstheilung: die 'default'-Platzhalter-Seite (Boot-Fallback bei
-            // leerem/ungesynctem Buch) ist kein echter Datensatz — kein Buch,
-            // keine Server-Basis. Frühere Builds persistierten sie und sie blieb
-            // als nie-pushbarer „default"-Konflikt zurück. Solche Leichen hier
-            // restlos tilgen (Store + Outbox + State + evtl. Konflikt), statt sie
-            // erneut als Konflikt zu erfassen. (Prävention: WebAssets.savePage
-            // speichert 'default' gar nicht mehr.)
-            if entry.pageId == Self.placeholderPageId {
-                try await store.deletePage(id: entry.pageId)
-                stateStore.mutate {
-                    $0.serverBaseISO[entry.pageId] = nil
-                    $0.serverBaseHtml[entry.pageId] = nil
-                }
-                clearConflict(pageId: entry.pageId)
-                log.info("Platzhalter-Seite '\(entry.pageId, privacy: .public)' getilgt (kein echter Datensatz)")
-                continue
-            }
-
-            // Unaufgelöste Konflikte nicht erneut blind pushen.
-            if conflicts.contains(where: { $0.pageId == entry.pageId }) { continue }
-
-            // Serverseitig gesperrte Seite (423) noch in der Backoff-Frist → diesen
-            // Tick überspringen, statt erneut nutzlos zu pushen.
-            if let until = lockedUntil[entry.pageId], until > now { continue }
-
-            guard let base = stateStore.state.serverBaseISO[entry.pageId] else {
-                // Keine Server-Basis → PUT kann nur updaten, nicht anlegen
-                // (Anlegen wäre POST /content/pages). Zwei Fälle unterscheiden:
-                //   • Seite HAT ein Buch → sie ist nur noch nicht gepullt; der
-                //     nächste Pull setzt die Basis, dann pusht sie. Still weiter.
-                //   • Seite hat KEIN Buch → Waise (z. B. Rest eines früheren
-                //     Servers): wird NIE gepullt (Pull ist buch-skopiert) und NIE
-                //     gepusht → ihre lokalen Edits versickern lautlos. Darum als
-                //     sichtbaren Konflikt erfassen (Toolbar-Indikator), statt sie
-                //     ewig still zu überspringen. Lokaler Inhalt bleibt erhalten;
-                //     der Konflikt-Guard oben verhindert nutzlose Re-Versuche.
-                let storedBookId = ((try? await store.page(id: entry.pageId)) ?? nil)?.bookId
-                if storedBookId == nil {
-                    await recordConflict(pageId: entry.pageId, serverUpdatedAt: nil, serverEditorName: nil)
-                    log.notice("Push-Sackgasse: Seite ohne Buch & ohne Server-Basis (Waise) als Konflikt erfasst: \(entry.pageId, privacy: .public)")
-                } else {
-                    log.info("Push übersprungen (keine Server-Basis, noch nicht gepullt): \(entry.pageId, privacy: .public)")
-                }
-                continue
-            }
-
-            let req = PushRequest(html: entry.html, expected_updated_at: base)
-            do {
-                let resp = try await reachableSend {
-                    try await api.send("/content/pages/\(entry.pageId)",
-                                       method: .PUT,
-                                       body: req,
-                                       decode: PushResponse.self)
-                }
-                // ERST Outbox atomar quittieren, DANN die Basis vorrücken — und nur,
-                // wenn wirklich quittiert wurde. Hat der Nutzer WÄHREND des PUT erneut
-                // gespeichert, trägt der neue Outbox-Eintrag eine andere Basis; die
-                // Basis dann NICHT auf diesen überholten Push-Stand vorrücken (sonst
-                // pushte der nächste Tick das neue HTML gegen eine Basis, die nicht zu
-                // seinem Inhalt passt). Datenverlust-Schutz (s. markPushed-Vertrag).
-                let quittiert = try await store.markPushed(
-                    id: entry.pageId,
-                    queuedAt: entry.queuedAt,
-                    serverUpdatedAtMillis: ISOTime.millis(resp.updated_at) ?? entry.queuedAt)
-                if quittiert {
-                    stateStore.mutate {
-                        $0.serverBaseISO[entry.pageId] = resp.updated_at   // exakte Server-ISO
-                        $0.serverBaseHtml[entry.pageId] = entry.html       // Merge-Ancestor
-                    }
-                    // Erfolgreicher Push → eine etwaige Lock-Backoff-Frist aufheben.
-                    lockedUntil[entry.pageId] = nil
-                } else {
-                    // Zwischenzeitlicher Save → der nächste Tick pusht den neuen Stand
-                    // regulär (ggf. 409 → Block-Merge). Basis bewusst nicht vorgerückt.
-                    log.info("Push nicht quittiert (Save während PUT): \(entry.pageId, privacy: .public)")
-                }
-            } catch let AuthError.server(status, _, body) where status == 409 {
-                // Stale-Write → 3-Wege-Block-Merge versuchen, sonst Konflikt erfassen.
-                let c = body.flatMap { try? JSONDecoder().decode(ConflictBody.self, from: $0) }
-                await resolveConflict(entry: entry, conflict: c)
-            } catch let AuthError.server(status, _, body) where status == 423 {
-                // Seite serverseitig gesperrt (Lektorat) — später erneut versuchen,
-                // aber mit Backoff: bis zum Ablauf der Frist überspringt der Push
-                // diese Seite (kein Dauer-PUT bei langem Lock). Lokaler Stand bleibt.
-                // Das genaue Lock-Ende aus dem 423-Body übernehmen, falls vorhanden
-                // (langer Lektorats-Lock → keine nutzlosen 60-s-Re-Versuche/Log-Spam);
-                // sonst auf den festen Backoff zurückfallen.
-                let lock = body.flatMap { try? JSONDecoder().decode(LockBody.self, from: $0) }
-                let until: Date
-                if let expISO = lock?.expires_at, let exp = ISOTime.date(expISO), exp > now {
-                    until = exp
-                } else {
-                    until = now.addingTimeInterval(lockBackoff)
-                }
-                lockedUntil[entry.pageId] = until
-                log.info("Seite gesperrt (423) bis \(until.timeIntervalSince1970, privacy: .public): \(entry.pageId, privacy: .public)")
-            } catch let AuthError.server(status, _, _) where status == 404 {
-                // Seite existiert serverseitig nicht mehr (PUT legt nicht an) —
-                // Basis verwerfen, Inhalt aber lokal behalten (kein Datenverlust).
-                // OHNE Server-Basis würde der Push die Seite ab jetzt STILL für
-                // immer überspringen (Sackgasse). Darum als sichtbaren Konflikt
-                // erfassen, damit der Nutzer es bemerkt; der Konflikt-Guard oben
-                // verhindert zugleich nutzlose Re-Pushes.
-                stateStore.mutate { $0.serverBaseISO[entry.pageId] = nil }
-                await recordConflict(pageId: entry.pageId, serverUpdatedAt: nil, serverEditorName: nil)
-                log.notice("Seite serverseitig nicht gefunden (404), als Konflikt erfasst: \(entry.pageId, privacy: .public)")
-            } catch AuthError.unauthorized {
-                // Session beendet → ganzen Sync abbrechen (kein blindes Weiterpushen).
-                throw AuthError.unauthorized
-            } catch {
-                // Netzfehler/Timeout o. Ä. → nur diesen Eintrag überspringen, die
-                // restliche Outbox nicht blockieren. Nächster Tick versucht erneut.
-                log.error("Push fehlgeschlagen \(entry.pageId, privacy: .public): \(error.localizedDescription, privacy: .public)")
-                continue
-            }
-        }
-    }
-
-    /// 409-Auflösung per 3-Wege-Block-Merge in der WebView. Kollisionsfrei →
-    /// gemergtes HTML mit der neuen Server-Basis erneut pushen; echte Block-
-    /// Kollision oder kein Merge möglich → Konflikt erfassen (Editor-UI/Block-Merge).
-    /// Verwirft NIE lokale Inhalte.
-    private func resolveConflict(entry: OutboxEntry, conflict c: ConflictBody?) async {
-        let pid = entry.pageId
-
-        // Kein WebView/Editor-Bundle → nicht auto-mergebar, echter Konflikt für die UI.
-        guard let editor else {
-            await recordConflict(pageId: pid,
-                                 serverUpdatedAt: c?.server_updated_at,
-                                 serverEditorName: c?.server_editor_name)
-            log.notice("Konflikt \(pid, privacy: .public): kein Editor zum Mergen")
-            return
-        }
-
-        // Aktuelles Server-HTML + neue Basis holen. Ein transienter Netzfehler hier
-        // darf KEINEN klebrigen Konflikt setzen (würde die Seite bis Neustart vom
-        // Sync ausschließen). Stattdessen still verschieben: Eintrag bleibt in der
-        // Outbox ohne Konflikt-Flag, der nächste Push-Tick versucht es erneut.
-        let serverPage: PushResponse
-        do {
-            serverPage = try await reachableSend {
-                try await api.send("/content/pages/\(pid)",
-                                   method: .GET,
-                                   decode: PushResponse.self)
-            }
-        } catch {
-            log.notice("Konflikt-Merge für \(pid, privacy: .public) verschoben: \(error.localizedDescription, privacy: .public)")
-            return
-        }
-
-        let serverHtml = serverPage.html ?? ""
-        let base = stateStore.state.serverBaseHtml[pid]
-
-        let outcome: MergeOutcome
-        do {
-            outcome = try await editor.merge3(base: base, local: entry.html, server: serverHtml)
-        } catch {
-            // Kein Editor-Bundle/WebView → nicht auto-mergebar, als Konflikt zur UI.
-            await recordConflict(pageId: pid,
-                                 serverUpdatedAt: serverPage.updated_at,
-                                 serverEditorName: c?.server_editor_name)
-            log.notice("Block-Merge nicht verfügbar für \(pid, privacy: .public) — Konflikt offen")
-            return
-        }
-
-        guard outcome.conflictCount == 0 else {
-            // Echte Block-Kollision → Konflikt-Modal des Editors.
-            await recordConflict(pageId: pid,
-                                 serverUpdatedAt: serverPage.updated_at,
-                                 serverEditorName: c?.server_editor_name)
-            log.notice("Block-Kollision bei \(pid, privacy: .public): \(outcome.conflictCount) Block/Blöcke — UI nötig")
-            return
-        }
-
-        // Kollisionsfrei: gemergtes HTML mit der neuen Server-Basis erneut pushen.
-        let req = PushRequest(html: outcome.merged, expected_updated_at: serverPage.updated_at)
-        do {
-            let resp = try await reachableSend {
-                try await api.send("/content/pages/\(pid)",
-                                   method: .PUT,
-                                   body: req,
-                                   decode: PushResponse.self)
-            }
-            let ms = ISOTime.millis(resp.updated_at) ?? entry.queuedAt
-            // Gemergten Stand ERST lokal übernehmen + Outbox quittieren, DANN die
-            // Basis vorrücken. Schlägt der lokale Write fehl, die Basis NICHT
-            // vorrücken und den Eintrag NICHT quittieren: der nächste Tick merged
-            // denselben Stand idempotent erneut, statt mit vorgerückter Basis das
-            // alte lokale HTML gegen den bereits gemergten Server-Stand zu pushen
-            // (das würde die eingemergten Server-Änderungen verlieren).
-            let quittiert: Bool
-            do {
-                try await store.applyServerPage(id: pid, html: outcome.merged,
-                                                pageName: nil, bookId: nil, chapterId: nil,
-                                                serverUpdatedAtMillis: ms)
-                quittiert = try await store.markPushed(id: pid, queuedAt: entry.queuedAt, serverUpdatedAtMillis: ms)
-            } catch {
-                log.error("Auto-Merge lokal persistieren fehlgeschlagen \(pid, privacy: .public): \(error.localizedDescription, privacy: .public) — Basis nicht vorgerückt, Retry beim nächsten Tick")
-                return
-            }
-            guard quittiert else {
-                // Save während des Merge-PUT → der neue Outbox-Eintrag wird beim
-                // nächsten Tick frisch gemergt. Basis NICHT vorrücken (sonst ginge
-                // der zwischenzeitliche Edit gegen die falsche Basis).
-                log.notice("Auto-Merge: Save während PUT — Basis nicht vorgerückt, Retry: \(pid, privacy: .public)")
-                return
-            }
-            autoMergeRe409[pid] = nil   // erfolgreich konvergiert → Re-Zähler zurücksetzen
-            stateStore.mutate {
-                $0.serverBaseISO[pid] = resp.updated_at
-                $0.serverBaseHtml[pid] = outcome.merged
-            }
-            clearConflict(pageId: pid)
-            // Offene, saubere Seite still mit dem Merge-Ergebnis aktualisieren.
-            if editor.openPageId == pid, !editor.isDirty(pid) {
-                await editor.reloadPage(pageId: pid, html: outcome.merged, baseUpdatedAt: ms)
-            }
-            log.info("Auto-Merge gepusht: \(pid, privacy: .public)")
-        } catch let AuthError.server(status, _, _) where status == 409 {
-            // Erneutes Rennen. Begrenzt oft still neu versuchen; danach als
-            // SICHTBAREN Konflikt erfassen, statt jeden Tick einen vollen
-            // Merge-Roundtrip zu fahren, der nie konvergiert (Live-Lock-Schutz).
-            let n = (autoMergeRe409[pid] ?? 0) + 1
-            autoMergeRe409[pid] = n
-            if n >= maxAutoMergeRetries {
-                autoMergeRe409[pid] = nil
-                await recordConflict(pageId: pid,
-                                     serverUpdatedAt: serverPage.updated_at,
-                                     serverEditorName: c?.server_editor_name)
-                log.notice("Auto-Merge \(pid, privacy: .public): \(n, privacy: .public)× erneut 409 — als sichtbaren Konflikt erfasst")
-            } else {
-                log.notice("Auto-Merge verlor das Rennen (erneut 409, \(n, privacy: .public)/\(self.maxAutoMergeRetries, privacy: .public)): \(pid, privacy: .public)")
-            }
-        } catch {
-            log.error("Auto-Merge-Push fehlgeschlagen \(pid, privacy: .public): \(error.localizedDescription, privacy: .public)")
-        }
-    }
-
-    // MARK: - Pull
-
-    private func pullDeltas() async throws {
-        // Bücherliste auffrischen: beim ersten Mal (leer) zwingend, danach
-        // gedrosselt — sonst würden in der Web-App neu angelegte Bücher nie
-        // gepullt.
-        let booksDue: Bool = {
-            guard let last = lastBooksRefreshAt else { return true }
-            return Date().timeIntervalSince(last) >= booksRefreshInterval
-        }()
-        if stateStore.state.bookIds.isEmpty || booksDue {
-            let books = try await reachableSend {
-                try await api.send("/content/books", method: .GET, decode: [BookDTO].self)
-            }
-            lastBooksRefreshAt = Date()
-            let ids = books.map(\.id)
-            // `GET /content/books` ist AUTORITATIV: die vollständige Liste der für
-            // diesen User zugänglichen Bücher. Buch-IDs, die nicht (mehr) darin
-            // stehen — etwa von einem anderen Server (Namespace-Altlast) oder nach
-            // Zugriffsentzug —, werden NICHT gepollt; sonst läuft jeder Tick in ein
-            // `NO_BOOK_ACCESS` (Server-Log-Flut). Darum die bekannte Liste auf den
-            // Server-Bestand kürzen, statt sie nur zu vereinigen. Schutz gegen eine
-            // transient leere Antwort: nur kürzen, wenn die Liste nicht leer ist
-            // (eine echte leere Antwort lässt der nächste Tick erneut prüfen).
-            if ids.isEmpty {
-                log.notice("Bücherliste leer — Buch-IDs unverändert gelassen (kein Prune)")
-            } else {
-                let valid = Set(ids)
-                let dropped = stateStore.state.bookIds.filter { !valid.contains($0) }
-                stateStore.mutate { state in
-                    // Cursor verschwundener Bücher mit aufräumen (kein toter Ballast).
-                    for id in dropped { state.cursors[id] = nil }
-                    state.bookIds = ids   // Server-Reihenfolge, autoritativ (gekürzt)
-                }
-                if !dropped.isEmpty {
-                    log.info("Buch-IDs gekürzt: \(dropped.map(String.init).joined(separator: ","), privacy: .public) nicht (mehr) zugänglich")
-                }
-            }
-        }
-
-        for bookId in stateStore.state.bookIds {
-            do {
-                try await pullBook(bookId)
-            } catch AuthError.unauthorized {
-                // Session beendet → ganzen Sync abbrechen.
-                throw AuthError.unauthorized
-            } catch {
-                // Netzfehler/Timeout bei einem Buch blockiert die restlichen nicht.
-                log.error("Pull Buch \(bookId) fehlgeschlagen: \(error.localizedDescription, privacy: .public)")
-                continue
-            }
-        }
-    }
-
-    private func pullBook(_ bookId: Int) async throws {
-        var cursor = stateStore.state.cursors[bookId] ?? SyncCursorDTO(since: nil, since_id: 0)
-
-        // Harte Obergrenze gegen ein endloses Paging bei fehlerhaftem Server-
-        // Cursor (oszillierend/nicht-monoton). Bei 200 Seiten/Page deckt das
-        // sehr große Bücher ab; wird sie erreicht, beim nächsten Tick weiter.
-        let maxPages = 500
-        var pageCount = 0
-
-        while true {
-            pageCount += 1
-            if pageCount > maxPages {
-                log.notice("Pull Buch \(bookId, privacy: .public): Paging-Limit (\(maxPages, privacy: .public)) erreicht — beim nächsten Tick weiter")
-                break
-            }
-            let resp = try await reachableSend {
-                try await api.send(syncPath(bookId: bookId, cursor: cursor),
-                                   method: .GET,
-                                   decode: BookSyncResponse.self)
-            }
-
-            let pending = Set(try await store.pendingOutbox().map(\.pageId))
-
-            for p in resp.pages {
-                let pid = String(p.page_id)
-                let isOpen = (editor?.openPageId == pid)
-                let isDirtyOpen = isOpen && (editor?.isDirty(pid) ?? false)
-                if pending.contains(pid) || isDirtyOpen {
-                    // Lokal ungepushte Änderung (Outbox ODER dirty offene Seite) +
-                    // neuerer Server-Stand → Divergenz. Nicht überschreiben und Basis
-                    // NICHT vorrücken: der nächste Push läuft bewusst in ein 409 und
-                    // löst per Block-Merge auf (Datenverlust-Schutz).
-                    log.notice("Pull übersprungen (lokale Änderung offen): \(pid, privacy: .public)")
-                    continue
-                }
-                // Ohne Server-`updated_at` gibt es keine gültige Konflikt-Basis
-                // (PUT braucht den exakten ISO-String). Seite überspringen, statt
-                // sie ohne Basis in den Store zu mergen.
-                guard let serverUpdatedAt = p.updated_at else {
-                    log.notice("Pull übersprungen (Seite ohne updated_at): \(pid, privacy: .public)")
-                    continue
-                }
-                // Echo des eigenen, eben gepushten Edits: `/sync` liefert bewusst
-                // auch eigene Edits zurück, und nach dem Push steht unsere Basis
-                // bereits auf genau diesem Server-Stempel. Gleicher Stempel = kein
-                // neuer Inhalt → NICHT erneut in den Store mergen und vor allem die
-                // offene Seite NICHT neu laden. Sonst lädt jeder Auto-Save die Seite
-                // einen Tick später unnötig neu und die Live-Statistik (Wortzahl/
-                // „heute") flackert. Fremd-Edits (anderes Gerät/Session) tragen einen
-                // ANDEREN updated_at und greifen darum weiterhin. Cursor rückt unten
-                // trotzdem regulär vor.
-                if stateStore.state.serverBaseISO[pid] == serverUpdatedAt { continue }
-
-                // Unparsbarer Stempel → überspringen statt Epoch 0 (ans Listenende
-                // rutschende Seite) in den Store zu schreiben; nächster Tick erneut.
-                guard let ms = ISOTime.millis(serverUpdatedAt) else {
-                    log.notice("Pull übersprungen (updated_at unparsbar): \(pid, privacy: .public)")
-                    continue
-                }
-
-                let serverHtml = p.html ?? ""
-                // Datenverlust-sicher übernehmen: der Outbox-Check läuft ATOMAR mit
-                // dem Write (schliesst das TOCTOU-Fenster, falls seit dem `pending`-
-                // Lesen oben ein Save einging). Dirty-offene Seite (Tippen ohne Save,
-                // noch ohne Outbox-Eintrag) zusätzlich direkt vor dem Write erneut
-                // prüfen — das GET oben hat suspendiert, der Zustand kann veraltet sein.
-                if (editor?.openPageId == pid) && (editor?.isDirty(pid) ?? false) {
-                    log.notice("Pull übersprungen (dirty offen, Re-Check): \(pid, privacy: .public)")
-                    continue
-                }
-                let applied = try await store.applyServerPageIfClean(id: pid,
-                                                                     html: serverHtml,
-                                                                     pageName: p.page_name,
-                                                                     bookId: bookId,
-                                                                     chapterId: p.chapter_id,
-                                                                     serverUpdatedAtMillis: ms)
-                guard applied else {
-                    // Zwischenzeitlich doch eine Outbox-Änderung → nicht überschreiben,
-                    // Basis NICHT vorrücken; der Push läuft bewusst in ein 409 → Merge.
-                    log.notice("Pull übersprungen (Outbox zwischenzeitlich, atomar erkannt): \(pid, privacy: .public)")
-                    continue
-                }
-                // Erst nach erfolgreicher Übernahme: ISO als Push-Basis + HTML als
-                // Merge-Ancestor mitführen (sonst stünde die Basis auf einem Stand,
-                // den der Store gar nicht übernommen hat).
-                stateStore.mutate {
-                    $0.serverBaseISO[pid] = serverUpdatedAt
-                    $0.serverBaseHtml[pid] = serverHtml
-                }
-                // Saubere, offene Seite still in der WebView neu laden (clean reload).
-                if isOpen {
-                    await editor?.reloadPage(pageId: pid, html: serverHtml, baseUpdatedAt: ms)
-                }
-            }
-
-            // Cursor vorrücken + persistieren (robust gegen Abbruch mittendrin).
-            let previous = cursor
-            stateStore.mutate { $0.cursors[bookId] = resp.cursor }
-
-            // Schutz gegen Endlosschleife, falls der Cursor nicht vorrückt.
-            if !resp.has_more || resp.pages.isEmpty { break }
-            // Server meldet `has_more`, liefert aber denselben Cursor zurück
-            // (Server-Bug) → nicht ewig pagen, beim nächsten Tick neu ansetzen.
-            if resp.cursor == previous {
-                log.notice("Pull Buch \(bookId, privacy: .public): Cursor rückt nicht vor — Schleife abgebrochen")
-                break
-            }
-            cursor = resp.cursor
-        }
-    }
-
-    /// Baut `/content/books/:id/sync?…` mit korrekt kodiertem Cursor.
-    private func syncPath(bookId: Int, cursor: SyncCursorDTO) -> String {
-        var path = "/content/books/\(bookId)/sync?limit=200"
-        if let since = cursor.since,
-           let encoded = since.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) {
-            path += "&since=\(encoded)&since_id=\(cursor.since_id)"
-        }
-        return path
-    }
-
-    // MARK: - Delete-Reconcile
-
-    /// Entfernt lokal Seiten, die der Server nicht mehr kennt. `/sync` meldet
-    /// keine Löschungen (CLAUDE.md) — der Soll-Bestand kommt aus dem Buch-Tree.
-    /// Gedrosselt (≤ 1×/`reconcileInterval`), da je Buch ein Tree-Fetch anfällt.
-    private func reconcileDeletesIfDue() async {
-        let now = Date()
-        if let last = lastReconcileAt, now.timeIntervalSince(last) < reconcileInterval { return }
-        lastReconcileAt = now
-
-        // Verwaiste Seiten (bookId == nil) einmal ermitteln — der Buch-Abgleich
-        // unten trägt ihr Buch nach, sobald ein Tree sie als seine Seite ausweist.
-        let orphans = Set((try? await store.pageIdsWithoutBook()) ?? [])
-
-        for bookId in stateStore.state.bookIds {
-            do {
-                try await reconcileBookDeletes(bookId, orphans: orphans)
-            } catch {
-                // Ein Tree-Fehler (offline/Serverproblem) darf die anderen Bücher
-                // nicht blockieren und nichts löschen — beim nächsten Mal erneut.
-                log.notice("Reconcile Buch \(bookId, privacy: .public) übersprungen: \(error.localizedDescription, privacy: .public)")
-            }
-        }
-    }
-
-    private func reconcileBookDeletes(_ bookId: Int, orphans: Set<String>) async throws {
-        // Buch-Tree EINMAL holen → Soll-IDs (Delete-Reconcile) + Kapitel-Zuordnung
-        // (Waisen-Backfill) aus derselben Antwort.
-        let treePages = ContentAPI.flattenTreePages(try await content.tree(bookId: bookId))
-        // Soll: alle Seiten, die der Server-Tree für das Buch kennt.
-        let soll = Set(treePages.map { String($0.id) })
-
-        // Datenverlust-Schutz: Ein leerer Tree ist verdächtig (transienter
-        // Server-200 mit leerem Array, halb-deployter Endpoint, frische Buch-ID)
-        // und würde JEDE lokale, saubere Seite löschen — die der cursor-
-        // inkrementelle Pull NICHT von selbst zurückbringt. In dem Fall lieber
-        // nichts tun und beim nächsten Lauf erneut prüfen.
-        guard !soll.isEmpty else {
-            log.notice("Reconcile Buch \(bookId, privacy: .public) übersprungen: leerer Server-Tree")
-            return
-        }
-
-        // Waisen-Backfill: Seiten ohne Buch, die dieser Tree als seine ausweist,
-        // ihr Buch (+ Kapitel) nachtragen. Reine Metadaten — kein Datenverlust,
-        // greift auch bei dirty/ungepushten Seiten, die der Pull überspringt.
-        // (Ursache: `/content/pages/:id` im Bridge-Nachladen liefert kein book_id.)
-        if !orphans.isEmpty {
-            let chapterOf = Dictionary(treePages.map { (String($0.id), $0.chapterId) },
-                                       uniquingKeysWith: { first, _ in first })
-            for pid in orphans where soll.contains(pid) {
-                try await store.assignBook(pageId: pid, bookId: bookId, chapterId: chapterOf[pid] ?? nil)
-                log.info("Reconcile: verwaiste Seite \(pid, privacy: .public) Buch \(bookId, privacy: .public) zugeordnet")
-            }
-        }
-
-        // Ist: lokal gespiegelte Seiten dieses Buchs (nach dem Backfill, damit
-        // eben zugeordnete Waisen mit erfasst sind).
-        let ist = try await store.list(bookId: bookId)
-        guard !ist.isEmpty else { return }
-
-        let pending = Set(try await store.pendingOutbox().map(\.pageId))
-
-        for summary in ist where !soll.contains(summary.id) {
-            let pid = summary.id
-            // Datenverlust-Schutz: nie löschen, wenn lokale Änderung offen/ungepusht
-            // ist oder die Seite gerade dirty im Editor liegt.
-            if pending.contains(pid) {
-                log.notice("Reconcile: \(pid, privacy: .public) serverseitig weg, aber Outbox offen — behalten")
-                continue
-            }
-            if editor?.openPageId == pid, editor?.isDirty(pid) == true {
-                log.notice("Reconcile: \(pid, privacy: .public) serverseitig weg, aber dirty im Editor — behalten")
-                continue
-            }
-
-            try await store.deletePage(id: pid)
-            stateStore.mutate {
-                $0.serverBaseISO[pid] = nil
-                $0.serverBaseHtml[pid] = nil
-            }
-            log.info("Reconcile: lokale Seite \(pid, privacy: .public) entfernt (serverseitig gelöscht)")
-        }
-    }
-
     // MARK: - Konflikte
 
-    private func recordConflict(pageId: String, serverUpdatedAt: String?, serverEditorName: String?) async {
+    func recordConflict(pageId: String, serverUpdatedAt: String?, serverEditorName: String?) async {
         let stored = (try? await store.page(id: pageId)) ?? nil
         let c = Conflict(pageId: pageId,
                          pageName: stored?.pageName ?? stored?.title,
