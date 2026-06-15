@@ -225,6 +225,7 @@
   "login.checking": "Checking …",
   "login.signIn": "Sign in",
   "login.subtitle": "Sign in to sync your pages.",
+  "login.requiresServer": "This app is a companion to Schreibwerkstatt: it works only with a Schreibwerkstatt server and an account on it — there's no standalone mode without a server.",
   "login.heroTagline": "Distraction-free writing — one page, fully offline-capable. Your pages sync with Schreibwerkstatt.",
   "login.howToTitle": "How to sign in",
   "login.step1": "Create an account on schreibwerkstatt.app or sign in.",
@@ -257,7 +258,7 @@
   "window.shortcutsTitle": "Keyboard shortcuts",
 
   "about.tagline": "Schreibwerkstatt's distraction-free writing mode",
-  "about.body": "Native macOS shell (SwiftUI/AppKit + WKWebView) for exactly one page, fully offline-capable. The editor itself is loaded over the air from the Schreibwerkstatt server — no fork, no clutter.",
+  "about.body": "Native macOS shell (SwiftUI/AppKit + WKWebView) for exactly one page, fully offline-capable. The editor itself is loaded over the air from the Schreibwerkstatt server — no fork, no clutter. The app is a companion to Schreibwerkstatt and can't be used without its server (account, editor bundle, sync).",
   "about.motherProject": "Parent project (Schreibwerkstatt):",
 
   "auth.err.malformedToken": "Invalid token format. Expected “swd_…” from your account area.",

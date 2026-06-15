@@ -98,6 +98,11 @@ struct LoginView: View {
                         Text(t("login.subtitle"))
                             .font(BrandFont.sans(13))
                             .foregroundStyle(BrandColor.muted)
+                        Text(t("login.requiresServer"))
+                            .font(BrandFont.sans(12))
+                            .foregroundStyle(BrandColor.subtle)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.top, 2)
                     }
 
                     onboardingSteps

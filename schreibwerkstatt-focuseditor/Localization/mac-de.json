@@ -225,6 +225,7 @@
   "login.checking": "Prüfe …",
   "login.signIn": "Anmelden",
   "login.subtitle": "Anmelden, um deine Seiten zu synchronisieren.",
+  "login.requiresServer": "Diese App ist ein Begleiter zur Schreibwerkstatt: Sie funktioniert nur mit einem Schreibwerkstatt-Server und einem Konto darauf — einen eigenständigen Modus ohne Server gibt es nicht.",
   "login.heroTagline": "Ablenkungsfrei schreiben — eine Seite, voll offline-fähig. Deine Seiten synchronisieren sich mit der Schreibwerkstatt.",
   "login.howToTitle": "So meldest du dich an",
   "login.step1": "Konto auf schreibwerkstatt.app erstellen oder dich anmelden.",
@@ -257,7 +258,7 @@
   "window.shortcutsTitle": "Tastaturkürzel",
 
   "about.tagline": "Ablenkungsfreier Schreibmodus der Schreibwerkstatt",
-  "about.body": "Native macOS-Hülle (SwiftUI/AppKit + WKWebView) für genau eine Seite, voll offline-fähig. Der Editor selbst wird per OTA vom Schreibwerkstatt-Server geladen — kein Fork, kein Drumherum.",
+  "about.body": "Native macOS-Hülle (SwiftUI/AppKit + WKWebView) für genau eine Seite, voll offline-fähig. Der Editor selbst wird per OTA vom Schreibwerkstatt-Server geladen — kein Fork, kein Drumherum. Die App ist ein Begleiter zur Schreibwerkstatt und ohne deren Server (Konto, Editor-Bundle, Sync) nicht nutzbar.",
   "about.motherProject": "Mutterprojekt (Schreibwerkstatt):",
 
   "auth.err.malformedToken": "Ungültiges Token-Format. Erwartet wird „swd_…“ aus deinem Konto-Bereich.",

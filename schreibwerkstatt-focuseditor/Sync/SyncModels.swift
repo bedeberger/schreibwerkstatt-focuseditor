@@ -56,11 +56,15 @@ struct BookSyncResponse: Decodable {
 /// Herkunfts-Marker; `expected_updated_at` ist die exakte Server-ISO-Basis
 /// (nil → unbedingtes Update, vermeiden wir bewusst, siehe SyncEngine).
 /// `source` markiert die Revision serverseitig als Mac-App-Edit
-/// (db/page-revisions.js#VALID_SOURCES).
+/// (db/page-revisions.js#VALID_SOURCES). `device_id` ist die stabile Geräte-UUID
+/// (DeviceIdentity) — der Server stempelt damit `pages.last_editor_device_id` und
+/// registriert das Gerät als Buch-Präsenz, sodass ein parallel offener Browser
+/// diesen Push als Remote-Change erkennt und die Seite automatisch nachlädt.
 struct PushRequest: Encodable {
     let html: String
     let expected_updated_at: String?
     var source: String = "macapp"
+    var device_id: String = DeviceIdentity.current
 }
 
 /// 200-Antwort von `PUT /content/pages/:id`. Seiten-ID heißt hier `id`.
