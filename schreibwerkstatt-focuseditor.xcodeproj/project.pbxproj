@@ -18,6 +18,7 @@
 		7E0000000000000000000017 /* WebAssets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E0000000000000000000027 /* WebAssets.swift */; };
 		7E0000000000000000000018 /* Localization.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E0000000000000000000028 /* Localization.swift */; };
 		7E0000000000000000000019 /* ServerNamespace.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E0000000000000000000029 /* ServerNamespace.swift */; };
+		7E000000000000000000001A /* DeviceIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E0000000000000000000031 /* DeviceIdentity.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -43,6 +44,7 @@
 		7E0000000000000000000027 /* WebAssets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = WebAssets.swift; path = "schreibwerkstatt-focuseditor/Web/WebAssets.swift"; sourceTree = SOURCE_ROOT; };
 		7E0000000000000000000028 /* Localization.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = Localization.swift; path = "schreibwerkstatt-focuseditor/Localization/Localization.swift"; sourceTree = SOURCE_ROOT; };
 		7E0000000000000000000029 /* ServerNamespace.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ServerNamespace.swift; path = "schreibwerkstatt-focuseditor/Auth/ServerNamespace.swift"; sourceTree = SOURCE_ROOT; };
+		7E0000000000000000000031 /* DeviceIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = DeviceIdentity.swift; path = "schreibwerkstatt-focuseditor/Sync/DeviceIdentity.swift"; sourceTree = SOURCE_ROOT; };
 		7E0000000000000000000030 /* Version.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Version.xcconfig; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
@@ -91,6 +93,7 @@
 				7E0000000000000000000027 /* WebAssets.swift */,
 				7E0000000000000000000028 /* Localization.swift */,
 				7E0000000000000000000029 /* ServerNamespace.swift */,
+				7E0000000000000000000031 /* DeviceIdentity.swift */,
 			);
 			name = "Recovered References";
 			sourceTree = "<group>";
@@ -245,6 +248,7 @@
 				7E0000000000000000000017 /* WebAssets.swift in Sources */,
 				7E0000000000000000000018 /* Localization.swift in Sources */,
 				7E0000000000000000000019 /* ServerNamespace.swift in Sources */,
+				7E000000000000000000001A /* DeviceIdentity.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
