@@ -459,15 +459,25 @@ final class SyncEngine: ObservableObject {
                                    decode: PushResponse.self)
             }
             let ms = ISOTime.millis(resp.updated_at) ?? entry.queuedAt
+            // Gemergten Stand ERST lokal übernehmen + Outbox quittieren, DANN die
+            // Basis vorrücken. Schlägt der lokale Write fehl, die Basis NICHT
+            // vorrücken und den Eintrag NICHT quittieren: der nächste Tick merged
+            // denselben Stand idempotent erneut, statt mit vorgerückter Basis das
+            // alte lokale HTML gegen den bereits gemergten Server-Stand zu pushen
+            // (das würde die eingemergten Server-Änderungen verlieren).
+            do {
+                try await store.applyServerPage(id: pid, html: outcome.merged,
+                                                pageName: nil, bookId: nil, chapterId: nil,
+                                                serverUpdatedAtMillis: ms)
+                try await store.markPushed(id: pid, queuedAt: entry.queuedAt, serverUpdatedAtMillis: ms)
+            } catch {
+                log.error("Auto-Merge lokal persistieren fehlgeschlagen \(pid, privacy: .public): \(error.localizedDescription, privacy: .public) — Basis nicht vorgerückt, Retry beim nächsten Tick")
+                return
+            }
             stateStore.mutate {
                 $0.serverBaseISO[pid] = resp.updated_at
                 $0.serverBaseHtml[pid] = outcome.merged
             }
-            // Gemergten Stand lokal übernehmen + Outbox quittieren.
-            try? await store.applyServerPage(id: pid, html: outcome.merged,
-                                             pageName: nil, bookId: nil, chapterId: nil,
-                                             serverUpdatedAtMillis: ms)
-            try? await store.markPushed(id: pid, queuedAt: entry.queuedAt, serverUpdatedAtMillis: ms)
             clearConflict(pageId: pid)
             // Offene, saubere Seite still mit dem Merge-Ergebnis aktualisieren.
             if editor.openPageId == pid, !editor.isDirty(pid) {
@@ -810,16 +820,26 @@ final class SyncEngine: ObservableObject {
             // Server-Stand übernehmen, lokale Änderung verwerfen.
             let serverHtml = serverPage.html ?? ""
             let ms = ISOTime.millis(serverPage.updated_at) ?? 0
+            // Erst lokal übernehmen + Outbox droppen, DANN die Basis vorrücken.
+            // Sonst bliebe bei einem fehlgeschlagenen Write der alte lokale Stand
+            // mit bereits vorgerückter Basis zurück und käme über einen 409-Re-Merge
+            // wieder hoch — obwohl der Nutzer „Server übernehmen" gewählt hat.
+            do {
+                try await store.applyServerPage(id: pid, html: serverHtml,
+                                                pageName: nil, bookId: nil, chapterId: nil,
+                                                serverUpdatedAtMillis: ms)
+                // Outbox-Eintrag droppen (falls unverändert seit dem Lesen oben).
+                if let entry {
+                    try await store.markPushed(id: pid, queuedAt: entry.queuedAt, serverUpdatedAtMillis: ms)
+                }
+            } catch {
+                lastError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                log.error("Konflikt-Auflösung \(pid, privacy: .public): Server-Stand lokal übernehmen fehlgeschlagen: \(self.lastError ?? "?", privacy: .public)")
+                return
+            }
             stateStore.mutate {
                 $0.serverBaseISO[pid] = serverPage.updated_at
                 $0.serverBaseHtml[pid] = serverHtml
-            }
-            try? await store.applyServerPage(id: pid, html: serverHtml,
-                                             pageName: nil, bookId: nil, chapterId: nil,
-                                             serverUpdatedAtMillis: ms)
-            // Outbox-Eintrag droppen (falls unverändert seit dem Lesen oben).
-            if let entry {
-                try? await store.markPushed(id: pid, queuedAt: entry.queuedAt, serverUpdatedAtMillis: ms)
             }
             clearConflict(pageId: pid)
             lastError = nil

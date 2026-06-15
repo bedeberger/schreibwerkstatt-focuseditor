@@ -173,6 +173,13 @@ final class LibraryStore: ObservableObject {
             // nur ohne Kapitel-Gruppierung/Order).
             log.notice("Tree nicht erreichbar — lokaler Fallback für Buch \(bookId, privacy: .public)")
             pages = await localRows(bookId: bookId)
+            // Greift der lokale Spiegel (Seiten vorhanden), still bleiben — der
+            // Nutzer kann weiterarbeiten. Ist auch lokal nichts da, würde der
+            // Picker fälschlich „keine Seiten“ zeigen → den Fehler vermerken,
+            // damit der Leerzustand den wahren Grund (Verbindung) nennt.
+            lastError = pages.isEmpty
+                ? ((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
+                : nil
         }
     }
 

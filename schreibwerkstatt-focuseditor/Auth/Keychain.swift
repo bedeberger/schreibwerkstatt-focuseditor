@@ -37,8 +37,11 @@ enum Keychain {
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
             kSecValueData as String: data,
-            // Nur nach dem ersten Entsperren lesbar und nicht in Backups/iCloud.
-            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
+            // Nur bei entsperrtem Gerät lesbar und nicht in Backups/iCloud. Der
+            // Sync läuft nur bei aktivem Fenster (nie im Hintergrund/gesperrt),
+            // darum genügt `WhenUnlocked` — strenger als `AfterFirstUnlock`, ohne
+            // Funktionsverlust: das Token ist bei gesperrtem Bildschirm unlesbar.
+            kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
         ]
 
         let status = SecItemAdd(query as CFDictionary, nil)
@@ -57,7 +60,7 @@ enum Keychain {
             ]
             let attrs: [String: Any] = [
                 kSecValueData as String: data,
-                kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
+                kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
             ]
             let updateStatus = SecItemUpdate(match as CFDictionary, attrs as CFDictionary)
             guard updateStatus == errSecSuccess else {

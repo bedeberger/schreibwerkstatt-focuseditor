@@ -35,6 +35,7 @@
 
   "library.loadingBooks": "Lade Bücher …",
   "library.noBooks": "Keine Bücher",
+  "library.loadError": "Bücher konnten nicht geladen werden",
   "library.bookFallback": "Buch {id}",
   "library.chooseBook": "Buch wählen",
 
@@ -226,6 +227,8 @@
   "picker.noBookSelected": "Kein Buch gewählt",
   "picker.noMatches": "Keine Treffer",
   "picker.noPages": "Keine Seiten in diesem Buch",
+  "picker.loadError": "Seiten konnten nicht geladen werden",
+  "picker.loadErrorHint": "Prüfe die Server-Verbindung und versuche es erneut.",
   "picker.noPagesHint": "Lege im Web eine Seite an oder wähle ein anderes Buch.",
   "picker.noBookHint": "Wähle links in der Leiste ein Buch.",
   "picker.loadingPages": "Lade Seiten …",

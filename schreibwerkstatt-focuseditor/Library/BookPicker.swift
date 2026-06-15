@@ -15,7 +15,19 @@ struct BookPicker: View {
     var body: some View {
         Menu {
             if library.books.isEmpty {
-                Text(library.isLoadingBooks ? t("library.loadingBooks") : t("library.noBooks"))
+                if library.isLoadingBooks {
+                    Text(t("library.loadingBooks"))
+                } else if let error = library.lastError {
+                    // Leere Liste OHNE Erklärung wirkt wie „kein Buch vorhanden“ —
+                    // bei einem Lade-/Verbindungsfehler stattdessen den Grund nennen
+                    // und einen erneuten Versuch anbieten.
+                    Text(t("library.loadError"))
+                    Text(error)
+                    Divider()
+                    Button(t("content.retry")) { Task { await library.loadBooks() } }
+                } else {
+                    Text(t("library.noBooks"))
+                }
             } else {
                 ForEach(library.books, id: \.id) { book in
                     Button {

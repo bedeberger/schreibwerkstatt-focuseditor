@@ -193,16 +193,25 @@ struct PagePickerOverlay: View {
     @ViewBuilder
     private var emptyState: some View {
         let searching = !query.isEmpty
+        // Ein Lade-/Verbindungsfehler (von refreshPages vermerkt, sobald auch der
+        // lokale Spiegel leer ist) geht der „keine Seiten“-Aussage vor — sonst
+        // sähe ein Offline-Zustand wie ein leeres Buch aus. Bei aktiver Suche
+        // bleibt es bei „keine Treffer“.
+        let loadError = searching ? nil : library.lastError
         let noBook = library.activeBookId == nil
-        let icon = searching ? "magnifyingglass" : (noBook ? "books.vertical" : "doc.text")
+        let icon = searching ? "magnifyingglass"
+            : (loadError != nil ? "exclamationmark.icloud" : (noBook ? "books.vertical" : "doc.text"))
         let title = searching ? t("picker.noMatches")
-            : (noBook ? t("picker.noBookSelected") : t("picker.noPages"))
-        let hint: String? = searching ? nil : (noBook ? t("picker.noBookHint") : t("picker.noPagesHint"))
+            : (loadError != nil ? t("picker.loadError")
+               : (noBook ? t("picker.noBookSelected") : t("picker.noPages")))
+        let hint: String? = searching ? nil
+            : (loadError != nil ? t("picker.loadErrorHint")
+               : (noBook ? t("picker.noBookHint") : t("picker.noPagesHint")))
 
         VStack(spacing: 8) {
             Image(systemName: icon)
                 .font(.system(size: 26, weight: .light))
-                .foregroundStyle(BrandColor.faint)
+                .foregroundStyle(loadError != nil ? Color.orange : BrandColor.faint)
             Text(title)
                 .font(BrandFont.sans(13))
                 .foregroundStyle(BrandColor.muted)
@@ -211,6 +220,13 @@ struct PagePickerOverlay: View {
                     .font(BrandFont.sans(11))
                     .foregroundStyle(BrandColor.faint)
                     .multilineTextAlignment(.center)
+            }
+            if loadError != nil {
+                Button(t("content.retry")) { Task { await library.refreshPages() } }
+                    .buttonStyle(.plain)
+                    .font(BrandFont.sans(11, weight: .semibold))
+                    .foregroundStyle(BrandColor.primary)
+                    .padding(.top, 2)
             }
         }
         .frame(maxWidth: 280)

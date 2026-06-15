@@ -35,6 +35,7 @@
 
   "library.loadingBooks": "Loading books …",
   "library.noBooks": "No books",
+  "library.loadError": "Couldn’t load books",
   "library.bookFallback": "Book {id}",
   "library.chooseBook": "Choose book",
 
@@ -226,6 +227,8 @@
   "picker.noBookSelected": "No book selected",
   "picker.noMatches": "No matches",
   "picker.noPages": "No pages in this book",
+  "picker.loadError": "Couldn’t load pages",
+  "picker.loadErrorHint": "Check the server connection and try again.",
   "picker.noPagesHint": "Create a page on the web, or pick another book.",
   "picker.noBookHint": "Choose a book in the toolbar on the left.",
   "picker.loadingPages": "Loading pages …",

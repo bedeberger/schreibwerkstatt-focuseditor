@@ -196,6 +196,11 @@ final class EditorBundleStore: ObservableObject {
             .appendingPathComponent("web-cache.staging-\(UUID().uuidString)", isDirectory: true)
         try? fileManager.removeItem(at: staging)
         try fileManager.createDirectory(at: staging, withIntermediateDirectories: true)
+        // Bricht das Entpacken/Schreiben unten ab, bleibt sonst ein halb gefüllter
+        // Staging-Ordner zurück. Nach erfolgreichem `swapIntoPlace` ist der Pfad
+        // bereits weg (replaceItemAt konsumiert ihn) → das removeItem ist dann ein
+        // harmloser No-op.
+        defer { try? fileManager.removeItem(at: staging) }
 
         var manifest: BundleManifest?
         for entry in entries {

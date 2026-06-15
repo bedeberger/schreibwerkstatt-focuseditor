@@ -162,7 +162,7 @@ enum WebAssets {
           <meta charset="utf-8">
           <meta name="viewport" content="width=device-width, initial-scale=1">
           <title>Schreibwerkstatt — Focus-Editor</title>
-          <!-- GENERIERT vom EditorBundleStore aus dem OTA-Bundle (Quelle @\(sourceCommit)). Nicht von Hand editieren. -->
+          <!-- GENERIERT vom EditorBundleStore aus dem OTA-Bundle (Quelle @\(htmlAttributeEscaped(sourceCommit))). Nicht von Hand editieren. -->
           <script>
             // Theme-Brücke: Die Editor-CSS schaltet Dark Mode NUR über
             // :root[data-theme="dark"] (theme-init.js aus dem Hauptrepo läuft
