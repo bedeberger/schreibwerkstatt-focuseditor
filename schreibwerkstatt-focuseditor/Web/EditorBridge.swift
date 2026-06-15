@@ -556,6 +556,25 @@ final class EditorBridge: NSObject, WKScriptMessageHandlerWithReply, EditorCoord
         }
     }
 
+    /// Persistiert den offenen Draft sofort (`_flushSave`) und WARTET darauf —
+    /// für ⌘S, das vor dem manuellen Sync den aktuellen Stand sichern soll
+    /// (der Editor-Autosave läuft entprellt). Awaitable im Gegensatz zum
+    /// Event-Bus (`_receive`), damit der Outbox-Eintrag garantiert vor dem
+    /// Push liegt. No-op ohne WebView/offenen Editor; Fehler werden nur geloggt
+    /// (der Autosave holt den Stand ohnehin nach → kein Datenverlust).
+    func flushDraftSave() async {
+        guard let webView else { return }
+        do {
+            _ = try await webView.callAsyncJavaScript(
+                "return await window.__focusBridge._flushSave();",
+                arguments: [:],
+                in: nil,
+                contentWorld: .page)
+        } catch {
+            log.error("flushDraftSave fehlgeschlagen: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
     /// Ruft `block-merge.js` in der WebView (3-Wege-Merge). Wirft, wenn keine
     /// WebView/kein Bundle verfügbar ist → Aufrufer behandelt das als Konflikt.
     func merge3(base: String?, local: String, server: String) async throws -> MergeOutcome {

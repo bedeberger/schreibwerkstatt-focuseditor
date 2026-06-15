@@ -13,9 +13,11 @@ import SwiftUI
 struct LoginView: View {
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var loc: LocalizationController
+    @Environment(\.openURL) private var openURL
 
     @State private var serverURL: String = ServerConfig.baseURLString
     @State private var token: String = ""
+    @State private var showPrivacy = false
 
     private var isBusy: Bool { auth.state == .validating }
     private var canSubmit: Bool {
@@ -80,63 +82,144 @@ struct LoginView: View {
         }
     }
 
-    /// Formular-Spalte (rechts) — Eingabefelder + Anmelden auf der warmen Fläche.
+    /// Formular-Spalte (rechts) — Onboarding (Token-Flow), Eingabefelder,
+    /// Anmelden und Datenschutz-Hinweis auf der warmen Fläche. In einer
+    /// ScrollView, damit der erweiterte Inhalt auf niedrigen Fenstern nicht klippt.
     private var formPanel: some View {
         ZStack {
             BrandColor.bg.ignoresSafeArea()
 
-            VStack(alignment: .leading, spacing: 22) {
-                Text(t("login.signIn"))
-                    .font(BrandFont.serif(26, weight: .semibold))
-                    .foregroundStyle(BrandColor.text)
-
-                VStack(alignment: .leading, spacing: 14) {
-                    field(title: t("login.serverAddress")) {
-                        TextField("https://…", text: $serverURL)
-                            .textFieldStyle(.roundedBorder)
-                            .disableAutocorrection(true)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 22) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(t("login.signIn"))
+                            .font(BrandFont.serif(26, weight: .semibold))
+                            .foregroundStyle(BrandColor.text)
+                        Text(t("login.subtitle"))
                             .font(BrandFont.sans(13))
+                            .foregroundStyle(BrandColor.muted)
                     }
 
-                    field(title: t("login.deviceToken")) {
-                        SecureField("swd_…", text: $token)
-                            .textFieldStyle(.roundedBorder)
-                            .font(BrandFont.sans(13))
-                            .onSubmit { submit() }
-                    }
+                    onboardingSteps
 
-                    Text(t("login.tokenHint"))
-                        .font(BrandFont.sans(11))
-                        .foregroundStyle(BrandColor.muted)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                if let error = auth.lastError {
-                    Text(error)
-                        .font(BrandFont.sans(12))
-                        .foregroundStyle(.red)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                Button(action: submit) {
-                    HStack(spacing: 8) {
-                        if isBusy {
-                            ProgressView()
-                                .controlSize(.small)
+                    VStack(alignment: .leading, spacing: 14) {
+                        field(title: t("login.serverAddress")) {
+                            TextField("https://…", text: $serverURL)
+                                .textFieldStyle(.roundedBorder)
+                                .disableAutocorrection(true)
+                                .font(BrandFont.sans(13))
                         }
-                        Text(isBusy ? t("login.checking") : t("login.signIn"))
-                            .font(BrandFont.sans(14, weight: .medium))
+
+                        field(title: t("login.deviceToken")) {
+                            SecureField("swd_…", text: $token)
+                                .textFieldStyle(.roundedBorder)
+                                .font(BrandFont.sans(13))
+                                .onSubmit { submit() }
+                        }
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 4)
+
+                    if let error = auth.lastError {
+                        Text(error)
+                            .font(BrandFont.sans(12))
+                            .foregroundStyle(.red)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    Button(action: submit) {
+                        HStack(spacing: 8) {
+                            if isBusy {
+                                ProgressView()
+                                    .controlSize(.small)
+                            }
+                            Text(isBusy ? t("login.checking") : t("login.signIn"))
+                                .font(BrandFont.sans(14, weight: .medium))
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 4)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(BrandColor.primary)
+                    .disabled(!canSubmit)
+
+                    privacyDisclosure
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(BrandColor.primary)
-                .disabled(!canSubmit)
+                .frame(maxWidth: 360, alignment: .leading)
+                .padding(48)
             }
-            .frame(maxWidth: 360)
-            .padding(48)
         }
+    }
+
+    /// Token-Flow als nummerierte 3-Schritt-Anleitung mit direkten Links zur
+    /// Registrierung (`/register`) und zur Token-Ausstellung (`/me`) auf dem im
+    /// Feld stehenden Server. Macht den Copy-Paste-Login ohne Vorwissen begehbar.
+    private var onboardingSteps: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(t("login.howToTitle"))
+                .font(BrandFont.sans(11, weight: .medium))
+                .tracking(0.4)
+                .foregroundStyle(BrandColor.subtle)
+
+            stepRow(1, t("login.step1")) {
+                Button(t("login.createAccount")) {
+                    openURL(ServerConfig.pageURL(onServer: serverURL, path: "register"))
+                }
+                .buttonStyle(.link)
+                .font(BrandFont.sans(12, weight: .medium))
+            }
+            stepRow(2, t("login.step2")) {
+                Button(t("login.openTokenPage")) {
+                    openURL(ServerConfig.pageURL(onServer: serverURL, path: "me"))
+                }
+                .buttonStyle(.link)
+                .font(BrandFont.sans(12, weight: .medium))
+            }
+            stepRow(3, t("login.step3"), button: { EmptyView() })
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(BrandColor.primary.opacity(0.06))
+        )
+    }
+
+    @ViewBuilder
+    private func stepRow<B: View>(_ number: Int, _ text: String,
+                                  @ViewBuilder button: () -> B) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Text("\(number)")
+                .font(BrandFont.sans(11, weight: .bold))
+                .foregroundStyle(BrandColor.primary)
+                .frame(width: 20, height: 20)
+                .background(Circle().fill(BrandColor.primary.opacity(0.14)))
+
+            VStack(alignment: .leading, spacing: 5) {
+                Text(text)
+                    .font(BrandFont.sans(12))
+                    .foregroundStyle(BrandColor.text)
+                    .fixedSize(horizontal: false, vertical: true)
+                button()
+            }
+        }
+    }
+
+    /// Datenschutz-Hinweis (in-app, keine externe URL) — beschreibt die
+    /// Datenhaltung wahrheitsgemäss aus der Architektur: local-first, Token nur
+    /// in der Keychain, keine Dritt-Übertragung. Eingeklappt, um das Formular
+    /// schlank zu halten.
+    private var privacyDisclosure: some View {
+        DisclosureGroup(isExpanded: $showPrivacy) {
+            Text(t("login.privacyBody"))
+                .font(BrandFont.sans(11))
+                .foregroundStyle(BrandColor.muted)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 8)
+        } label: {
+            Text(t("login.privacyTitle"))
+                .font(BrandFont.sans(12, weight: .medium))
+                .foregroundStyle(BrandColor.subtle)
+        }
+        .tint(BrandColor.primary)
     }
 
     @ViewBuilder

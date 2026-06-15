@@ -170,6 +170,7 @@ Der App-Sources-Ordner ist eine `PBXFileSystemSynchronizedRootGroup` (Xcode 16+)
 - **Tastaturkürzel-Hilfe pflegen.** Wird ein Tastaturkürzel neu hinzugefügt, geändert oder entfernt (Swift `.keyboardShortcut` **oder** ein Editor-Shortcut, der für den Nutzer im Client greift), muss es in der Hilfe-Liste [ShortcutsHelpView.swift](schreibwerkstatt-focuseditor/ShortcutsHelpView.swift) (Help-Menü → „Tastaturkürzel", ⌘?) im selben Schritt aktualisiert werden. Die Liste ist die Single Source of Truth für die Nutzer-Hilfe — nie veralten lassen.
 - **Lokalisierung (de/en) — kein hartkodierter UI-String.** Jeder nutzersichtbare Text läuft über `t("key")` (Plural: `tn(count, "baseKey")`) aus [Localization/Localization.swift](schreibwerkstatt-focuseditor/Localization/Localization.swift). Neue/geänderte Strings **immer** in **beide** gebündelten Kataloge [mac-de.json](schreibwerkstatt-focuseditor/Localization/mac-de.json) **und** [mac-en.json](schreibwerkstatt-focuseditor/Localization/mac-en.json) (Namespace `macclient.*`, flach, `{param}`-Platzhalter wie die Web-i18n). Fallback-Kette: `OTA[locale] → bundled[locale] → bundled["de"] → key`. Markennamen (z. B. „Schreibwerkstatt") bleiben literal. Die gebündelten Kataloge sind der Offline-Pflicht-Fallback; der Server-Override (`GET /content/macclient-i18n.json`, `I18nBundleStore`) ist optional und greift wie das Editor-Bundle erst beim **nächsten** Start. Die aktive Sprache: lokale Wahl (Settings → Allgemein) gewinnt; ohne lokale Wahl seedet `LocalizationController.seedFromServerIfNeeded()` aus dem Server-Profil (`/config` → `userSettings.locale`), sonst Systemsprache. Code-Kommentare auf Deutsch (wie Hauptrepo).
 - **Nach jeder Swift-Änderung builden.** Nach jeder Anpassung an Swift-Code den Build laufen lassen (s. „Build & Run") und Fehler/Warnings zurückmelden, bevor es weitergeht. Nicht ungeprüft mehrere Änderungen stapeln.
+- **Datei-Größe prüfen (Test).** Nach jeder Änderung an Swift-Quelldateien (neue Datei, Datei deutlich gewachsen) den Datei-Größen-Guard [SourceFileSizeTests.swift](schreibwerkstatt-focuseditorTests/SourceFileSizeTests.swift) laufen lassen (s. „Build & Run"). Er hält jede `.swift`-Datei unter **800 Zeilen** (Richtwert/Ziel eher 300–500). Schlägt er an → aufteilen (in Swift meist per `extension` über mehrere Dateien, Vorbild `SyncEngine[+Push/+Pull]`) **oder**, wenn die Größe bewusst gewollt ist (z. B. zusammenhängendes Template), mit Begründung in die `allowedOverLimit`-Allowlist im Test aufnehmen. Neue App-Dateien, die eine getestete Datei als Abhängigkeit braucht, müssen ins Test-Target (explizite Membership im pbxproj, s. [ARCHITECTURE.md](ARCHITECTURE.md) / `xctest`-Hinweis).
 
 ## Build & Run
 
@@ -183,3 +184,11 @@ Der App-Sources-Ordner ist eine `PBXFileSystemSynchronizedRootGroup` (Xcode 16+)
   ```
 
   Für kompakte Ausgabe `-quiet` anhängen. Verifiziert lauffähig am 2026-06-14 (`** BUILD SUCCEEDED **`).
+- **Datei-Größen-Guard (Pflicht bei Source-Änderungen, s. Harte Regeln):**
+
+  ```bash
+  xcodebuild -scheme schreibwerkstatt-focuseditor -configuration Debug test \
+    -only-testing:schreibwerkstatt-focuseditorTests/SourceFileSizeTests
+  ```
+
+  Prüft, dass keine `.swift`-Datei das 800-Zeilen-Limit überschreitet (Allowlist im Test). Die ganze Suite läuft mit `test` ohne `-only-testing`. Verifiziert grün am 2026-06-15 (58 Tests, `** TEST SUCCEEDED **`).

@@ -143,6 +143,9 @@ struct schreibwerkstatt_focuseditorApp: App {
             }
 
             // Manueller Sync (⌘S) — wirkt auch bei pausiertem/manuellem Modus.
+            // ⌘S ist in den meisten Apps „Speichern": `syncManually()` flusht
+            // darum zuerst den offenen Draft in den LocalStore und stösst erst
+            // danach Push/Pull an → ⌘S speichert UND synchronisiert.
             CommandGroup(after: .toolbar) {
                 Button(t("menu.syncNow")) {
                     core.sync.syncManually()

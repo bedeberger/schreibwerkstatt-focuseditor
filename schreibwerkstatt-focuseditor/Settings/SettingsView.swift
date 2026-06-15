@@ -533,6 +533,16 @@ private struct AccountSettingsTab: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+
+            // Datenschutz/Datenhaltung — in-app dokumentiert (keine externe URL).
+            // Teilt den Wortlaut mit dem Login-Onboarding (`login.privacyBody`),
+            // damit die Aussage an beiden Stellen identisch und wartbar bleibt.
+            Section(t("settings.account.privacySection")) {
+                Text(t("login.privacyBody"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .formStyle(.grouped)
         .alert(t("settings.account.signOutAlertTitle"), isPresented: $showLogoutAlert) {

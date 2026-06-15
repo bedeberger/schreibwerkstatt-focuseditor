@@ -234,7 +234,16 @@ final class SyncEngine: ObservableObject {
     /// Captive-Portal): der echte Request klärt die Erreichbarkeit ohnehin, der
     /// Nutzer darf den einzigen Ausweg bei hängendem Sync nicht verlieren.
     func syncManually() {
-        Task { await syncNow(manual: true) }
+        // Erst den offenen Draft sofort sichern (der Editor-Autosave läuft
+        // entprellt → ein frischer Tastenanschlag liegt evtl. noch nicht im
+        // LocalStore), DANN pushen/pullen. So speichert ⌘S (und der Toolbar-/
+        // Settings-Knopf) wirklich UND synchronisiert — kein Verlust des
+        // jüngsten Tippstands. Nur der manuelle Pfad flusht; der Auto-Poll
+        // überlässt das Persistieren bewusst dem Editor-Autosave.
+        Task {
+            await editor?.flushDraftSave()
+            await syncNow(manual: true)
+        }
     }
 
     /// Gezielter Einzelseiten-Pull beim ÖFFNEN einer Seite („sicherheitshalber"):

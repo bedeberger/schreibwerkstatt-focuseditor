@@ -13,10 +13,18 @@ import Foundation
 
 enum ServerConfig {
     private static let defaultsKey = "server.baseURL"
-    // IPv4 statt `localhost`: Der Dev-Server bindet nur IPv4 (`*:3737`),
-    // `localhost` löst unter macOS aber bevorzugt auf IPv6 `::1` auf →
-    // „Connection refused". 127.0.0.1 erzwingt den passenden Stack.
-    private static let fallback = "http://127.0.0.1:3737"
+    // Default = öffentlicher Prod-Host. Frische Installs starten gegen die
+    // produktive Schreibwerkstatt; ein einmal eingegebener (Dev-)Server bleibt
+    // in UserDefaults erhalten und überstimmt diesen Fallback. Für lokale Tests
+    // weiterhin `http://127.0.0.1:3737` ins Login-Feld eintragen (IPv4 statt
+    // `localhost`: der Dev-Server bindet nur `*:3737`, `localhost` löst unter
+    // macOS bevorzugt auf IPv6 `::1` auf → „Connection refused").
+    private static let fallback = siteURLString
+
+    /// Kanonische öffentliche Adresse der Schreibwerkstatt (Marketing/Onboarding).
+    /// Basis für Register-/Token-Links, falls das eingegebene Server-Feld (noch)
+    /// ungültig ist.
+    static let siteURLString = "https://schreibwerkstatt.app"
 
     /// Aktuelle Basis-URL als String (für Anzeige/Eingabe).
     static var baseURLString: String {
@@ -50,5 +58,15 @@ enum ServerConfig {
             if let coerced = comps.url { return coerced }
         }
         return url
+    }
+
+    /// Baut eine Browser-Seite (z. B. `register`, `me`) auf einer eingegebenen
+    /// Server-Basis. Für die Onboarding-Links im Login: respektiert den im Feld
+    /// stehenden Server (auch Dev), fällt bei ungültiger Eingabe auf die
+    /// kanonische Site zurück — so öffnet der Knopf nie eine kaputte URL.
+    static func pageURL(onServer raw: String, path: String) -> URL {
+        let base = normalizedURL(from: raw)
+            ?? URL(string: siteURLString)!
+        return base.appendingPathComponent(path)
     }
 }

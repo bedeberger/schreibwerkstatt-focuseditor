@@ -29,4 +29,8 @@ protocol EditorCoordinating: AnyObject {
     /// 3-Wege-Block-Merge in der WebView. Wirft, wenn nicht verfügbar
     /// (kein Editor-Bundle / keine WebView) — Aufrufer behandelt das als Konflikt.
     func merge3(base: String?, local: String, server: String) async throws -> MergeOutcome
+    /// Persistiert den offenen Draft sofort (→ LocalStore + Outbox) und wartet
+    /// darauf. Für den manuellen Sync (⌘S/Toolbar/Settings), damit der aktuelle
+    /// Stand garantiert vor dem Push liegt (der Editor-Autosave läuft entprellt).
+    func flushDraftSave() async
 }

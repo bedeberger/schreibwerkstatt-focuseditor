@@ -119,6 +119,19 @@ enum WebAssets {
           const res = m.mergeBlocks(baseHtml || '', localHtml || '', serverHtml || '');
           return { merged: m.mergedToHtml(res.merged), conflictCount: res.conflicts.length };
         },
+
+        // Offenen Draft sofort persistieren (z. B. bei ⌘S). Der Editor-Autosave
+        // läuft entprellt — ein frischer Tastenanschlag liegt also evtl. noch
+        // nicht im LocalStore. `__standalone.save()` verwirft den Autosave-Timer
+        // und schiebt den aktuellen Stand über die save-Op (→ LocalStore +
+        // Outbox). AWAITABLE gehalten (Swift wartet darauf, bevor es den Sync
+        // anstösst) — anders als der Fire-and-forget-Event-Bus (`_receive`).
+        // Kein offener Editor / kein Bundle → still no-op (kein Wurf).
+        _flushSave: async function () {
+          const s = window.__standalone;
+          if (s && typeof s.save === 'function') { await s.save(); }
+          return true;
+        },
       };
 
       // console → Swift-Log (nur Weiterleitung, Original bleibt erhalten).
