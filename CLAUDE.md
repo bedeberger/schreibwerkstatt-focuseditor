@@ -184,10 +184,9 @@ Der App-Sources-Ordner ist eine `PBXFileSystemSynchronizedRootGroup` (Xcode 16+)
 
   Für kompakte Ausgabe `-quiet` anhängen. Verifiziert lauffähig am 2026-06-14 (`** BUILD SUCCEEDED **`).
 
-## Roadmap (Plan)
+## Roadmap (offene Punkte)
 
-1. **Bridge-Facade** + **OTA-Bundle** — *erledigt*: Server bündelt die Editor-Closure als ZIP (`GET /content/editor-bundle.zip`, [lib/editor-bundle.js](../../ClaudeProjects/schreibwerkstatt/lib/editor-bundle.js)); Client zieht/cacht/entpackt (`EditorBundleStore` + `MiniZip`). Build-Step + `web/`-Ordner entfallen.
-2. **Device-Token-Auth** am Server — *erledigt* (Tabelle `device_tokens`, `swd_`-Bearer, `/me/device-tokens`). Frontend-UI zum Ausstellen noch offen.
-3. **Inkrementeller Sync** am Server — *erledigt*: `GET /content/books/:book_id/sync` (Keyset-Cursor, voller HTML, inkl. eigener Edits) + 409-Semantik (`PAGE_CONFLICT`) auf `PUT /content/pages/:id`.
-4. **macOS-Shell + Offline-Kern** — WKWebView + Bridge *(steht)*, LocalStore + Outbox *(steht)*, GRDB *(erledigt — `GRDBLocalStore`, ersetzt den In-Memory/JSON-Platzhalter; `InMemoryLocalStore` bleibt als Fallback/Tests)*, **SyncEngine (Polling-Pull + Push + Delete-Reconcile)** *(steht — Cross-Session-Frische, s. „Sync")*.
-5. **Nativer Feinschliff** — *teilweise erledigt*: nativer macOS-Vollbild (Toolbar bleibt sichtbar; ablenkungsfreies Ausblenden macht allein die Auto-Hide-Option; Fenster-Chrome in `WindowChromeController.swift`), Dark Mode (`Theme/AppearanceController.swift`, Light/Dark/System), Brand-Fonts/-Farben (`Theme/`) und **Preferences** (`Settings/SettingsView.swift`, 7 Tabs — Typografie/Schreibziel/Sync-Kadenz/Rechtschreib-Overrides/Auto-Hide/Konto-Wartung) stehen. Offen: Sparkle-Auto-Update, Code-Signing/Notarization. *Server-/Editor-abhängige Settings bewusst NICHT umgesetzt (s. u.).*
+Der funktionale Kern steht (OTA-Bundle, Device-Token-Auth inkl. Web-`/me`-Ausstell-UI, inkrementeller Sync, macOS-Shell + Offline-Kern, nativer Feinschliff). Offen ist nur noch die Distributions-Kette:
+
+1. **Verteilung (Signing/Notarization)** — *Skripte vorbereitet, Apple-Setup offen*: Hardened Runtime + App Sandbox + Netzwerk-Entitlement stehen im Projekt; [scripts/notarize.sh](scripts/notarize.sh) (App signieren/notarisieren/stapeln) + `scripts/release-dmg.sh` (Release → signiertes, notarisiertes `.dmg`) sind fertig. **Offen — einmalig (s. [SIGNING.md](SIGNING.md)):** Apple Developer Program Enrollment (~99 $/Jahr), „Developer ID Application"-Zertifikat (aktuell `0 Identities`), `DEVELOPMENT_TEAM` im Projekt, `notarytool`-Credentials (`swk-notary`).
+2. **Sparkle-Auto-Update** — *geplant, noch nicht integriert*: SPM-Dependency + EdDSA-Keypair (eigener Sparkle-Schlüssel, unabhängig vom Apple-Zertifikat) + Appcast-Feed. Baut auf der notarisierten `.app` aus Punkt 1 auf.

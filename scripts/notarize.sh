@@ -8,7 +8,7 @@
 #         --apple-id "david.berger@dotag.ch" --team-id "<TEAM_ID>" --password "<app-specific-pw>"
 #
 # Nutzung:
-#   scripts/notarize.sh "/Pfad/zu/Schreibwerkstatt Fokus.app"
+#   scripts/notarize.sh "/Pfad/zu/Focuseditor.app"
 #
 # Erwartete Umgebungsvariablen (oder hier eintragen):
 #   DEV_ID_APP   z.B. "Developer ID Application: David Berger (TEAMID)"

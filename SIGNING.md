@@ -45,17 +45,30 @@ xcrun notarytool store-credentials swk-notary \
 
 ## Build + Notarisieren (jedes Release)
 
-```bash
-# 1. Release-App bauen/exportieren (Archive → Distribute → Developer ID), oder:
-xcodebuild -scheme schreibwerkstatt-focuseditor -configuration Release \
-  -derivedDataPath build clean build
+**Verteilung als `.dmg` (Standard):** ein Skript erledigt alles — Release bauen,
+App signieren/notarisieren/stapeln, Drag-to-Applications-`.dmg` bauen, `.dmg`
+signieren/notarisieren/stapeln, Gatekeeper-Check.
 
-# 2. Signieren + notarisieren + stapeln
+```bash
 export DEV_ID_APP="Developer ID Application: David Berger (<TEAM_ID>)"
-scripts/notarize.sh "build/Build/Products/Release/Schreibwerkstatt Fokus.app"
+VERSION=1.0.0 scripts/release-dmg.sh
+# Ergebnis: build/Build/Products/Release/Focuseditor-1.0.0.dmg (verteilbar)
 ```
 
-Das Skript signiert mit Hardened Runtime + Timestamp, lädt zur Notarisierung
+`scripts/release-dmg.sh` ruft intern `scripts/notarize.sh` für die App auf und
+notarisiert zusätzlich das `.dmg` (zwei Notarisierungs-Roundtrips → sowohl App
+als auch DMG sind gestapelt, also auch beim ersten Offline-Start sauber).
+
+**Nur die `.app`** (z. B. für Zip/Sparkle-Feed, ohne DMG):
+
+```bash
+xcodebuild -scheme schreibwerkstatt-focuseditor -configuration Release \
+  -derivedDataPath build clean build
+export DEV_ID_APP="Developer ID Application: David Berger (<TEAM_ID>)"
+scripts/notarize.sh "build/Build/Products/Release/Focuseditor.app"
+```
+
+`notarize.sh` signiert mit Hardened Runtime + Timestamp, lädt zur Notarisierung
 hoch (`--wait`), heftet das Ticket ans Bundle (`stapler`) und prüft mit `spctl`.
 
 ## Später (Auto-Update)
