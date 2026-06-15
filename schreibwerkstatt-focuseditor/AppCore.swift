@@ -30,6 +30,10 @@ final class AppCore: ObservableObject {
     /// OTA-Override der Oberflächen-Strings (macclient.*); gebündelte Kataloge
     /// bleiben der Offline-Fallback.
     let i18n: I18nBundleStore
+    /// Misst die im Editor verbrachte Zeit und meldet sie an den Server
+    /// (`POST /history/writing-time`) — das native Pendant zum Schreibzeit-
+    /// Heartbeat der Web-Plattform. Scene-Phase über `setActive(_:)`.
+    let writingTime: WritingTimeTracker
 
     /// Server-Namespace, auf den die Stores aktuell zeigen. Erkennt einen Wechsel
     /// (Settings ODER URL-Edit im Login) gegen `ServerNamespace.currentSlug`.
@@ -58,9 +62,14 @@ final class AppCore: ObservableObject {
         self.store = store
         self.bridge = bridge
         self.content = content
-        self.library = LibraryStore(content: content, store: store, bridge: bridge)
+        let library = LibraryStore(content: content, store: store, bridge: bridge)
+        self.library = library
         self.editorBundle = EditorBundleStore(api: auth.api)
         self.i18n = I18nBundleStore(api: auth.api)
+        let writingTime = WritingTimeTracker(api: auth.api,
+                                             isSignedIn: { auth.state == .signedIn })
+        self.writingTime = writingTime
+        writingTime.attach(to: library)
         let sync = SyncEngine(api: auth.api,
                               content: content,
                               store: store,
@@ -88,6 +97,8 @@ final class AppCore: ObservableObject {
         // abwarten — sonst committet ein in-flight DB-Write evtl. noch in die
         // alte Namespace-DB (Datenverlust für den neuen Server).
         await sync.suspendForServerSwitch()
+        // Schreibzeit-Puffer des alten Servers verwerfen (Buch-IDs gelten nur dort).
+        writingTime.reset()
         do {
             try await store.switchToCurrentServer()
         } catch {

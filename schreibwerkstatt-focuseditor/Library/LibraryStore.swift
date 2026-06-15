@@ -23,11 +23,27 @@ import OSLog
 @MainActor
 final class LibraryStore: ObservableObject {
     @Published private(set) var books: [BookDTO] = []
-    @Published private(set) var activeBookId: Int?
+    @Published private(set) var activeBookId: Int? {
+        didSet {
+            guard activeBookId != oldValue else { return }
+            onWritingContextChange?(activeBookId, openPageId != nil)
+        }
+    }
     @Published private(set) var pages: [PagePickerRow] = []
     /// Aktuell im Editor geöffnete Seite (von der Bridge gemeldet bzw. per Picker
     /// gewählt) — treibt die Seiten-Anzeige in der Toolbar.
-    @Published private(set) var openPageId: Int?
+    @Published private(set) var openPageId: Int? {
+        didSet {
+            guard openPageId != oldValue else { return }
+            onWritingContextChange?(activeBookId, openPageId != nil)
+        }
+    }
+    /// Meldet Änderungen am „wo schreibt der Nutzer"-Kontext (aktives Buch + ob
+    /// eine Seite offen ist) — Grundlage fürs Schreibzeit-Tracking
+    /// ([WritingTimeTracker](../Writing/WritingTimeTracker.swift)). Bewusst ein
+    /// schlichter Callback wie `bridge.onStats`/`onOpenPageChange` (kein Combine-
+    /// Sink — das Projekt verdrahtet Stores durchweg über Callbacks).
+    var onWritingContextChange: ((_ bookId: Int?, _ hasOpenPage: Bool) -> Void)?
     /// Hat die offene Seite ungespeicherte (lokale) Änderungen? Treibt den
     /// Save-Indikator in der Toolbar (von der Bridge via `editorState` gemeldet).
     @Published private(set) var openPageDirty = false

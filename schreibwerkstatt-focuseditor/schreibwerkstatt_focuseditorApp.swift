@@ -89,6 +89,8 @@ struct schreibwerkstatt_focuseditorApp: App {
         // beim Reaktivieren sofort ein Tick (CLAUDE.md, Cross-Session-Frische).
         .onChange(of: scenePhase, initial: true) { _, phase in
             core.sync.setActive(phase == .active)
+            // Schreibzeit zählt nur im aktiven Fenster (wie der Sync-Poll).
+            core.writingTime.setActive(phase == .active)
         }
         .commands {
             // „Über …" — Standard-Panel mit eigenem Credits-Text: Kurzbeschreibung

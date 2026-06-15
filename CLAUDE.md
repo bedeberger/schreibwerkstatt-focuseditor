@@ -133,6 +133,10 @@ Der Sync hält den lokalen Spiegel **aktuell, auch wenn eine Seite in einer ande
 
 - Inhalte fließen ausschließlich über die Content-Store-Semantik des Servers — kein Voll-Buch-`.swbook` für den Live-Sync (zu grob).
 
+### Schreibzeit — `POST /history/writing-time`
+
+Native Entsprechung zum Schreibzeit-Heartbeat der Web-Plattform (`public/js/book/writing-time.js`). Der [WritingTimeTracker](schreibwerkstatt-focuseditor/Writing/WritingTimeTracker.swift) misst die im Editor verbrachte **Wall-Clock-Zeit** und meldet sie alle ~15 s als `{ book_id, seconds }`; der Server addiert pro (User, Buch, Tag) auf (Tabelle `writing_time`). **Kein Bridge-Op** — direkter Swift→Server-Call (Auth wie alles über Bearer-Token). Gezählt wird, solange **Fenster aktiv** (Scene-Phase `.active`, `setActive(_:)` wie der Sync-Poll) **und eine Seite im aktiven Buch offen** ist — bewusst **ohne Idle-Erkennung** (wie die Web-Seite: `(editMode||focusActive) && selectedBookId && visible`). Pro Ping auf 3600 s gedeckelt (Uhrsprung-Schutz wie serverseitig). **Best-effort**, nur in-memory gepuffert (`pending` pro Buch; kurze Offline-Phase übersteht es, ein App-Neustart nicht) — Inhalte/Outbox sind nie betroffen. Eingangs-Signale (aktives Buch + offene Seite) kommen über `LibraryStore.onWritingContextChange`.
+
 ## Verzeichnislayout
 
 App-Sources unter [schreibwerkstatt-focuseditor/](schreibwerkstatt-focuseditor/), nach Verantwortung gruppiert. Die Datei-für-Datei-Karte (welcher Typ wo, wer wen besitzt) steht in [ARCHITECTURE.md](ARCHITECTURE.md) §2–§10.
@@ -148,7 +152,7 @@ schreibwerkstatt-focuseditor/        App-Sources (Swift)
   Library/    LibraryStore + native Picker (BookPicker, PagePickerOverlay)
   Theme/      Appearance + Typography (Controller) + BrandColor + BrandFont
   Focus/      FocusController (lokale Fokus-Granularität)
-  Writing/    WritingStatsStore (Live-Wortzahl/Lesezeit/Schreibziel/Tages-Delta)
+  Writing/    WritingStatsStore (Live-Wortzahl/Lesezeit/Schreibziel/Tages-Delta) + WritingTimeTracker (Schreibzeit-Heartbeat → POST /history/writing-time)
   Conflict/   ConflictDiff (HTML→Absätze + absatzweiser Diff) + ConflictResolutionView (Nebeneinander-Sheet, informierte 409-Auflösung)
   Update/     UpdaterController (Sparkle-Auto-Update; Config in Config/Info.plist + Config/Focuseditor.entitlements)
   Settings/   SettingsView (⌘, — 7 Tabs)
