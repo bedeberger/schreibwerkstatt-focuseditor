@@ -36,9 +36,13 @@ notarize_and_staple() {
   fi
 
   echo "==> Sende an Apple-Notarisierung: $(basename "$upload")"
-  local sid
-  sid=$(xcrun notarytool submit "$upload" "${notary_auth[@]}" 2>&1 \
-        | awk -F': ' '/^[[:space:]]*id:/{print $2; exit}')
+  local sid submit_out
+  # Erst die volle Upload-Ausgabe einfangen, DANN parsen. Nicht direkt in ein
+  # `awk … exit` pipen: das schliesst die Pipe beim ersten `id:` und schickt dem
+  # noch schreibenden notarytool SIGPIPE — mit `set -o pipefail`+`-e` riss das den
+  # ganzen Release ab (Exit 141, racy je nach notarytool-Ausgabemenge).
+  submit_out=$(xcrun notarytool submit "$upload" "${notary_auth[@]}" 2>&1)
+  sid=$(awk -F': ' '/^[[:space:]]*id:/{print $2; exit}' <<< "$submit_out")
   if [[ -z "$sid" ]]; then
     echo "FEHLER: keine Submission-ID erhalten (Upload fehlgeschlagen)." >&2
     [[ -n "$tmpzip" ]] && rm -f "$tmpzip"
