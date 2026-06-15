@@ -10,5 +10,5 @@
 // Beim Release: MARKETING_VERSION erhöhen (z. B. 1.0 -> 1.1). Die
 // Build-Nummer optional je Build hochzählen.
 
-MARKETING_VERSION = 1.4
-CURRENT_PROJECT_VERSION = 5
+MARKETING_VERSION = 1.5
+CURRENT_PROJECT_VERSION = 6
