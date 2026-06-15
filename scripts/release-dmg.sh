@@ -88,3 +88,16 @@ echo
 echo "==> Fertig. Verteilbares Disk-Image:"
 du -sh "$DMG_PATH"
 echo "    $DMG_PATH"
+
+# --- 6. Optional: als GitHub-Release veroeffentlichen ------------------------
+# PUBLISH=1 -> das .dmg wird als "latest"-Release hochgeladen; der Server bietet
+# es dann automatisch unter Profil-Einstellungen zum Download an.
+if [[ "${PUBLISH:-0}" == "1" ]]; then
+  echo
+  echo "==> Veroeffentliche als GitHub-Release..."
+  VERSION="${VERSION:-}" "$ROOT/scripts/publish-github-release.sh" "$DMG_PATH"
+else
+  echo
+  echo "    Zum Veroeffentlichen: PUBLISH=1 scripts/release-dmg.sh   (oder"
+  echo "    scripts/publish-github-release.sh \"$DMG_PATH\")"
+fi

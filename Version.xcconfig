@@ -1,0 +1,14 @@
+// Version.xcconfig — Single Source of Truth für die App-Version.
+//
+// Hier (und NUR hier) die Version hochzählen. Wird auf Projektebene als
+// Base-Configuration eingebunden; App- und Test-Target erben die Werte.
+//
+//   MARKETING_VERSION       -> CFBundleShortVersionString (sichtbare Version,
+//                              GitHub-Tag v<…>, .dmg-Dateiname)
+//   CURRENT_PROJECT_VERSION -> CFBundleVersion (Build-Nummer)
+//
+// Beim Release: MARKETING_VERSION erhöhen (z. B. 1.0 -> 1.1). Die
+// Build-Nummer optional je Build hochzählen.
+
+MARKETING_VERSION = 1.0
+CURRENT_PROJECT_VERSION = 1
