@@ -54,6 +54,11 @@ enum WebAssets {
         // loadPage bevorzugt sie, fällt sonst auf die erste Seite zurück.
         lastOpenPage: () => call('lastOpenPage', {}),
 
+        // In der Toolbar gewähltes Buch (gerätelokal, pro Server). loadPage
+        // skopiert die initiale Seitenauswahl darauf, damit beim Start nie eine
+        // Seite aus einem anderen Buch geladen wird. { bookId } | { bookId: null }.
+        activeBook: () => call('activeBook', {}),
+
         // Editor meldet offene Seite + Dirty-Flag an Swift (Open-Page-Reload/-Schutz).
         reportState: (pageId, dirty) =>
           call('editorState', { pageId: pageId == null ? null : String(pageId), dirty: !!dirty }),
@@ -321,11 +326,21 @@ enum WebAssets {
               const bridge = {
                 granularity: initialGranularity,
                 loadPage: async () => {
+                  // Auf das in der Toolbar gewählte Buch beschränken — sonst lüde
+                  // die global gemerkte lastOpenPage (pro Server, nicht pro Buch)
+                  // eine Seite aus einem anderen Buch, und der Editor zeigte ein
+                  // anderes Buch als die Toolbar. Ohne aktives Buch (Erststart):
+                  // ungefiltert wie bisher.
+                  let bookId = null;
+                  try {
+                    const ab = await fb.activeBook();
+                    if (ab && ab.bookId != null) bookId = ab.bookId;
+                  } catch (_) {}
                   let pages = [];
-                  try { pages = await fb.list(); } catch (_) {}
+                  try { pages = bookId != null ? await fb.list(bookId) : await fb.list(); } catch (_) {}
                   // Zuletzt geöffnete Seite bevorzugen (gerätelokal gemerkt) —
-                  // nur, wenn sie noch in der Liste steht (sonst gelöscht/anderes
-                  // Buch). Sonst die erste Seite wie bisher.
+                  // nur, wenn sie noch in der (buch-skopierten) Liste steht (sonst
+                  // gelöscht/anderes Buch). Sonst die erste Seite des Buchs.
                   let id = null;
                   try {
                     const last = await fb.lastOpenPage();

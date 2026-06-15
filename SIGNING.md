@@ -11,37 +11,38 @@ ein **Developer-ID-Zertifikat** + **Notarisierung** durch Apple.
   `.entitlements`-Datei nötig). Deckt Sync, OTA-Bundle und LanguageTool ab.
 - ✅ **Hardened Runtime** aktiv (`ENABLE_HARDENED_RUNTIME = YES`) — Pflicht für die
   Notarisierung.
-- ✅ Notarisierungs-Skript: [scripts/notarize.sh](scripts/notarize.sh).
+- ✅ **Apple Developer Program** (bezahlt) + **Developer-ID-Application**-Zertifikat
+  im Keychain (Team `TQA2JLKT87`).
+- ✅ **Notarisierung via App-Store-Connect-API-Key** (file-basiert) — keine
+  Keychain-/Session-Abhängigkeit, läuft auch aus Hintergrund-/CI-Prozessen.
+- ✅ Skripte: [scripts/release-dmg.sh](scripts/release-dmg.sh) (verteilbares DMG),
+  [scripts/notarize.sh](scripts/notarize.sh) (App-only),
+  [scripts/lib-notary.sh](scripts/lib-notary.sh) (Notarisierungs-Helfer, robustes
+  Status-Polling statt `--wait`).
 
-## Noch offen — einmalig erledigen
+## Zugang (einmalig, lokal — NICHT im Git)
 
-### 1. Apple Developer Program (kostenpflichtig, ~99 $/Jahr)
-Das kostenlose „Personal Team" (`TQA2JLKT87`) reicht **nicht** — es kann kein
-„Developer ID Application"-Zertifikat ausstellen.
-→ developer.apple.com → Account → Enroll.
+Alle Zugangsdaten stehen in **`scripts/release.env`** (in `.gitignore`; Vorlage:
+[scripts/release.env.example](scripts/release.env.example)). Die Skripte sourcen
+diese Datei automatisch. Inhalt:
 
-### 2. „Developer ID Application"-Zertifikat erstellen
-Xcode → Settings → Accounts → Account wählen → **Manage Certificates** →
-**+** → **Developer ID Application**. Landet im Login-Keychain.
-Prüfen:
 ```bash
-security find-identity -p codesigning -v
-# sollte "Developer ID Application: David Berger (TEAMID)" zeigen (heute: 0 Identities)
+DEV_ID_APP="<SHA-1 der Developer-ID-Identität>"   # security find-identity -v -p codesigning
+NOTARY_KEY="$HOME/.appstoreconnect/AuthKey_XXXXXXXXXX.p8"
+NOTARY_KEY_ID="XXXXXXXXXX"                          # steht im Dateinamen
+NOTARY_ISSUER="xxxxxxxx-…-xxxxxxxxxxxx"             # Issuer-UUID
 ```
 
-### 3. Team-ID im Projekt setzen
-Xcode → Target → **Signing & Capabilities** → Team auswählen
-(setzt `DEVELOPMENT_TEAM`). Für die Release-Verteilung Signing ggf. auf
-**Manual** + Identity „Developer ID Application" stellen.
+Die **`.p8`** liegt außerhalb des Repos (`~/.appstoreconnect/`, `chmod 600`) und
+ist zusätzlich per `*.p8` in `.gitignore` geschützt.
 
-### 4. notarytool-Zugang anlegen (einmalig)
-App-spezifisches Passwort auf appleid.apple.com erzeugen, dann:
-```bash
-xcrun notarytool store-credentials swk-notary \
-  --apple-id "david.berger@dotag.ch" \
-  --team-id "<TEAM_ID>" \
-  --password "<app-specific-password>"
-```
+**Falls das neu aufgesetzt werden muss** (anderer Mac / neuer Key):
+1. Zertifikat: Xcode → Settings → Accounts → **Manage Certificates** → **+** →
+   **Developer ID Application**. Hash holen mit `security find-identity -v -p codesigning`.
+2. API-Key: appstoreconnect.apple.com → Users and Access → Integrations →
+   **App Store Connect API** → Key (Access: Developer) generieren → `.p8` nach
+   `~/.appstoreconnect/` laden → Key-ID + Issuer-ID notieren.
+3. `cp scripts/release.env.example scripts/release.env` und Werte eintragen.
 
 ## Build + Notarisieren (jedes Release)
 

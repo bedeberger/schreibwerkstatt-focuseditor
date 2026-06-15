@@ -5,3 +5,7 @@ xcuserdata/
 *.xcuserstate
 DerivedData/
 build/
+
+# Signier-/Notarisierungs-Zugang (Secrets — NIE committen)
+scripts/release.env
+*.p8

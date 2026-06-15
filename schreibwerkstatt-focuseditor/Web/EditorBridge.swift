@@ -14,6 +14,7 @@
 //    • load { pageId }                         → { id, html, updatedAt, baseUpdatedAt? }
 //    • save { pageId, html, baseUpdatedAt? }   → { id, updatedAt }
 //    • list { bookId? }                        → [ { id, title?, pageName?, bookId?, chapterId?, updatedAt } ]
+//    • activeBook {}                           → { bookId }  (Toolbar-Buch, Boot-Pull; skopiert die Seitenauswahl)
 //    • editorState { pageId, dirty }           → null   (offene Seite + Dirty-Flag)
 //    • log  { level?, message }                → null   (JS-Diagnose im Swift-Log)
 //
@@ -51,6 +52,12 @@ final class EditorBridge: NSObject, WKScriptMessageHandlerWithReply, EditorCoord
     /// (eine Seiten-ID gilt nur am Server, der sie vergeben hat; sonst öffnete der
     /// Client am neuen Server eine Seite des alten). Analog zu `LibraryStore`.
     static var lastOpenPageKey: String { "editor.lastOpenPageId.\(ServerNamespace.currentSlug)" }
+
+    /// UserDefaults-Key des in der Toolbar gewählten Buchs — pro Server-Namespace,
+    /// exakt wie in `LibraryStore` (dort die SSoT). Die Bridge liest ihn beim Boot,
+    /// um die initiale Seitenauswahl auf dieses Buch zu beschränken (sonst lüde die
+    /// global gemerkte `lastOpenPage` eine Seite aus einem anderen Buch).
+    static var activeBookKey: String { "library.activeBookId.\(ServerNamespace.currentSlug)" }
 
     private let store: any LocalStore
     /// HTTP-Client für den LanguageTool-/Wörterbuch-Proxy. Optional, damit die
@@ -201,6 +208,13 @@ final class EditorBridge: NSObject, WKScriptMessageHandlerWithReply, EditorCoord
             // Editor-Glue bevorzugt sie in `loadPage`, fällt sonst auf die erste
             // Seite zurück. `nil`, wenn noch nie eine Seite geöffnet wurde.
             return ["pageId": UserDefaults.standard.string(forKey: Self.lastOpenPageKey) as Any]
+
+        case "activeBook":
+            // Boot-Pull: das in der Toolbar gewählte Buch (gerätelokal, pro Server).
+            // Der Editor-Glue skopiert `list`/`lastOpenPage` darauf, damit beim Start
+            // nie eine Seite aus einem anderen Buch geladen wird. 0 = keins → null.
+            let bid = UserDefaults.standard.integer(forKey: Self.activeBookKey)
+            return ["bookId": (bid == 0 ? nil : bid) as Any]
 
         case "focusGranularity":
             // Boot-Pull: der Editor liest die lokale Fokus-Stufe beim Mounten.

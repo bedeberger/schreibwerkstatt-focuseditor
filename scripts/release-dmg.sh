@@ -25,12 +25,17 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+[[ -f "$ROOT/scripts/release.env" ]] && source "$ROOT/scripts/release.env"
+source "$ROOT/scripts/lib-notary.sh"
+
 SCHEME="schreibwerkstatt-focuseditor"
 CONFIG="Release"
 DERIVED="$ROOT/build"
 APP_NAME="Focuseditor.app"
-DEV_ID_APP="${DEV_ID_APP:?DEV_ID_APP setzen, z.B. 'Developer ID Application: David Berger (TEAMID)'}"
-NOTARY_PROFILE="${NOTARY_PROFILE:-swk-notary}"
+DEV_ID_APP="${DEV_ID_APP:?DEV_ID_APP setzen (scripts/release.env oder Env)}"
+
+# Version aus Version.xcconfig (SSoT) ableiten, falls nicht per Env vorgegeben.
+VERSION="${VERSION:-$(awk -F'=' '/^MARKETING_VERSION/{gsub(/[[:space:]]/,"",$2); print $2; exit}' "$ROOT/Version.xcconfig")}"
 
 # --- 0. App-Pfad bestimmen (Argument oder frischer Release-Build) -------------
 APP_PATH="${1:-}"
@@ -44,8 +49,7 @@ fi
 
 # --- 1. App signieren + notarisieren + stapeln (vorhandenes Skript) ----------
 echo "==> App signieren + notarisieren + stapeln..."
-DEV_ID_APP="$DEV_ID_APP" NOTARY_PROFILE="$NOTARY_PROFILE" \
-  "$ROOT/scripts/notarize.sh" "$APP_PATH"
+"$ROOT/scripts/notarize.sh" "$APP_PATH"
 
 # --- 2. Drag-to-Applications-.dmg bauen --------------------------------------
 OUT_DIR="$(dirname "$APP_PATH")"
@@ -73,12 +77,7 @@ codesign --force --sign "$DEV_ID_APP" --timestamp "$DMG_PATH"
 codesign --verify --verbose=2 "$DMG_PATH"
 
 # --- 4. .dmg notarisieren + stapeln ------------------------------------------
-echo "==> .dmg notarisieren (wartet auf Ergebnis)..."
-xcrun notarytool submit "$DMG_PATH" --keychain-profile "$NOTARY_PROFILE" --wait
-
-echo "==> Notarization-Ticket ans .dmg heften..."
-xcrun stapler staple "$DMG_PATH"
-xcrun stapler validate "$DMG_PATH"
+notarize_and_staple "$DMG_PATH"
 
 # --- 5. Gatekeeper-Check ------------------------------------------------------
 echo "==> Gatekeeper-Check (.dmg):"
