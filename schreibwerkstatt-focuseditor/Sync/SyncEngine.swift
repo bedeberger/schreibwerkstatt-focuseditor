@@ -431,6 +431,36 @@ final class SyncEngine: ObservableObject {
         conflicts.removeAll { $0.pageId == pageId }
     }
 
+    /// Lokaler (ungepushter) + frischer Server-Stand eines Konflikts — Grundlage
+    /// für die Nebeneinander-Ansicht der `ConflictResolutionView`. Lokal aus der
+    /// Outbox (Fallback: Store), Server per Online-GET (wie `resolveConflict`).
+    /// `nil`, wenn der Server-Abruf scheitert (offline) oder kein lokaler Stand
+    /// (mehr) vorliegt — die UI zeigt dann einen Lade-/Fehlerzustand.
+    struct ConflictContents: Equatable {
+        let localHtml: String
+        let serverHtml: String
+        let serverUpdatedAt: String?
+    }
+
+    func conflictContents(pageId pid: String) async -> ConflictContents? {
+        let localHtml: String
+        if let entry = ((try? await store.pendingOutbox()) ?? []).first(where: { $0.pageId == pid }) {
+            localHtml = entry.html
+        } else if let page = (try? await store.page(id: pid)) ?? nil {
+            localHtml = page.html
+        } else {
+            return nil
+        }
+        guard let serverPage = try? await api.send("/content/pages/\(pid)",
+                                                   method: .GET,
+                                                   decode: PushResponse.self) else {
+            return nil
+        }
+        return ConflictContents(localHtml: localHtml,
+                                serverHtml: serverPage.html ?? "",
+                                serverUpdatedAt: serverPage.updated_at)
+    }
+
     /// Manuelle Konflikt-Auflösung aus der UI. Verwirft Inhalte NUR auf
     /// ausdrückliche Nutzer-Wahl (CLAUDE.md: kein automatisches Verwerfen).
     ///  • `keepLocal == true`: lokaler Stand erzwingt sich gegen den Server

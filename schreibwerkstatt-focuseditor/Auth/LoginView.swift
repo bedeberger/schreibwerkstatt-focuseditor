@@ -155,8 +155,10 @@ struct LoginView: View {
     }
 
     /// Token-Flow als nummerierte 3-Schritt-Anleitung mit direkten Links zur
-    /// Registrierung (`/register`) und zur Token-Ausstellung (`/me`) auf dem im
-    /// Feld stehenden Server. Macht den Copy-Paste-Login ohne Vorwissen begehbar.
+    /// Registrierung (`/register`) und zur Token-Ausstellung (`#profil`,
+    /// SPA-Hash-Route — die User-Settings-Karte enthält die Geräte-Tokens) auf
+    /// dem im Feld stehenden Server. Macht den Copy-Paste-Login ohne Vorwissen
+    /// begehbar.
     private var onboardingSteps: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(t("login.howToTitle"))
@@ -173,7 +175,7 @@ struct LoginView: View {
             }
             stepRow(2, t("login.step2")) {
                 Button(t("login.openTokenPage")) {
-                    openURL(ServerConfig.pageURL(onServer: serverURL, path: "me"))
+                    openURL(ServerConfig.pageURL(onServer: serverURL, fragment: "profil"))
                 }
                 .buttonStyle(.link)
                 .font(BrandFont.sans(12, weight: .medium))

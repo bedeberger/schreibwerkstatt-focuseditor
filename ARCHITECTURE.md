@@ -193,7 +193,7 @@ Ein Tick macht Push, dann Pull, dann gedrosselt Delete-Reconcile (`reconcileInte
 
 - `base` = `serverBaseHtml` aus `SyncState` (Merge-Ancestor), `local` = Outbox-HTML, `server` = frisch geholt.
 - `conflictCount == 0` → gemergtes HTML mit neuer Basis erneut pushen (still), Store mergen, offene Seite reloaden.
-- `conflictCount > 0` → echter Konflikt: `recordConflict(...)` (→ `@Published conflicts`, Editor-Konflikt-UI).
+- `conflictCount > 0` → echter Konflikt: `recordConflict(...)` (→ `@Published conflicts`). Die Toolbar (`SyncStatusLabel`) zeigt sie und öffnet pro Seite die **`ConflictResolutionView`** ([Conflict/](schreibwerkstatt-focuseditor/Conflict/)): ein Sheet, das lokalen + frischen Server-Stand (`SyncEngine.conflictContents`) **nebeneinander** mit absatzweisem Diff (`ConflictDiff`, pure `CollectionDifference`) zeigt — informierte Wahl „mein Stand"/„Server-Stand" statt blindem Dropdown. Die Auflösung selbst macht weiter `resolveConflict(pageId:keepLocal:)`.
 - Netzfehler beim Merge-Fetch setzt **keinen** klebrigen Konflikt — Eintrag bleibt in der Outbox, nächster Tick versucht erneut.
 
 ### Pull — `GET /content/books/:id/sync`

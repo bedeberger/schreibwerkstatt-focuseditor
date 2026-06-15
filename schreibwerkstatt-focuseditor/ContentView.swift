@@ -54,6 +54,8 @@ private struct EditorHostView: View {
     @EnvironmentObject private var editorBundle: EditorBundleStore
     /// Sichtbarkeit des beschwörbaren Seiten-Pickers (⌘O).
     @State private var pickerOpen = false
+    /// Aktuell geprüfter Konflikt (treibt das Auflösungs-Sheet). `nil` = zu.
+    @State private var inspectingConflict: SyncEngine.Conflict?
 
     /// „Toolbar bei Inaktivität ausblenden" (gerätelokal, gleicher Key wie der
     /// Darstellungs-Tab der Settings).
@@ -105,7 +107,7 @@ private struct EditorHostView: View {
         let autoHideActive = autoHideToolbar
         VStack(spacing: 0) {
             if !autoHideActive {
-                AppToolbar(pickerOpen: $pickerOpen)
+                AppToolbar(pickerOpen: $pickerOpen, onInspectConflict: { inspectingConflict = $0 })
             }
             ZStack(alignment: .top) {
                 // App-weiter, geteilter Store — dieselbe Instanz, die die SyncEngine bedient.
@@ -121,7 +123,7 @@ private struct EditorHostView: View {
                         .onContinuousHover { phase in
                             if case .active = phase { revealToolbar() }
                         }
-                    AppToolbar(pickerOpen: $pickerOpen)
+                    AppToolbar(pickerOpen: $pickerOpen, onInspectConflict: { inspectingConflict = $0 })
                         .opacity(toolbarRevealed ? 1 : 0)
                         .offset(y: toolbarRevealed ? 0 : -52)
                         .allowsHitTesting(toolbarRevealed)
@@ -142,6 +144,11 @@ private struct EditorHostView: View {
                         .transition(.opacity.combined(with: .scale(scale: 0.97)))
                 }
             }
+        }
+        // Konflikt-Auflösung (Nebeneinander-Diff): aus dem Toolbar-Konfliktmenü
+        // beschworen. `item:` bindet an die geprüfte Seite → ein Sheet je Konflikt.
+        .sheet(item: $inspectingConflict) { conflict in
+            ConflictResolutionView(conflict: conflict)
         }
     }
 

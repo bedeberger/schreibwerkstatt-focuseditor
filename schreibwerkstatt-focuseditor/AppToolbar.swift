@@ -24,6 +24,9 @@ struct AppToolbar: View {
     /// Steuert den beschwörbaren Seiten-Picker (⌘O) im Host.
     @Binding var pickerOpen: Bool
 
+    /// Öffnet die Konflikt-Auflösungs-Ansicht im Host (Sheet).
+    var onInspectConflict: (SyncEngine.Conflict) -> Void = { _ in }
+
     /// Hover-Zustand des Überlauf-Menüs (Material-Highlight).
     @State private var overflowHover = false
 
@@ -108,9 +111,7 @@ struct AppToolbar: View {
             SyncStatusLabel(status: sync.status,
                             conflicts: sync.conflicts,
                             lastSyncedAt: sync.lastSyncedAt,
-                            onResolve: { pageId, keepLocal in
-                                Task { await sync.resolveConflict(pageId: pageId, keepLocal: keepLocal) }
-                            })
+                            onInspect: onInspectConflict)
 
             // Fokus-Stufe + Darstellung direkt in der Leiste (statt zwei Klicks
             // tief im Überlauf): immer sichtbar — auch im nativen Vollbild, wo die
@@ -390,9 +391,9 @@ struct SyncStatusLabel: View {
     let status: SyncEngine.Status
     let conflicts: [SyncEngine.Conflict]
     let lastSyncedAt: Date?
-    /// Auflösungs-Wahl je Seite: `(pageId, keepLocal)`. `keepLocal == true` →
-    /// lokalen Stand erzwingen (Server überschreiben); `false` → Server übernehmen.
-    var onResolve: (String, Bool) -> Void = { _, _ in }
+    /// Öffnet die Konflikt-Auflösungs-Ansicht (Nebeneinander-Diff) für eine Seite.
+    /// Die eigentliche lokal/server-Wahl trifft der Nutzer dort informiert.
+    var onInspect: (SyncEngine.Conflict) -> Void = { _ in }
 
     /// Reservierter Mindest-Slot: hält die Nachbarn (Fokus-/Darstellungs-Knopf,
     /// Überlauf) ruhig, wenn der häufige idle↔syncing-Wechsel kurz den Spinner
@@ -415,13 +416,13 @@ struct SyncStatusLabel: View {
         .frame(minWidth: Self.slotWidth, alignment: .trailing)
     }
 
-    /// Klickbares Konflikt-Menü: pro betroffener Seite die Auflösungs-Wahl.
+    /// Klickbares Konflikt-Menü: pro betroffener Seite öffnet ein Klick die
+    /// Auflösungs-Ansicht (Nebeneinander-Diff) — statt blinder lokal/server-Wahl.
     private var conflictMenu: some View {
         Menu {
             ForEach(conflicts) { c in
-                Section(c.pageName ?? c.pageId) {
-                    Button(t("sync.conflict.keepLocal")) { onResolve(c.pageId, true) }
-                    Button(t("sync.conflict.keepServer")) { onResolve(c.pageId, false) }
+                Button(t("conflict.inspect", ["page": c.pageName ?? c.pageId])) {
+                    onInspect(c)
                 }
             }
         } label: {

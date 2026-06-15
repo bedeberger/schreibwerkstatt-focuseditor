@@ -60,13 +60,25 @@ enum ServerConfig {
         return url
     }
 
-    /// Baut eine Browser-Seite (z. B. `register`, `me`) auf einer eingegebenen
-    /// Server-Basis. Für die Onboarding-Links im Login: respektiert den im Feld
-    /// stehenden Server (auch Dev), fällt bei ungültiger Eingabe auf die
-    /// kanonische Site zurück — so öffnet der Knopf nie eine kaputte URL.
-    static func pageURL(onServer raw: String, path: String) -> URL {
+    /// Baut eine Browser-Seite (z. B. `register` als Pfad, `profil` als
+    /// SPA-Hash-Route) auf einer eingegebenen Server-Basis. Für die
+    /// Onboarding-Links im Login: respektiert den im Feld stehenden Server (auch
+    /// Dev), fällt bei ungültiger Eingabe auf die kanonische Site zurück — so
+    /// öffnet der Knopf nie eine kaputte URL.
+    ///
+    /// `path` ist ein Pfad-Segment (serverseitige Route). `fragment` ist eine
+    /// SPA-Hash-Route ohne `#` (z. B. `profil` → `…/#profil`); sie wird als
+    /// echtes URL-Fragment gesetzt (nicht als Pfad encodiert), damit der
+    /// Hash-Router der Web-App sie liest.
+    static func pageURL(onServer raw: String, path: String = "",
+                        fragment: String? = nil) -> URL {
         let base = normalizedURL(from: raw)
             ?? URL(string: siteURLString)!
-        return base.appendingPathComponent(path)
+        let withPath = path.isEmpty ? base : base.appendingPathComponent(path)
+        guard let fragment,
+              var comps = URLComponents(url: withPath, resolvingAgainstBaseURL: false)
+        else { return withPath }
+        comps.fragment = fragment
+        return comps.url ?? withPath
     }
 }

@@ -149,6 +149,7 @@ schreibwerkstatt-focuseditor/        App-Sources (Swift)
   Theme/      Appearance + Typography (Controller) + BrandColor + BrandFont
   Focus/      FocusController (lokale Fokus-Granularität)
   Writing/    WritingStatsStore (Live-Wortzahl/Lesezeit/Schreibziel/Tages-Delta)
+  Conflict/   ConflictDiff (HTML→Absätze + absatzweiser Diff) + ConflictResolutionView (Nebeneinander-Sheet, informierte 409-Auflösung)
   Update/     UpdaterController (Sparkle-Auto-Update; Config in Config/Info.plist + Config/Focuseditor.entitlements)
   Settings/   SettingsView (⌘, — 7 Tabs)
   Localization/  Zweisprachigkeit de/en: Localization.swift (t()/tn() + L10nStore + LocalizationController) + mac-de.json/mac-en.json (gebündelt) + I18nBundleStore (OTA-Override)
