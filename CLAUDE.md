@@ -149,11 +149,12 @@ schreibwerkstatt-focuseditor/        App-Sources (Swift)
   Theme/      Appearance + Typography (Controller) + BrandColor + BrandFont
   Focus/      FocusController (lokale Fokus-Granularität)
   Writing/    WritingStatsStore (Live-Wortzahl/Lesezeit/Schreibziel/Tages-Delta)
+  Update/     UpdaterController (Sparkle-Auto-Update; Config in Config/Info.plist + Config/Focuseditor.entitlements)
   Settings/   SettingsView (⌘, — 7 Tabs)
   Localization/  Zweisprachigkeit de/en: Localization.swift (t()/tn() + L10nStore + LocalizationController) + mac-de.json/mac-en.json (gebündelt) + I18nBundleStore (OTA-Override)
 ```
 
-**Einstellungen (alle gerätelokal, UserDefaults):** App-Sprache (de/en/System) + Server-URL + Lieblingsbuch (Allgemein) · Hell/Dunkel/System + Fokus-Granularität + Auto-Hide-Toolbar (Darstellung) · Schriftgrösse/-art, Zeilenhöhe, Spaltenbreite (measure), Papier-Ton (Typografie) · Wortzahl-Anzeige + Wort-Ziel pro Seite (Schreiben) · Poll-Kadenz/Pause/manueller Sync (Sync) · LanguageTool an-aus + Sprach-Override (Rechtschreibung) · Abmelden + Editor-Bundle-Version/Update + Cache leeren (Konto). Editor-wirksame Werte (Typografie, Fokus) fliessen über die Bridge als CSS — **kein Editor-Fork**.
+**Einstellungen (alle gerätelokal, UserDefaults):** App-Sprache (de/en/System) + Server-URL + Lieblingsbuch (Allgemein) · Hell/Dunkel/System + Fokus-Granularität + Auto-Hide-Toolbar (Darstellung) · Schriftgrösse/-art, Zeilenhöhe, Spaltenbreite (measure), Papier-Ton (Typografie) · Wortzahl-Anzeige + Wort-Ziel pro Seite (Schreiben) · Poll-Kadenz/Pause/manueller Sync (Sync) · LanguageTool an-aus + Sprach-Override (Rechtschreibung) · Abmelden + App-Version/Update (Sparkle) + Editor-Bundle-Version/Update + Cache leeren (Konto). Editor-wirksame Werte (Typografie, Fokus) fliessen über die Bridge als CSS — **kein Editor-Fork**.
 
 Der App-Sources-Ordner ist eine `PBXFileSystemSynchronizedRootGroup` (Xcode 16+) → neue Swift-Dateien kommen **automatisch** ins Target (kein pbxproj-Edit nötig).
 
@@ -176,7 +177,7 @@ Der App-Sources-Ordner ist eine `PBXFileSystemSynchronizedRootGroup` (Xcode 16+)
 
 - Xcode-Projekt: `schreibwerkstatt-focuseditor.xcodeproj`. Target: macOS (SwiftUI-App-Lifecycle).
 - **Kein Bundle-Build-Step nötig** — das Editor-Build wird zur Laufzeit per OTA gezogen (s. „Editor-Bundle (OTA)"). Zum Testen muss der Server (Default `localhost:3737`) erreichbar und ein gültiges Device-Token eingeloggt sein.
-- Abhängigkeiten: GRDB (SQLite) *(integriert, SPM `groue/GRDB.swift`, `upToNextMajor` ab 7.11.0)*; Sparkle (Auto-Update, später, geplant). ZIP-Entpacken bewusst **ohne** Dependency (`MiniZip.swift` + `Compression`-Framework, sandbox-tauglich).
+- Abhängigkeiten: GRDB (SQLite) *(integriert, SPM `groue/GRDB.swift`, `upToNextMajor` ab 7.11.0)*; Sparkle (Auto-Update, **integriert**, SPM `sparkle-project/Sparkle`, `upToNextMajor` ab 2.6.0 — gekapselt in [Update/UpdaterController.swift](schreibwerkstatt-focuseditor/Update/UpdaterController.swift); Appcast via GitHub-„latest"-Release-Asset, Schlüssel/Flow s. [SIGNING.md](SIGNING.md) „Auto-Update (Sparkle)"). ZIP-Entpacken bewusst **ohne** Dependency (`MiniZip.swift` + `Compression`-Framework, sandbox-tauglich).
 - **Build-Check nach jeder Swift-Änderung** (Pflicht, s. Harte Regeln):
 
   ```bash

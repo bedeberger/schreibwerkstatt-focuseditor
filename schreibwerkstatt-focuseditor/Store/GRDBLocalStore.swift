@@ -112,6 +112,15 @@ final class GRDBLocalStore: LocalStore {
         let now = Self.nowMillis()
         return try await dbQueue.write { db in
             let existing = try StoredPage.fetchOne(db, key: id)
+            // No-op-Guard: ist das HTML byte-identisch zum bereits gespeicherten Stand,
+            // erzeugt der Save KEINEN Outbox-Eintrag (und bumpt updatedAt nicht). Der
+            // Editor-Autosave feuert entprellt auch ohne echte Inhaltsänderung (Timer,
+            // Fokuswechsel, Cursor-Bewegung) — ohne diesen Guard ginge dafür jedes Mal
+            // ein redundanter Push raus (Server bumpt updated_at → Pull echot zurück).
+            // Liegt bereits ein ungepushter Eintrag vor, trägt er per Upsert dasselbe
+            // HTML, ist also ebenfalls unberührt. (Datenverlust-Schutz: wir verwerfen
+            // nichts, wir überspringen nur einen inhaltsgleichen Schreibvorgang.)
+            if let existing, existing.html == html { return existing }
             // Basis übernehmen: explizit übergebene Basis gewinnt, sonst bisherige behalten.
             let base = baseUpdatedAt ?? existing?.baseUpdatedAt
             let title = PageTitle.derive(from: html) ?? existing?.title

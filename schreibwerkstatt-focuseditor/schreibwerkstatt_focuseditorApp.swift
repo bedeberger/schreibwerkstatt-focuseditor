@@ -38,6 +38,7 @@ struct schreibwerkstatt_focuseditorApp: App {
     @StateObject private var typography = TypographyController()
     @StateObject private var writingStats = WritingStatsStore()
     @StateObject private var loc = LocalizationController()
+    @StateObject private var updater = UpdaterController()
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.openWindow) private var openWindow
 
@@ -93,10 +94,19 @@ struct schreibwerkstatt_focuseditorApp: App {
             // „Über …" — Standard-Panel mit eigenem Credits-Text: Kurzbeschreibung
             // der App + klickbare Repo-Links (Mutterprojekt + dieser Client).
             // Name/Version/Copyright zieht das Panel weiter aus der Info.plist.
+            // „Über …" plus „Nach Updates suchen…" in derselben App-Menü-Sektion
+            // (Standard-Platz direkt unter „Über …"). Beides in EINER CommandGroup,
+            // weil der @CommandsBuilder nur 10 Top-Level-Gruppen fasst.
+            // `disabled`, solange Sparkle keinen Check zulässt (z. B. während schon
+            // einer läuft); Hintergrund-Checks laufen unabhängig (SUEnableAutomaticChecks).
             CommandGroup(replacing: .appInfo) {
                 Button(t("menu.about")) {
                     AboutPanel.show()
                 }
+                Button(t("menu.checkForUpdates")) {
+                    updater.checkForUpdates()
+                }
+                .disabled(!updater.canCheckForUpdates)
             }
 
             // Standard-Menüpunkte entfernen, die für eine Ein-Fenster-/Ein-Seiten-
@@ -184,6 +194,7 @@ struct schreibwerkstatt_focuseditorApp: App {
                 .environmentObject(typography)
                 .environmentObject(writingStats)
                 .environmentObject(loc)
+                .environmentObject(updater)
         }
     }
 }

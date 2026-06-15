@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		61DB000000000000000000A3 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = 61DB000000000000000000A2 /* GRDB */; };
+		61DB000000000000000000B3 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 61DB000000000000000000B2 /* Sparkle */; };
 		7E0000000000000000000010 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E0000000000000000000020 /* APIClient.swift */; };
 		7E0000000000000000000011 /* AuthError.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E0000000000000000000021 /* AuthError.swift */; };
 		7E0000000000000000000012 /* ServerConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E0000000000000000000022 /* ServerConfig.swift */; };
@@ -67,6 +68,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				61DB000000000000000000A3 /* GRDB in Frameworks */,
+				61DB000000000000000000B3 /* Sparkle in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -139,6 +141,7 @@
 			name = "schreibwerkstatt-focuseditor";
 			packageProductDependencies = (
 				61DB000000000000000000A2 /* GRDB */,
+				61DB000000000000000000B2 /* Sparkle */,
 			);
 			productName = "schreibwerkstatt-focuseditor";
 			productReference = 61EA813C2FDE904700FBD31B /* Focuseditor.app */;
@@ -197,6 +200,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				61DB000000000000000000A1 /* XCRemoteSwiftPackageReference "GRDB" */,
+				61DB000000000000000000B1 /* XCRemoteSwiftPackageReference "Sparkle" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 61EA813D2FDE904700FBD31B /* Products */;
@@ -399,7 +403,9 @@
 				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
+				CODE_SIGN_ENTITLEMENTS = Config/Focuseditor.entitlements;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Config/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Schreibwerkstatt Fokus";
 				INFOPLIST_KEY_CFBundleName = Focuseditor;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.books";
@@ -436,7 +442,9 @@
 				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
 				ENABLE_PREVIEWS = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
+				CODE_SIGN_ENTITLEMENTS = Config/Focuseditor.entitlements;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Config/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Schreibwerkstatt Fokus";
 				INFOPLIST_KEY_CFBundleName = Focuseditor;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.books";
@@ -531,6 +539,14 @@
 				minimumVersion = 7.11.0;
 			};
 		};
+		61DB000000000000000000B1 /* XCRemoteSwiftPackageReference "Sparkle" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sparkle-project/Sparkle";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.6.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -538,6 +554,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 61DB000000000000000000A1 /* XCRemoteSwiftPackageReference "GRDB" */;
 			productName = GRDB;
+		};
+		61DB000000000000000000B2 /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 61DB000000000000000000B1 /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

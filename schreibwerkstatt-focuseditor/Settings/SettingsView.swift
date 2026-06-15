@@ -487,6 +487,8 @@ private struct SpellcheckSettingsTab: View {
 private struct AccountSettingsTab: View {
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var editorBundle: EditorBundleStore
+    @EnvironmentObject private var updater: UpdaterController
+    @Environment(\.openURL) private var openURL
     @State private var showLogoutAlert = false
     @State private var showClearCacheAlert = false
 
@@ -502,6 +504,24 @@ private struct AccountSettingsTab: View {
                         .disabled(auth.state != .signedIn)
                 }
                 Text(t("settings.account.signOutHint"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            // App-Update (Sparkle) — betrifft die native App selbst, getrennt
+            // vom Editor-Bundle (Content) weiter unten. Hintergrund-Checks laufen
+            // automatisch; dieser Button stösst eine manuelle Prüfung an.
+            Section(t("settings.account.appUpdateSection")) {
+                LabeledContent(t("settings.account.appVersion"), value: appVersion)
+                HStack {
+                    Spacer()
+                    Button(t("settings.account.checkAppUpdate")) {
+                        updater.checkForUpdates()
+                    }
+                    .disabled(!updater.canCheckForUpdates)
+                }
+                Text(t("settings.account.appUpdateHint"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -542,6 +562,13 @@ private struct AccountSettingsTab: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                HStack {
+                    Spacer()
+                    Button(t("login.privacyShowFull")) {
+                        openURL(ServerConfig.pageURL(onServer: ServerConfig.baseURLString,
+                                                     path: "datenschutz"))
+                    }
+                }
             }
         }
         .formStyle(.grouped)
@@ -564,5 +591,12 @@ private struct AccountSettingsTab: View {
     private var commitShort: String {
         guard let c = editorBundle.sourceCommit, !c.isEmpty, c != "unknown" else { return "—" }
         return String(c.prefix(10))
+    }
+
+    /// Sichtbare App-Version aus der Info.plist (CFBundleShortVersionString,
+    /// gespeist aus MARKETING_VERSION in Version.xcconfig).
+    private var appVersion: String {
+        let v = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String
+        return v.map { "v\($0)" } ?? "—"
     }
 }

@@ -158,6 +158,10 @@
   "settings.account.signedIn": "Angemeldet",
   "settings.account.signedOut": "Nicht angemeldet",
   "settings.account.signOutHint": "Abmelden entfernt nur das Gerätetoken aus dem Schlüsselbund. Lokale, noch nicht synchronisierte Inhalte bleiben erhalten.",
+  "settings.account.appUpdateSection": "App-Update",
+  "settings.account.appVersion": "Installierte Version",
+  "settings.account.checkAppUpdate": "Nach Updates suchen…",
+  "settings.account.appUpdateHint": "Die App prüft im Hintergrund automatisch auf neue Versionen und installiert sie nach deiner Bestätigung. Dieser Knopf stösst eine sofortige Prüfung an.",
   "settings.account.editorVersionSection": "Editor-Version",
   "settings.account.sourceCommit": "Quelle (Commit)",
   "settings.account.checkUpdate": "Nach Update suchen",
@@ -234,6 +238,7 @@
   "login.createAccount": "Konto erstellen",
   "login.openTokenPage": "Token-Seite öffnen",
   "login.privacyTitle": "Datenschutz & Daten",
+  "login.privacyShowFull": "Datenschutzerklärung anzeigen",
   "login.privacyBody": "Deine Texte werden zuerst lokal auf diesem Mac gespeichert und nur mit dem von dir gewählten Schreibwerkstatt-Server synchronisiert. Das Gerätetoken liegt ausschliesslich im macOS-Schlüsselbund — nie in Einstellungen, Logs oder im Editor. Es werden keine Daten an Dritte übertragen; die App spricht nur mit deinem Server.",
 
   "picker.searchPage": "Seite suchen …",
@@ -249,6 +254,7 @@
   "picker.openBadge": "offen",
 
   "menu.about": "Über schreibwerkstatt-focuseditor",
+  "menu.checkForUpdates": "Nach Updates suchen…",
   "menu.appearance": "Darstellung",
   "menu.focus": "Fokus",
   "menu.exitFullscreen": "Vollbild verlassen (Fensteransicht)",

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Focuseditor.entitlements — NUR die Sparkle-spezifischen Sandbox-Zusätze.
+
+  app-sandbox, network.client, files.user-selected (readonly), hardened runtime
+  und app-groups erzeugt Xcode weiterhin über die ENABLE_*-Build-Settings; diese
+  Datei wird beim Signieren mit den synthetisierten Entitlements GEMERGED. Darum
+  steht hier ausschließlich, was Sparkle im Sandbox-Betrieb zusätzlich braucht:
+  der Mach-Lookup auf die beiden XPC-Services des Installers (-spks/-spki).
+  Pendant in der Info.plist: SUEnableInstallerLauncherService=YES.
+-->
+<plist version="1.0">
+<dict>
+	<key>com.apple.security.temporary-exception.mach-lookup.global-name</key>
+	<array>
+		<string>$(PRODUCT_BUNDLE_IDENTIFIER)-spks</string>
+		<string>$(PRODUCT_BUNDLE_IDENTIFIER)-spki</string>
+	</array>
+</dict>
+</plist>

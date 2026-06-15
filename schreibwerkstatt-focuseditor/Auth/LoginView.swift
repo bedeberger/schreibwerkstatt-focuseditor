@@ -214,11 +214,19 @@ struct LoginView: View {
     /// schlank zu halten.
     private var privacyDisclosure: some View {
         DisclosureGroup(isExpanded: $showPrivacy) {
-            Text(t("login.privacyBody"))
-                .font(BrandFont.sans(11))
-                .foregroundStyle(BrandColor.muted)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, 8)
+            VStack(alignment: .leading, spacing: 8) {
+                Text(t("login.privacyBody"))
+                    .font(BrandFont.sans(11))
+                    .foregroundStyle(BrandColor.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Button(t("login.privacyShowFull")) {
+                    openURL(ServerConfig.pageURL(onServer: serverURL, path: "datenschutz"))
+                }
+                .buttonStyle(.link)
+                .font(BrandFont.sans(11, weight: .medium))
+            }
+            .padding(.top, 8)
         } label: {
             Text(t("login.privacyTitle"))
                 .font(BrandFont.sans(12, weight: .medium))

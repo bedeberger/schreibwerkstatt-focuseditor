@@ -158,6 +158,10 @@
   "settings.account.signedIn": "Signed in",
   "settings.account.signedOut": "Not signed in",
   "settings.account.signOutHint": "Signing out only removes the device token from the keychain. Local content that hasn't synced yet is kept.",
+  "settings.account.appUpdateSection": "App update",
+  "settings.account.appVersion": "Installed version",
+  "settings.account.checkAppUpdate": "Check for Updates…",
+  "settings.account.appUpdateHint": "The app checks for new versions automatically in the background and installs them after your confirmation. This button triggers an immediate check.",
   "settings.account.editorVersionSection": "Editor version",
   "settings.account.sourceCommit": "Source (commit)",
   "settings.account.checkUpdate": "Check for update",
@@ -234,6 +238,7 @@
   "login.createAccount": "Create account",
   "login.openTokenPage": "Open token page",
   "login.privacyTitle": "Privacy & data",
+  "login.privacyShowFull": "View privacy policy",
   "login.privacyBody": "Your texts are stored locally on this Mac first and synced only with the Schreibwerkstatt server you choose. The device token lives solely in the macOS keychain — never in settings, logs, or the editor. No data is sent to third parties; the app talks only to your server.",
 
   "picker.searchPage": "Search page …",
@@ -249,6 +254,7 @@
   "picker.openBadge": "open",
 
   "menu.about": "About schreibwerkstatt-focuseditor",
+  "menu.checkForUpdates": "Check for Updates…",
   "menu.appearance": "Appearance",
   "menu.focus": "Focus",
   "menu.exitFullscreen": "Exit full screen (windowed)",

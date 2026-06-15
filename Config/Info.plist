@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Info.plist — nur die NICHT-generierbaren Sparkle-Keys.
+
+  Der Rest (CFBundle*, NSPrincipalClass, …) wird von Xcode über
+  GENERATE_INFOPLIST_FILE=YES + die INFOPLIST_KEY_*-Build-Settings in diese
+  Datei hineingemerged. Hier stehen ausschließlich Schlüssel, die Xcode nicht
+  selbst erzeugen kann (Sparkle-Auto-Update).
+
+  - SUFeedURL                     Appcast-Feed; stabile GitHub-„latest"-URL,
+                                  liefert beim Release publish-github-release.sh.
+  - SUPublicEDKey                 EdDSA-Public-Key (Pendant zum Privatkey im
+                                  Login-Keychain; erzeugt via Sparkle generate_keys).
+  - SUEnableInstallerLauncherService  Pflicht für sandboxed Apps (Installer-XPC).
+  - SUEnableAutomaticChecks       automatische Hintergrund-Prüfung erlaubt.
+-->
+<plist version="1.0">
+<dict>
+	<key>SUFeedURL</key>
+	<string>https://github.com/bedeberger/schreibwerkstatt-focuseditor/releases/latest/download/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>/6jFcMB0tcVGUfKEFFnBKQJ+cUNgn341D23iRMFjk68=</string>
+	<key>SUEnableInstallerLauncherService</key>
+	<true/>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+</dict>
+</plist>

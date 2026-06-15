@@ -72,6 +72,49 @@ scripts/notarize.sh "build/Build/Products/Release/Focuseditor.app"
 `notarize.sh` signiert mit Hardened Runtime + Timestamp, lädt zur Notarisierung
 hoch (`--wait`), heftet das Ticket ans Bundle (`stapler`) und prüft mit `spctl`.
 
-## Später (Auto-Update)
-Sparkle braucht zusätzlich ein **EdDSA-Keypair** (eigener Sparkle-Schlüssel,
-unabhängig vom Apple-Zertifikat) — kommt erst mit der Sparkle-Integration.
+## Auto-Update (Sparkle)
+
+Die App bringt **Sparkle 2** mit (SPM, in den App-Code als `UpdaterController`
+gekapselt). Sie prüft automatisch im Hintergrund auf neue Versionen und bietet
+einen manuellen Check (App-Menü „Nach Updates suchen…" + Settings → Konto).
+
+**Konfiguration (im Repo, einmalig erledigt):**
+- `Config/Info.plist`: `SUFeedURL` (GitHub-„latest"-Appcast), `SUPublicEDKey`
+  (EdDSA-Public-Key), `SUEnableInstallerLauncherService=YES` (Pflicht für die
+  Sandbox), `SUEnableAutomaticChecks=YES`.
+- `Config/Focuseditor.entitlements`: der Mach-Lookup auf Sparkles Installer-XPC
+  (`$(PRODUCT_BUNDLE_IDENTIFIER)-spks`/`-spki`). Wird beim Signieren mit den von
+  Xcode synthetisierten Sandbox-Entitlements gemerged (`ENABLE_APP_SANDBOX` etc.).
+
+**EdDSA-Schlüssel (einmalig, lokal — NICHT im Git):**
+Der **Privatkey liegt im Login-Keychain** dieses Macs (erzeugt mit Sparkles
+`generate_keys`). Nur der Public-Key steht in der Info.plist. Geht der Keychain
+verloren, kann **keine** neue Version mehr signiert werden, die alte Installs
+akzeptieren → Keychain-Eintrag „Private key for signing Sparkle updates" sichern.
+Neuer Schlüssel (nur falls nötig):
+
+```bash
+# Pfad zu den Sparkle-Tools (nach einem Build vorhanden):
+SPK="$(find ~/Library/Developer/Xcode/DerivedData -path '*artifacts/sparkle/Sparkle/bin' | head -1)"
+"$SPK/generate_keys"            # legt Privatkey im Keychain an, druckt SUPublicEDKey
+# -> SUPublicEDKey in Config/Info.plist eintragen
+```
+
+**Release mit Appcast (jedes Release):**
+`scripts/release-dmg.sh` (Build/Notarisierung wie oben) und das Publish-Skript
+erzeugen das signierte `appcast.xml` automatisch und laden es **als zweites
+Release-Asset** neben dem `.dmg` hoch:
+
+```bash
+export DEV_ID_APP="Developer ID Application: David Berger (<TEAM_ID>)"
+PUBLISH=1 scripts/release-dmg.sh         # baut .dmg + appcast.xml, publisht beide
+```
+
+`scripts/publish-github-release.sh` ruft Sparkles `generate_appcast` (signiert
+das `.dmg` mit dem Keychain-Privatkey, setzt die Download-URL auf den Tag-Asset-
+Pfad) und legt das GitHub-Release `v<VERSION>` mit `.dmg` + `appcast.xml` als
+`--latest` an. Damit löst die stabile `SUFeedURL`
+(`…/releases/latest/download/appcast.xml`) immer auf den jüngsten Feed auf.
+
+> Voraussetzung: vor dem Publish einmal builden (löst das Sparkle-Paket auf →
+> `generate_appcast` ist da). Alternativer Pfad per `SPARKLE_BIN=…` überschreibbar.
