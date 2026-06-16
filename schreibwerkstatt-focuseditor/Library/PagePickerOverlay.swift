@@ -40,6 +40,15 @@ struct PagePickerOverlay: View {
     /// sodass Hover/Tastatur-Navigation rein über `selected` läuft.
     @State private var filtered: [PagePickerRow] = []
     @State private var groups: [PickerGroup] = []
+    /// Lief `recompute()` schon mindestens einmal? `filtered`/`groups` sind im
+    /// ALLERERSTEN Body-Render noch leer (SwiftUI rendert einmal VOR `onAppear`,
+    /// wo recompute läuft) — obwohl der Cache `library.pages` schon gefüllt ist.
+    /// Ohne dieses Flag fiele dieser eine Frame auf den `filtered.isEmpty`-Branch
+    /// und liesse beim Öffnen kurz den Leerzustand aufblitzen (sichtbares Flackern,
+    /// v. a. bei einem gefüllten Buch). Bis zum ersten Rechnen darum NICHT den
+    /// Leerzustand zeigen, sondern einen ruhigen leeren Platzhalter — die
+    /// Einblend-Transition (opacity+scale) kaschiert ihn vollständig.
+    @State private var hasComputed = false
 
     /// Eine Seitenzeile samt ihrem flachen Index in `filtered` — der Index ist die
     /// Brücke zur Tastatur-/Hover-Auswahl (`selected`) und zum Auto-Scroll-`.id`.
@@ -81,6 +90,7 @@ struct PagePickerOverlay: View {
         }
         filtered = rows
         groups = Self.group(rows)
+        hasComputed = true
     }
 
     /// Gruppiert die Trefferliste in Kapitelblöcke. Da `pickerRows` depth-first
@@ -176,7 +186,11 @@ struct PagePickerOverlay: View {
 
     @ViewBuilder
     private var content: some View {
-        if library.isLoadingPages && library.pages.isEmpty {
+        if !hasComputed {
+            // Erster Frame vor dem ersten recompute() — ruhig leer lassen statt
+            // den Leerzustand aufblitzen zu lassen (s. `hasComputed`).
+            Color.clear
+        } else if library.isLoadingPages && library.pages.isEmpty {
             centered {
                 VStack(spacing: 10) {
                     ProgressView()
@@ -201,7 +215,16 @@ struct PagePickerOverlay: View {
                                     // Identität ist `IndexedRow.id` = Seiten-ID (stabil);
                                     // der Auto-Scroll zielt darum ebenfalls auf die Seiten-ID.
                                     rowButton(entry.row, isSelected: entry.index == selected)
-                                        .onHover { if $0 { selected = entry.index } }
+                                        // Hover markiert die Zeile UND erzwingt den Pfeil-
+                                        // Cursor: ohne das bleibt der I-Beam des Suchfelds
+                                        // (bzw. der darunterliegenden WebView) über den
+                                        // klickbaren Zeilen stehen — sieht aus wie „Edit-Modus".
+                                        .onHover {
+                                            if $0 {
+                                                selected = entry.index
+                                                NSCursor.arrow.set()
+                                            }
+                                        }
                                     Divider().opacity(0.4)
                                 }
                             } header: {

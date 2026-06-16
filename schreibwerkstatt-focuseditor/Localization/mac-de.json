@@ -34,6 +34,7 @@
   "settings.language.hint": "Sprache der App-Oberfläche. Ohne eigene Wahl folgt sie deinem Server-Profil; „Automatisch“ folgt der Systemsprache (Deutsch oder Englisch). Die Änderung wirkt sofort.",
 
   "library.loadingBooks": "Lade Bücher …",
+  "library.switchingBook": "Buch wird geladen …",
   "library.noBooks": "Keine Bücher",
   "library.loadError": "Bücher konnten nicht geladen werden",
   "library.bookFallback": "Buch {id}",

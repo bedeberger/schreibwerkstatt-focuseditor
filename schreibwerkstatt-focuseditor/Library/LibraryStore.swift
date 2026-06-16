@@ -51,6 +51,10 @@ final class LibraryStore: ObservableObject {
     /// beim echten Buchwechsel und beim bewussten Schliessen der Seite (damit der
     /// Nutzer direkt die nächste Seite wählt). Reines Event-Signal, kein Zustand.
     @Published private(set) var pickerOpenRequest = 0
+    /// Läuft ein echter Buchwechsel (offene Seite geschlossen, Seiten des neuen
+    /// Buchs werden geladen)? Treibt den zentrierten Lade-Donut und blendet den
+    /// Picker so lange aus — er öffnet erst wieder, wenn die Seiten geladen sind.
+    @Published private(set) var isSwitchingBook = false
     @Published private(set) var isLoadingBooks = false
     @Published private(set) var isLoadingPages = false
     @Published var lastError: String?
@@ -176,9 +180,13 @@ final class LibraryStore: ObservableObject {
         // Offene Seite sofort schliessen (Toolbar leert sich), dann den Editor
         // leeren und den Picker mit den Seiten des neuen Buchs öffnen.
         openPageId = nil
+        // Picker sofort ausblenden + Lade-Donut zeigen; erst nach geladener
+        // Seitenliste den Picker des neuen Buchs wieder öffnen.
+        isSwitchingBook = true
         Task {
             await bridge.closePage()
             await refreshPages()
+            isSwitchingBook = false
             pickerOpenRequest &+= 1
         }
     }

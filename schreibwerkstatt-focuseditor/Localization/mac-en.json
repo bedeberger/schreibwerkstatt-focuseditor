@@ -34,6 +34,7 @@
   "settings.language.hint": "Language of the app interface. Without an explicit choice it follows your server profile; “Automatic” follows the system language (German or English). The change takes effect immediately.",
 
   "library.loadingBooks": "Loading books …",
+  "library.switchingBook": "Loading book …",
   "library.noBooks": "No books",
   "library.loadError": "Couldn’t load books",
   "library.bookFallback": "Book {id}",

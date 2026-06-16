@@ -81,6 +81,7 @@ private struct EditorHostView: View {
         .animation(.easeOut(duration: 0.12), value: pickerOpen)
         .animation(.easeOut(duration: 0.18), value: toolbarRevealed)
         .animation(.easeOut(duration: 0.18), value: library.openPageId)
+        .animation(.easeOut(duration: 0.12), value: library.isSwitchingBook)
         .task { await editorBundle.ensureReady() }
         .task { await library.loadBooks() }
         // Beim Ausschalten von Auto-Hide die Toolbar wieder dauerhaft zeigen.
@@ -93,6 +94,11 @@ private struct EditorHostView: View {
         // hier, den Seiten-Picker zu öffnen (Seite des neuen Buchs wählen).
         .onChange(of: library.pickerOpenRequest) { _, _ in
             pickerOpen = true
+        }
+        // Beginnt ein Buchwechsel, den (evtl. offenen) Picker sofort schliessen —
+        // der Lade-Donut übernimmt, bis die Seiten des neuen Buchs geladen sind.
+        .onChange(of: library.isSwitchingBook) { _, switching in
+            if switching { pickerOpen = false }
         }
     }
 
@@ -143,6 +149,13 @@ private struct EditorHostView: View {
                 if pickerOpen {
                     PagePickerOverlay(isOpen: $pickerOpen)
                         .transition(.opacity.combined(with: .scale(scale: 0.97)))
+                }
+
+                // Buchwechsel: zentrierter Lade-Donut über der leeren WebView, bis
+                // die Seiten des neuen Buchs geladen sind und der Picker wieder öffnet.
+                if library.isSwitchingBook {
+                    BookSwitchLoadingView()
+                        .transition(.opacity)
                 }
             }
         }
@@ -286,6 +299,26 @@ private struct BundleLoadingView: View {
             }
         }
         .frame(minWidth: 640, minHeight: 480)
+    }
+}
+
+/// Buchwechsel-Übergang: deckt die (geleerte) WebView ab und zeigt einen
+/// zentrierten Lade-Donut, bis die Seiten des neuen Buchs geladen sind.
+private struct BookSwitchLoadingView: View {
+    var body: some View {
+        ZStack {
+            BrandColor.bg.ignoresSafeArea()
+                // Wie der Leerzustand: I-Beam der WebView nicht durchscheinen lassen.
+                .onContinuousHover { phase in
+                    if case .active = phase { NSCursor.arrow.set() }
+                }
+            VStack(spacing: 14) {
+                ProgressView().controlSize(.large)
+                Text(t("library.switchingBook"))
+                    .font(BrandFont.sans(13))
+                    .foregroundStyle(BrandColor.muted)
+            }
+        }
     }
 }
 

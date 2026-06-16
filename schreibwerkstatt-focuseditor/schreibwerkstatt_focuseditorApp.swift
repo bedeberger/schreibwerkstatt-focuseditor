@@ -125,7 +125,7 @@ struct schreibwerkstatt_focuseditorApp: App {
             // View, weil die Buchliste/„Seite schliessen"-Aktivierung mitlaufen
             // muss (`AppCore.library` ist ein `let` und republiziert nicht selbst).
             CommandGroup(replacing: .newItem) {
-                PageMenuCommands(library: core.library)
+                PageMenuCommands(library: core.library, sync: core.sync)
             }
             CommandGroup(replacing: .saveItem) {}       // Sichern / Sichern unter…
             CommandGroup(replacing: .importExport) {}   // Import / Export
@@ -143,9 +143,10 @@ struct schreibwerkstatt_focuseditorApp: App {
             }
 
             // Alle „Darstellung/Editor"-Menüpunkte in EINER Gruppe (nach `.toolbar`):
-            // Darstellung, Fokus, Vollbild und manueller Sync. Bewusst gebündelt —
-            // der @CommandsBuilder fasst nur 10 Top-Level-Gruppen; Divider erhalten
-            // die optische Trennung wie zuvor.
+            // Darstellung, Fokus und Vollbild. Bewusst gebündelt — der
+            // @CommandsBuilder fasst nur 10 Top-Level-Gruppen; Divider erhalten
+            // die optische Trennung wie zuvor. (Manueller Sync sitzt im Ablage-
+            // Menü bei der Seiten-Navigation, s. `PageMenuCommands`.)
             CommandGroup(after: .toolbar) {
                 // Manueller Light/Dark/System-Umschalter. Inline-Picker rendert
                 // als Menüpunkte mit Häkchen beim aktiven Modus.
@@ -179,15 +180,6 @@ struct schreibwerkstatt_focuseditorApp: App {
                     windowChrome.toggleFullscreen()
                 }
                 .keyboardShortcut("f", modifiers: [.control, .command])
-
-                // Manueller Sync (⌘S) — wirkt auch bei pausiertem/manuellem Modus.
-                // ⌘S ist in den meisten Apps „Speichern": `syncManually()` flusht
-                // darum zuerst den offenen Draft in den LocalStore und stösst erst
-                // danach Push/Pull an → ⌘S speichert UND synchronisiert.
-                Button(t("menu.syncNow")) {
-                    core.sync.syncManually()
-                }
-                .keyboardShortcut("s", modifiers: .command)
             }
 
             // Help-Menü: die Standard-„App-Hilfe" (toter Help-Book-Eintrag)
@@ -233,6 +225,7 @@ struct schreibwerkstatt_focuseditorApp: App {
 /// `LibraryStore` (in `AppCore` nur ein `let`).
 private struct PageMenuCommands: View {
     @ObservedObject var library: LibraryStore
+    let sync: SyncEngine
 
     var body: some View {
         Button(t("menu.openPage")) {
@@ -244,6 +237,18 @@ private struct PageMenuCommands: View {
             library.closePage()
         }
         .disabled(library.openPageId == nil)
+
+        Divider()
+
+        // Manueller Sync (⌘S) — wirkt auch bei pausiertem/manuellem Modus.
+        // ⌘S ist in den meisten Apps „Speichern": `syncManually()` flusht
+        // darum zuerst den offenen Draft in den LocalStore und stösst erst
+        // danach Push/Pull an → ⌘S speichert UND synchronisiert. Sitzt im
+        // Ablage-Menü, weil „Speichern/Synchronisieren" dorthin gehört.
+        Button(t("menu.syncNow")) {
+            sync.syncManually()
+        }
+        .keyboardShortcut("s", modifiers: .command)
 
         Divider()
 
