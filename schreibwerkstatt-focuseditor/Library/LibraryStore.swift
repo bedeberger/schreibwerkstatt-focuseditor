@@ -246,6 +246,14 @@ final class LibraryStore: ObservableObject {
         }
     }
 
+    /// Bittet die View, den Seiten-Picker einzublenden (Menü-/Toolbar-Einstieg
+    /// „Seite öffnen"). Reines Event-Signal über `pickerOpenRequest`, das
+    /// [ContentView](../ContentView.swift) beobachtet — der Menübefehl im
+    /// `App`-Scope hat keinen Zugriff auf den `pickerOpen`-State der View.
+    func requestPicker() {
+        pickerOpenRequest &+= 1
+    }
+
     // MARK: - Server-Wechsel
 
     /// Server-Wechsel: Buch-/Seiten-Zustand des alten Servers verwerfen, das

@@ -478,6 +478,22 @@ enum WebAssets {
                 if (focus) focusEditor();
               }
 
+              // Inline-Formatierung über das Format-Menü (Swift → JS). Spiegelt
+              // exakt die nativen ⌘B/⌘I/⌘U des contenteditable-Editors:
+              // document.execCommand auf der aktuellen Auswahl. Vorher die aktive
+              // Schreibfläche fokussieren, damit der Befehl greift, auch wenn der
+              // Fokus formal beim Menü lag (die Textauswahl bleibt dabei erhalten).
+              fb.on('format', (p) => {
+                const cmd = p && p.command;
+                if (!cmd) return;
+                try {
+                  const content = document.querySelector('.focus-editor.is-active .focus-editor__content')
+                    || document.querySelector('.focus-editor__content');
+                  if (content) content.focus();
+                  document.execCommand(cmd, false, null);
+                } catch (e) { console.error('[focus-bridge] format', e); }
+              });
+
               // Nativer Picker → andere Seite öffnen (vorher aktuellen Stand sichern).
               fb.on('openPage', (p) => {
                 if (!p || p.pageId == null) return;

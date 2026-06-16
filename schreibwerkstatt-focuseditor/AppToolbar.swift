@@ -20,6 +20,7 @@ struct AppToolbar: View {
     @EnvironmentObject private var sync: SyncEngine
     @EnvironmentObject private var library: LibraryStore
     @EnvironmentObject private var writingStats: WritingStatsStore
+    @EnvironmentObject private var windowChrome: WindowChromeController
 
     /// Steuert den beschwörbaren Seiten-Picker (⌘O) im Host.
     @Binding var pickerOpen: Bool
@@ -70,12 +71,14 @@ struct AppToolbar: View {
 
             Spacer(minLength: 12)
 
+            // ⌘O liegt am Menübefehl „Seite öffnen" (Ablage) — die kanonische,
+            // im Menü sichtbare Stelle. Hier nur der Klick-Einstieg, kein zweiter
+            // (kollidierender) Shortcut.
             ToolbarIconButton(systemName: "doc.text.magnifyingglass",
                               help: t("toolbar.openPageHelp"),
                               accessibilityLabel: t("toolbar.openPage")) {
                 pickerOpen.toggle()
             }
-            .keyboardShortcut("o", modifiers: .command)
 
             // Seite schliessen — nur sichtbar, wenn eine Seite offen ist. Schliesst
             // die Seite (lokal gesichert) und öffnet den Picker für die nächste Wahl.
@@ -132,16 +135,27 @@ struct AppToolbar: View {
             }
         )
         .onPreferenceChange(ToolbarWidthKey.self) { toolbarWidth = $0 }
+        // Im Vollbild auch den Leisten-INHALT (Icons, Breadcrumb, Status) dezent
+        // durchscheinen lassen — nicht nur den Hintergrund. Die Deckkraft sitzt
+        // VOR den Hintergrund-Ebenen, fadet also nur den Vordergrund; die
+        // Materialschicht behält ihre eigene (ohnehin schon niedrige) Opazität.
+        .opacity(windowChrome.isNativeFullscreen ? 0.55 : 1)
         .background(WindowDragArea())          // leere Flächen ziehen das Fenster
         // Sichtbar abgesetzte Leiste: `.regularMaterial` ist das eigentlich
         // sichtbare, klar vom Editor abgehobene Frosted-Panel (im Dark Mode
         // deutlich heller als der fast schwarze Editor-`bg`); die warme
         // `surface`-Tönung davor gibt ihr den Marken-Papierton.
-        .background(BrandColor.surface.opacity(0.35))
-        .background(.regularMaterial)
+        // Im (nativen) Vollbild stark zurückgenommen — dünnstes Material + nur
+        // ein Hauch Tönung, damit der Editor klar durchscheint und die Leiste
+        // kaum noch als Block über dem ablenkungsfreien Schreiben sitzt.
+        .background(BrandColor.surface.opacity(windowChrome.isNativeFullscreen ? 0.06 : 0.35))
+        .background(windowChrome.isNativeFullscreen ? AnyShapeStyle(.ultraThinMaterial)
+                                                    : AnyShapeStyle(.regularMaterial))
         .overlay(alignment: .bottom) {
             Rectangle()
-                .fill(BrandColor.faint.opacity(0.9))
+                // Trennlinie im Vollbild fast unsichtbar — sonst bleibt sie als
+                // harte Kante über der durchscheinenden Leiste stehen.
+                .fill(BrandColor.faint.opacity(windowChrome.isNativeFullscreen ? 0.25 : 0.9))
                 .frame(height: 1)
         }
     }
@@ -422,7 +436,10 @@ struct SyncStatusLabel: View {
         Menu {
             ForEach(conflicts) { c in
                 Button(t("conflict.inspect", ["page": c.pageName ?? c.pageId])) {
-                    onInspect(c)
+                    // macOS-SwiftUI: ein `.sheet` direkt aus der Menu-Aktion heraus
+                    // präsentieren schlägt fehl (das schließende NSMenu schluckt das
+                    // Event) — darum einen Runloop-Tick verschieben.
+                    DispatchQueue.main.async { onInspect(c) }
                 }
             }
         } label: {

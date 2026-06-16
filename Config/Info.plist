@@ -14,9 +14,22 @@
                                   Login-Keychain; erzeugt via Sparkle generate_keys).
   - SUEnableInstallerLauncherService  Pflicht für sandboxed Apps (Installer-XPC).
   - SUEnableAutomaticChecks       automatische Hintergrund-Prüfung erlaubt.
+
+  CFBundleLocalizations — deklariert die unterstützten Sprachen auf BUNDLE-Ebene.
+  Steuert NICHT unsere `t()`-Lokalisierung (die läuft über die JSON-Kataloge),
+  sondern sagt macOS/AppKit, in welchen Sprachen es seine OS-gelieferten
+  Standard-Menüpunkte rendern darf (App-Menü, Bearbeiten, Fenster, „Einstellungen…"
+  usw.). Ohne `de` zeigt AppKit diese Einträge immer auf Englisch — egal, was im
+  App-Sprach-Umschalter steht. Diese OS-Menüs folgen der System-/Bundle-Sprache
+  (Schnittmenge mit dieser Liste), nicht dem In-App-Toggle.
 -->
 <plist version="1.0">
 <dict>
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>de</string>
+		<string>en</string>
+	</array>
 	<key>SUFeedURL</key>
 	<string>https://github.com/bedeberger/schreibwerkstatt-focuseditor/releases/latest/download/appcast.xml</string>
 	<key>SUPublicEDKey</key>

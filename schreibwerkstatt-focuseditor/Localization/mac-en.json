@@ -271,6 +271,12 @@
   "menu.enterFullscreen": "Full screen (distraction-free)",
   "menu.syncNow": "Sync now",
   "menu.shortcuts": "Keyboard shortcuts",
+  "menu.openPage": "Open Page…",
+  "menu.closePage": "Close Page",
+  "menu.book": "Book",
+  "menu.bold": "Bold",
+  "menu.italic": "Italic",
+  "menu.underline": "Underline",
   "window.shortcutsTitle": "Keyboard shortcuts",
 
   "about.tagline": "Schreibwerkstatt's distraction-free writing mode",

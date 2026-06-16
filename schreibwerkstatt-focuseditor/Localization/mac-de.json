@@ -271,6 +271,12 @@
   "menu.enterFullscreen": "Vollbild (ablenkungsfrei)",
   "menu.syncNow": "Jetzt synchronisieren",
   "menu.shortcuts": "Tastaturkürzel",
+  "menu.openPage": "Seite öffnen…",
+  "menu.closePage": "Seite schließen",
+  "menu.book": "Buch",
+  "menu.bold": "Fett",
+  "menu.italic": "Kursiv",
+  "menu.underline": "Unterstrichen",
   "window.shortcutsTitle": "Tastaturkürzel",
 
   "about.tagline": "Ablenkungsfreier Schreibmodus der Schreibwerkstatt",

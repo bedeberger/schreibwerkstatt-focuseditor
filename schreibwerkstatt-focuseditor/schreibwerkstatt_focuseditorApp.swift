@@ -109,56 +109,81 @@ struct schreibwerkstatt_focuseditorApp: App {
                     updater.checkForUpdates()
                 }
                 .disabled(!updater.canCheckForUpdates)
+
+                // Abmelden im App-Menü (Konto-Aktion) — bisher nur im Toolbar-
+                // Überlauf. Eigene Sektion, damit es nicht mit „Über …" verschmilzt.
+                Divider()
+                Button(t("general.signOut")) {
+                    core.auth.signOut()
+                }
             }
 
-            // Standard-Menüpunkte entfernen, die für eine Ein-Fenster-/Ein-Seiten-
-            // Schreib-Shell sinnlos sind: kein Dokumentmodell (kein „Neu"/„Sichern"),
-            // kein Import/Export (Inhalte fließen nur über Sync), keine Seitenleiste.
-            CommandGroup(replacing: .newItem) {}        // Neu / Neues Fenster
+            // „Neu/Neues Fenster" ergibt für eine Ein-Seiten-Schreib-Shell keinen
+            // Sinn (kein Dokumentmodell). Die Gruppe stattdessen mit der Seiten-/
+            // Buch-Navigation belegen, die sonst nur in der Toolbar sitzt — so ist
+            // sie auch über die Menüleiste erreichbar (mit sichtbarem ⌘O). Eigene
+            // View, weil die Buchliste/„Seite schliessen"-Aktivierung mitlaufen
+            // muss (`AppCore.library` ist ein `let` und republiziert nicht selbst).
+            CommandGroup(replacing: .newItem) {
+                PageMenuCommands(library: core.library)
+            }
             CommandGroup(replacing: .saveItem) {}       // Sichern / Sichern unter…
             CommandGroup(replacing: .importExport) {}   // Import / Export
             CommandGroup(replacing: .sidebar) {}        // Seitenleiste ein-/ausblenden
 
-            // Manueller Light/Dark/System-Umschalter. Inline-Picker rendert
-            // als Menüpunkte mit Häkchen beim aktiven Modus.
+            // Format-Menü (Edit-Menü, nach Ausschneiden/Kopieren/Einfügen): die
+            // Inline-Formatierung des Editors (Fett/Kursiv/Unterstrichen) auch über
+            // die Menüleiste, mit sichtbaren ⌘B/⌘I/⌘U. Die Befehle laufen über die
+            // Bridge (`applyFormat` → `document.execCommand`) — dieselbe Wirkung wie
+            // die nativen contenteditable-Shortcuts, nur jetzt menü-getrieben (das
+            // Menü fängt das Tastenkürzel vor der WebView ab, darum MUSS die Aktion
+            // selbst formatieren). Eigene View für die reaktive „kein-Seite"-Sperre.
+            CommandGroup(after: .pasteboard) {
+                FormatMenuCommands(library: core.library, bridge: core.bridge)
+            }
+
+            // Alle „Darstellung/Editor"-Menüpunkte in EINER Gruppe (nach `.toolbar`):
+            // Darstellung, Fokus, Vollbild und manueller Sync. Bewusst gebündelt —
+            // der @CommandsBuilder fasst nur 10 Top-Level-Gruppen; Divider erhalten
+            // die optische Trennung wie zuvor.
             CommandGroup(after: .toolbar) {
+                // Manueller Light/Dark/System-Umschalter. Inline-Picker rendert
+                // als Menüpunkte mit Häkchen beim aktiven Modus.
                 Picker(t("menu.appearance"), selection: $appearance.mode) {
                     ForEach(AppearanceMode.allCases) { mode in
                         Text(mode.label).tag(mode)
                     }
                 }
                 .pickerStyle(.inline)
-            }
 
-            // Fokus-Granularität — bestimmt, wie stark der Editor die Umgebung
-            // des aktiven Absatzes abblendet. Wirkt sofort bei offenem Editor.
-            CommandGroup(after: .toolbar) {
+                Divider()
+
+                // Fokus-Granularität — bestimmt, wie stark der Editor die Umgebung
+                // des aktiven Absatzes abblendet. Wirkt sofort bei offenem Editor.
                 Picker(t("menu.focus"), selection: $focus.granularity) {
                     ForEach(FocusGranularity.allCases) { g in
                         Text(g.label).tag(g)
                     }
                 }
                 .pickerStyle(.inline)
-            }
 
-            // Vollbild ein/aus. Eigener Menüpunkt als zuverlässiger Einstieg:
-            // im Vollbild sind die Ampel-Buttons ausgeblendet; die Toolbar bleibt
-            // zwar sichtbar, hat aber keinen eigenen Vollbild-Knopf.
-            // Label folgt dem Zustand, damit der Rückweg klar benannt ist.
-            CommandGroup(after: .toolbar) {
+                Divider()
+
+                // Vollbild ein/aus. Eigener Menüpunkt als zuverlässiger Einstieg:
+                // im Vollbild sind die Ampel-Buttons ausgeblendet; die Toolbar bleibt
+                // zwar sichtbar, hat aber keinen eigenen Vollbild-Knopf.
+                // Label folgt dem Zustand, damit der Rückweg klar benannt ist.
                 Button(windowChrome.isNativeFullscreen
                        ? t("menu.exitFullscreen")
                        : t("menu.enterFullscreen")) {
                     windowChrome.toggleFullscreen()
                 }
                 .keyboardShortcut("f", modifiers: [.control, .command])
-            }
 
-            // Manueller Sync (⌘S) — wirkt auch bei pausiertem/manuellem Modus.
-            // ⌘S ist in den meisten Apps „Speichern": `syncManually()` flusht
-            // darum zuerst den offenen Draft in den LocalStore und stösst erst
-            // danach Push/Pull an → ⌘S speichert UND synchronisiert.
-            CommandGroup(after: .toolbar) {
+                // Manueller Sync (⌘S) — wirkt auch bei pausiertem/manuellem Modus.
+                // ⌘S ist in den meisten Apps „Speichern": `syncManually()` flusht
+                // darum zuerst den offenen Draft in den LocalStore und stösst erst
+                // danach Push/Pull an → ⌘S speichert UND synchronisiert.
                 Button(t("menu.syncNow")) {
                     core.sync.syncManually()
                 }
@@ -198,6 +223,75 @@ struct schreibwerkstatt_focuseditorApp: App {
                 .environmentObject(loc)
                 .environmentObject(updater)
         }
+    }
+}
+
+/// Ablage-Menü-Befehle: Seiten- und Buch-Navigation (sonst nur in der Toolbar)
+/// auch über die Menüleiste, mit sichtbarem ⌘O. Eigene View mit `@ObservedObject`,
+/// damit die Buchliste und die „Seite schliessen"-Aktivierung live mitlaufen —
+/// der `@CommandsBuilder` im `App`-Scope bekäme sonst keine Änderungs-Pushes vom
+/// `LibraryStore` (in `AppCore` nur ein `let`).
+private struct PageMenuCommands: View {
+    @ObservedObject var library: LibraryStore
+
+    var body: some View {
+        Button(t("menu.openPage")) {
+            library.requestPicker()
+        }
+        .keyboardShortcut("o", modifiers: .command)
+
+        Button(t("menu.closePage")) {
+            library.closePage()
+        }
+        .disabled(library.openPageId == nil)
+
+        Divider()
+
+        Menu(t("menu.book")) {
+            if library.books.isEmpty {
+                Text(t("library.noBooks"))
+            } else {
+                ForEach(library.books, id: \.id) { book in
+                    Button {
+                        library.selectBook(book.id)
+                    } label: {
+                        let name = book.name ?? t("library.bookFallback", ["id": "\(book.id)"])
+                        if book.id == library.activeBookId {
+                            Label(name, systemImage: "checkmark")
+                        } else {
+                            Text(name)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Format-Menü-Befehle: die Inline-Formatierung des Editors (Fett/Kursiv/
+/// Unterstrichen) über die Menüleiste, mit ⌘B/⌘I/⌘U. Die Aktion routet über die
+/// Bridge in die WebView (`document.execCommand`) — dieselbe Wirkung wie die
+/// nativen contenteditable-Shortcuts. Da das Menü das Tastenkürzel VOR der
+/// WebView abfängt, muss die Aktion selbst formatieren. `@ObservedObject library`
+/// nur für die reaktive Sperre, solange keine Seite offen ist.
+private struct FormatMenuCommands: View {
+    @ObservedObject var library: LibraryStore
+    let bridge: EditorBridge
+
+    var body: some View {
+        Button(t("menu.bold")) { apply("bold") }
+            .keyboardShortcut("b", modifiers: .command)
+            .disabled(library.openPageId == nil)
+        Button(t("menu.italic")) { apply("italic") }
+            .keyboardShortcut("i", modifiers: .command)
+            .disabled(library.openPageId == nil)
+        Button(t("menu.underline")) { apply("underline") }
+            .keyboardShortcut("u", modifiers: .command)
+            .disabled(library.openPageId == nil)
+    }
+
+    private func apply(_ command: String) {
+        Task { await bridge.applyFormat(command) }
     }
 }
 

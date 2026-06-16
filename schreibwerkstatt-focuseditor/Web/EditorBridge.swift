@@ -556,6 +556,24 @@ final class EditorBridge: NSObject, WKScriptMessageHandlerWithReply, EditorCoord
         }
     }
 
+    /// Wendet eine Inline-Formatierung auf die aktuelle Auswahl im Editor an
+    /// (`format`-Event). Native Entsprechung zu den ⌘B/⌘I/⌘U des contenteditable-
+    /// Editors, jetzt auch über das Format-Menü erreichbar. `command` ist ein
+    /// `document.execCommand`-Name (`bold`/`italic`/`underline`). No-op ohne
+    /// WebView; rein visuell (kein Datenverlust-Risiko) → Fehler nur geloggt.
+    func applyFormat(_ command: String) async {
+        guard let webView else { return }
+        do {
+            _ = try await webView.callAsyncJavaScript(
+                "window.__focusBridge._receive('format', { command });",
+                arguments: ["command": command],
+                in: nil,
+                contentWorld: .page)
+        } catch {
+            log.error("applyFormat(\(command, privacy: .public)) fehlgeschlagen: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
     /// Persistiert den offenen Draft sofort (`_flushSave`) und WARTET darauf —
     /// für ⌘S, das vor dem manuellen Sync den aktuellen Stand sichern soll
     /// (der Editor-Autosave läuft entprellt). Awaitable im Gegensatz zum
