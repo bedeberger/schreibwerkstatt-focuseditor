@@ -31,6 +31,10 @@ struct PagePickerOverlay: View {
     /// Lokaler Key-Monitor für ↑/↓/⏎ — fängt die Tasten ab, bevor das fokussierte
     /// Suchfeld sie als Cursor-Bewegung/Submit schluckt.
     @State private var keyMonitor: Any?
+    /// Letzte Cursor-Position (Screen-Koordinaten), bei der ein Hover die Auswahl
+    /// gesetzt hat. Dient dazu, ECHTE Mausbewegung von „Zeilen rutschen beim
+    /// Scrollen unter den ruhenden Cursor" zu unterscheiden — s. `onHover`.
+    @State private var lastHoverLocation: NSPoint = .zero
 
     /// Memoisierte Trefferliste + Kapitel-Gruppierung. BEWUSST in `@State`, NICHT
     /// als computed property: bei einem grossen Buch (Tausende Seiten) wäre die
@@ -143,6 +147,11 @@ struct PagePickerOverlay: View {
         }
         .onExitCommand { close() }               // ⎋
         .onAppear {
+            // Pfeil-Cursor sofort erzwingen: ohne Mausbewegung bleibt sonst der
+            // I-Beam der darunterliegenden WebView stehen (sieht aus wie „Edit-
+            // Modus"), bis ein Hover ihn umstellt. Wer rein per Tastatur navigiert,
+            // löst nie einen Hover aus — s. moveSelection().
+            NSCursor.arrow.set()
             focusSearchField()
             installKeyMonitor()
             recompute()                           // Trefferliste/Gruppen aus dem Cache
@@ -167,6 +176,7 @@ struct PagePickerOverlay: View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(BrandColor.muted)
+                .accessibilityHidden(true)   // dekorativ; das Textfeld trägt das Label
             TextField(t("picker.searchPage"), text: $query)
                 .textFieldStyle(.plain)
                 .font(BrandFont.sans(14))
@@ -219,11 +229,21 @@ struct PagePickerOverlay: View {
                                         // Cursor: ohne das bleibt der I-Beam des Suchfelds
                                         // (bzw. der darunterliegenden WebView) über den
                                         // klickbaren Zeilen stehen — sieht aus wie „Edit-Modus".
-                                        .onHover {
-                                            if $0 {
-                                                selected = entry.index
-                                                NSCursor.arrow.set()
-                                            }
+                                        .onHover { hovering in
+                                            guard hovering else { return }
+                                            NSCursor.arrow.set()
+                                            // Nur ECHTE Mausbewegung darf die Auswahl
+                                            // verschieben. Beim Scrollen ruht der Cursor,
+                                            // während die Zeilen unter ihm durchrutschen →
+                                            // onHover feuert reihenweise mit GLEICHER
+                                            // `mouseLocation`. Würde das `selected` setzen,
+                                            // wanderte die Markierung flackernd durch die
+                                            // Liste (sichtbar genau beim Scrollen). Position
+                                            // unverändert → Hover ignorieren.
+                                            let loc = NSEvent.mouseLocation
+                                            guard loc != lastHoverLocation else { return }
+                                            lastHoverLocation = loc
+                                            selected = entry.index
                                         }
                                     Divider().opacity(0.4)
                                 }
@@ -278,6 +298,7 @@ struct PagePickerOverlay: View {
             Image(systemName: icon)
                 .font(.system(size: 26, weight: .light))
                 .foregroundStyle(loadError != nil ? Color.orange : BrandColor.faint)
+                .accessibilityHidden(true)   // dekorativ; der Titel-Text trägt die Aussage
             Text(title)
                 .font(BrandFont.sans(13))
                 .foregroundStyle(BrandColor.muted)
@@ -411,11 +432,18 @@ struct PagePickerOverlay: View {
     /// grosses Buch dort aufgeht, „wo man ist", statt immer oben. Nur ohne aktive
     /// Suche; sobald gefiltert wird, gewinnt der erste Treffer (`onChange(query)`).
     private func selectOpenPage() {
-        guard query.isEmpty,
-              let openId = library.openPageId,
-              let idx = filtered.firstIndex(where: { $0.id == openId }) else { return }
-        selected = idx
-        scrollTarget = openId   // Seiten-ID (Scroll-Identität), nicht der Index
+        guard query.isEmpty, !filtered.isEmpty else { return }
+        if let openId = library.openPageId,
+           let idx = filtered.firstIndex(where: { $0.id == openId }) {
+            selected = idx
+            scrollTarget = openId   // Seiten-ID (Scroll-Identität), nicht der Index
+        } else {
+            // Offene Seite gehört nicht in dieses Buch (Buchwechsel) oder es ist
+            // keine offen → auf die erste Zeile, statt auf einer veralteten Scroll-
+            // Identität des alten Buchs hängenzubleiben (Liste bliebe sonst oben).
+            selected = 0
+            scrollTarget = filtered.first?.id
+        }
     }
 
     /// Öffnet die aktuell markierte Zeile (Tastatur/Hover); fällt auf den ersten
@@ -431,6 +459,9 @@ struct PagePickerOverlay: View {
         guard !filtered.isEmpty else { return }
         selected = max(0, min(filtered.count - 1, selected + delta))
         scrollTarget = filtered[selected].id   // Seiten-ID; nur Tastatur-Nav scrollt mit
+        // Tastatur-Navigation bewegt die Maus nicht → onHover feuert nicht →
+        // der I-Beam der WebView bliebe stehen. Hier mitführen wie beim Hover.
+        NSCursor.arrow.set()
     }
 
     private func close() {

@@ -71,6 +71,14 @@ final class GRDBLocalStore: LocalStore {
             // Picker-Filter + Pull sind buch-skopiert.
             try db.create(index: "page_on_bookId", on: "page", columns: ["bookId"])
         }
+        m.registerMigration("v2_outbox_queuedAt_index") { db in
+            // `pendingOutbox()` liest die Queue in `queuedAt`-Reihenfolge (FIFO-Push).
+            // Ohne Index ist das ein Full-Table-Scan + Sortierung — bei normalerweise
+            // winziger Outbox unkritisch, aber bei einem grossen Offline-Rückstau
+            // (lange offline, viele Seiten editiert) würde der Read den Push-Tick
+            // bremsen. Index hält die geordnete Lese-Operation auch dann flott.
+            try db.create(index: "outbox_on_queuedAt", on: "outbox", columns: ["queuedAt"])
+        }
         return m
     }
 

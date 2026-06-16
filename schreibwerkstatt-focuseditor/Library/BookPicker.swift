@@ -51,5 +51,9 @@ struct BookPicker: View {
         }
         .menuStyle(.borderlessButton)
         .help(t("library.chooseBook"))
+        // Sonst liest VoiceOver „books.vertical, <Buch>“ — stattdessen die Rolle
+        // als Buch-Auswahl mit dem aktiven Buch als Wert.
+        .accessibilityLabel(t("library.chooseBook"))
+        .accessibilityValue(library.activeBookName ?? "")
     }
 }

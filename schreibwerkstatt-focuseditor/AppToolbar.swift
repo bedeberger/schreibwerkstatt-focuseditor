@@ -49,6 +49,7 @@ struct AppToolbar: View {
                 Image(systemName: "chevron.right")
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(BrandColor.faint)
+                    .accessibilityHidden(true)   // dekorativer Breadcrumb-Trenner
                 Text(chapter)
                     .font(BrandFont.sans(12))
                     .foregroundStyle(BrandColor.muted)
@@ -61,6 +62,7 @@ struct AppToolbar: View {
                 Image(systemName: "chevron.right")
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(BrandColor.faint)
+                    .accessibilityHidden(true)   // dekorativer Breadcrumb-Trenner
                 Text(page)
                     .font(BrandFont.sans(12))
                     .foregroundStyle(BrandColor.muted)
@@ -139,23 +141,27 @@ struct AppToolbar: View {
         // durchscheinen lassen — nicht nur den Hintergrund. Die Deckkraft sitzt
         // VOR den Hintergrund-Ebenen, fadet also nur den Vordergrund; die
         // Materialschicht behält ihre eigene (ohnehin schon niedrige) Opazität.
-        .opacity(windowChrome.isNativeFullscreen ? 0.55 : 1)
+        // Bewusst sehr weit zurückgenommen — die Leiste soll beim Schreiben fast
+        // verschwinden und erst beim Hinschauen (bzw. Hover) wieder lesbar werden.
+        .opacity(windowChrome.isNativeFullscreen ? 0.3 : 1)
         .background(WindowDragArea())          // leere Flächen ziehen das Fenster
         // Sichtbar abgesetzte Leiste: `.regularMaterial` ist das eigentlich
         // sichtbare, klar vom Editor abgehobene Frosted-Panel (im Dark Mode
         // deutlich heller als der fast schwarze Editor-`bg`); die warme
         // `surface`-Tönung davor gibt ihr den Marken-Papierton.
-        // Im (nativen) Vollbild stark zurückgenommen — dünnstes Material + nur
-        // ein Hauch Tönung, damit der Editor klar durchscheint und die Leiste
-        // kaum noch als Block über dem ablenkungsfreien Schreiben sitzt.
-        .background(BrandColor.surface.opacity(windowChrome.isNativeFullscreen ? 0.06 : 0.35))
-        .background(windowChrome.isNativeFullscreen ? AnyShapeStyle(.ultraThinMaterial)
+        // Im (nativen) Vollbild stark zurückgenommen — im Vollbild gar keine
+        // Tönung und kein Frosted-Material mehr, nur der durchscheinende Inhalt
+        // (s. `.opacity` oben), damit die Leiste kaum noch als Block über dem
+        // ablenkungsfreien Schreiben sitzt und der Editor klar durchscheint.
+        .background(windowChrome.isNativeFullscreen ? Color.clear
+                                                    : BrandColor.surface.opacity(0.35))
+        .background(windowChrome.isNativeFullscreen ? AnyShapeStyle(Color.clear)
                                                     : AnyShapeStyle(.regularMaterial))
         .overlay(alignment: .bottom) {
             Rectangle()
-                // Trennlinie im Vollbild fast unsichtbar — sonst bleibt sie als
-                // harte Kante über der durchscheinenden Leiste stehen.
-                .fill(BrandColor.faint.opacity(windowChrome.isNativeFullscreen ? 0.25 : 0.9))
+                // Trennlinie im Vollbild ganz weg — sonst bleibt sie als harte
+                // Kante über der fast unsichtbaren Leiste stehen.
+                .fill(BrandColor.faint.opacity(windowChrome.isNativeFullscreen ? 0 : 0.9))
                 .frame(height: 1)
         }
     }
@@ -379,6 +385,11 @@ struct WritingStatsLabel: View {
         .foregroundStyle(BrandColor.muted)
         .fixedSize()
         .help(tooltip)
+        // Sonst liest VoiceOver die Fragmente einzeln vor (Icon, „1234 Wörter",
+        // „+120", „5 Min") — stattdessen die fertige Tooltip-Zusammenfassung als
+        // ein Element.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(tooltip)
     }
 
     /// Vorzeichen-Formatierung wie der Web-Editor: „+120" / „−5" / „±0"
@@ -454,6 +465,7 @@ struct SyncStatusLabel: View {
         .menuStyle(.borderlessButton)
         .fixedSize()
         .help(t("toolbar.tip.conflicts"))
+        .accessibilityLabel(t("toolbar.tip.conflicts"))
     }
 
     private var statusLabel: some View {
@@ -481,6 +493,10 @@ struct SyncStatusLabel: View {
         .font(BrandFont.sans(11))
         .foregroundStyle(BrandColor.muted)
         .help(tooltip)
+        // Icon (wifi.slash / icloud) ist dekorativ — als ein Element mit der
+        // Tooltip-Beschreibung vorlesen statt Icon + Text getrennt.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(tooltip)
     }
 
     /// „Zuletzt synchronisiert“ als relative Zeit, sonst der aktuelle Zustand.

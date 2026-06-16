@@ -107,7 +107,11 @@ final class EditorBridge: NSObject, WKScriptMessageHandlerWithReply, EditorCoord
     /// CSS-fertiges Typografie-Payload (Schriftgrösse/Zeilenhöhe/measure/Familie/
     /// Papier-Ton). Vom `TypographyController` gesetzt; Boot-Pull liefert es über
     /// die `editorTypography`-Op, Live-Umschalten über `pushTypography()`.
-    var typography: [String: Any] = [:]
+    /// Default aus UserDefaults (analog `focusGranularity`), damit der Boot-Pull
+    /// schon VOR `TypographyController.bind(_:)` die persistierten Werte liefert —
+    /// sonst startete der Editor mit seinen CSS-Defaults, falls der Pull das
+    /// `bind(_:)` im `.task` gewinnt (Symptom: „Typografie verschwindet").
+    var typography: [String: Any] = TypographyController.persistedPayload()
 
     /// Aktuell im Editor geöffnete Seite (vom JS via `editorState` gemeldet).
     private(set) var openPageId: String? {
@@ -177,7 +181,10 @@ final class EditorBridge: NSObject, WKScriptMessageHandlerWithReply, EditorCoord
 
     // MARK: Routing
 
-    private func route(op: String, params: [String: Any]) async throws -> Any? {
+    /// Zentraler Dispatch der Bridge-Ops. `internal` (nicht `private`), damit das
+    /// Logic-Test-Bundle die Ops ohne WebView/`WKScriptMessage` direkt treiben kann
+    /// (`EditorBridgeTests`); der reguläre Einstieg bleibt der Message-Handler.
+    func route(op: String, params: [String: Any]) async throws -> Any? {
         switch op {
         case "load":
             let pageId = try requireString(params, "pageId")

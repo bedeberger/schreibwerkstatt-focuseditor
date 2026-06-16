@@ -130,16 +130,14 @@ final class TypographyController: ObservableObject {
     }
 
     init() {
-        let d = UserDefaults.standard
-        fontSize = Self.read(d, Key.fontSize, default: 19, in: Self.fontSizeRange)
-        lineHeight = Self.read(d, Key.lineHeight, default: 1.7, in: Self.lineHeightRange)
-        // measure: 0 (aus) ausdrücklich erlauben, sonst in die Range klemmen.
-        let m = d.object(forKey: Key.measure) as? Double ?? 64
-        measure = (m == 0) ? 0 : min(max(m, Self.measureRange.lowerBound), Self.measureRange.upperBound)
-        fontFamily = EditorFontFamily(rawValue: d.string(forKey: Key.fontFamily) ?? "") ?? .serif
-        paperTone = PaperTone(rawValue: d.string(forKey: Key.paperTone) ?? "") ?? .system
-        focusDimEnabled = (d.object(forKey: Key.focusDimEnabled) as? Bool) ?? false
-        focusDimOpacity = Self.read(d, Key.focusDimOpacity, default: 0.35, in: Self.focusDimRange)
+        let s = Self.readState()
+        fontSize = s.fontSize
+        lineHeight = s.lineHeight
+        measure = s.measure
+        fontFamily = s.fontFamily
+        paperTone = s.paperTone
+        focusDimEnabled = s.focusDimEnabled
+        focusDimOpacity = s.focusDimOpacity
     }
 
     /// Verbindet den Controller mit der app-weiten Bridge und spiegelt den
@@ -164,6 +162,29 @@ final class TypographyController: ObservableObject {
 
     /// CSS-fertiges Payload für die WebView (alle Strings direkt setzbar).
     func payload() -> [String: Any] {
+        Self.buildPayload(fontSize: fontSize, lineHeight: lineHeight, measure: measure,
+                          fontFamily: fontFamily, paperTone: paperTone,
+                          focusDimEnabled: focusDimEnabled, focusDimOpacity: focusDimOpacity)
+    }
+
+    /// Aus UserDefaults gelesenes Payload — für den **Bridge-Default**, damit der
+    /// Boot-Pull (`editorTypography`) schon VOR `bind(_:)` die persistierten Werte
+    /// liefert (analog `EditorBridge.focusGranularity`). Ohne das fällt der Editor
+    /// beim Start auf seine CSS-Defaults zurück, falls der Boot-Pull `bind(_:)`
+    /// gewinnt → Typografie sieht „verloren" aus, bis ein Slider den Live-Push
+    /// auslöst. Nutzt dieselbe Lese-/Klemm-Logik wie `init()`.
+    static func persistedPayload() -> [String: Any] {
+        let s = readState()
+        return buildPayload(fontSize: s.fontSize, lineHeight: s.lineHeight, measure: s.measure,
+                            fontFamily: s.fontFamily, paperTone: s.paperTone,
+                            focusDimEnabled: s.focusDimEnabled, focusDimOpacity: s.focusDimOpacity)
+    }
+
+    /// Reiner Payload-Builder (von Instanz `payload()` UND statischem
+    /// `persistedPayload()` genutzt — eine Quelle für die CSS-Serialisierung).
+    private static func buildPayload(fontSize: Double, lineHeight: Double, measure: Double,
+                                     fontFamily: EditorFontFamily, paperTone: PaperTone,
+                                     focusDimEnabled: Bool, focusDimOpacity: Double) -> [String: Any] {
         var dict: [String: Any] = [
             "fontSize": "\(Int(fontSize.rounded()))px",
             "lineHeight": String(format: "%.2f", lineHeight),
@@ -193,6 +214,26 @@ final class TypographyController: ObservableObject {
 
     private func persist(_ value: Double, _ key: String) {
         UserDefaults.standard.set(value, forKey: key)
+    }
+
+    /// Aus UserDefaults gelesener, geklemmter Zustand — eine Quelle für Defaults
+    /// und Klemmlogik, von `init()` (Instanz-Start) UND `persistedPayload()`
+    /// (Bridge-Default) genutzt, damit beide nie auseinanderlaufen.
+    private static func readState() -> (fontSize: Double, lineHeight: Double, measure: Double,
+                                        fontFamily: EditorFontFamily, paperTone: PaperTone,
+                                        focusDimEnabled: Bool, focusDimOpacity: Double) {
+        let d = UserDefaults.standard
+        // measure: 0 (aus) ausdrücklich erlauben, sonst in die Range klemmen.
+        let m = d.object(forKey: Key.measure) as? Double ?? 64
+        return (
+            fontSize: read(d, Key.fontSize, default: 19, in: fontSizeRange),
+            lineHeight: read(d, Key.lineHeight, default: 1.7, in: lineHeightRange),
+            measure: (m == 0) ? 0 : min(max(m, measureRange.lowerBound), measureRange.upperBound),
+            fontFamily: EditorFontFamily(rawValue: d.string(forKey: Key.fontFamily) ?? "") ?? .serif,
+            paperTone: PaperTone(rawValue: d.string(forKey: Key.paperTone) ?? "") ?? .system,
+            focusDimEnabled: (d.object(forKey: Key.focusDimEnabled) as? Bool) ?? false,
+            focusDimOpacity: read(d, Key.focusDimOpacity, default: 0.35, in: focusDimRange)
+        )
     }
 
     private static func read(_ d: UserDefaults, _ key: String,
