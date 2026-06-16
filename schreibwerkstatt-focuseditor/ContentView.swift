@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import AppKit
 
 struct ContentView: View {
     @EnvironmentObject private var auth: AuthStore
@@ -176,6 +177,11 @@ private struct EmptyEditorView: View {
     var body: some View {
         ZStack {
             BrandColor.bg.ignoresSafeArea()
+                // Leerzustand deckt die WebView ab: deren I-Beam-(Text-)Cursor
+                // darf nicht durchscheinen → über der ganzen Fläche den Pfeil setzen.
+                .onContinuousHover { phase in
+                    if case .active = phase { NSCursor.arrow.set() }
+                }
             VStack(spacing: 18) {
                 Image(systemName: "book.closed")
                     .font(.system(size: 30, weight: .light))
@@ -251,7 +257,12 @@ private struct EmptyStateButton: View {
             )
         }
         .buttonStyle(.plain)
-        .onHover { hovering = $0 }
+        .onHover { inside in
+            hovering = inside
+            // Knopf ist ein klickbares Ziel → Zeigehand statt des durchblutenden
+            // I-Beam-Cursors der darunterliegenden WebView.
+            if inside { NSCursor.pointingHand.push() } else { NSCursor.pop() }
+        }
     }
 
     private var background: Color {

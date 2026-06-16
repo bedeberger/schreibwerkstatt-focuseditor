@@ -22,23 +22,24 @@ struct PagePickerOverlay: View {
     @FocusState private var searchFocused: Bool
     /// Index der per Tastatur/Hover markierten Zeile in `filtered`.
     @State private var selected = 0
-    /// Ziel für den Auto-Scroll. Wird NUR von der Tastatur-Navigation gesetzt,
-    /// nicht vom Hover — sonst entsteht eine Rückkopplung (Hover → Scroll → Zeilen
-    /// rutschen unter den Cursor → neuer Hover → …), die als Flackern sichtbar ist.
+    /// Ziel für den Auto-Scroll — die SEITEN-ID der anzusteuernden Zeile (gleiche
+    /// Identität wie die `ForEach`-Zeilen), NICHT der Lauf-Index. Wird NUR von der
+    /// Tastatur-Navigation/Vorauswahl gesetzt, nicht vom Hover — sonst entsteht eine
+    /// Rückkopplung (Hover → Scroll → Zeilen rutschen unter den Cursor → neuer
+    /// Hover → …), die als Flackern sichtbar ist.
     @State private var scrollTarget: Int?
     /// Lokaler Key-Monitor für ↑/↓/⏎ — fängt die Tasten ab, bevor das fokussierte
     /// Suchfeld sie als Cursor-Bewegung/Submit schluckt.
     @State private var keyMonitor: Any?
 
-    private var filtered: [PagePickerRow] {
-        guard !query.isEmpty else { return library.pages }
-        return library.pages.filter { row in
-            row.name.localizedCaseInsensitiveContains(query)
-            // Treffer in JEDEM Pfad-Segment (Jahr ODER Monat), nicht nur im Leaf —
-            // so findet „2026" auch die Seiten unter dem Jahres-Kapitel.
-            || row.chapterPath.contains { $0.localizedCaseInsensitiveContains(query) }
-        }
-    }
+    /// Memoisierte Trefferliste + Kapitel-Gruppierung. BEWUSST in `@State`, NICHT
+    /// als computed property: bei einem grossen Buch (Tausende Seiten) wäre die
+    /// Filterung + Gruppierung sonst bei JEDER Body-Neuberechnung fällig — und die
+    /// triggert schon jeder Hover (`selected` ändert sich). Stattdessen nur bei
+    /// echter Eingabe (`query`) oder neuer Seitenliste neu rechnen (`recompute()`),
+    /// sodass Hover/Tastatur-Navigation rein über `selected` läuft.
+    @State private var filtered: [PagePickerRow] = []
+    @State private var groups: [PickerGroup] = []
 
     /// Eine Seitenzeile samt ihrem flachen Index in `filtered` — der Index ist die
     /// Brücke zur Tastatur-/Hover-Auswahl (`selected`) und zum Auto-Scroll-`.id`.
@@ -51,32 +52,58 @@ struct PagePickerOverlay: View {
     /// Ein Kapitelblock: zusammenhängender Lauf gleichen `path` in der
     /// depth-first-Reihenfolge (Top-Level-Seiten → leerer Pfad, kein Header).
     private struct PickerGroup: Identifiable {
-        let id: Int          // erster Index im Lauf (stabil pro Filterung)
+        // Erste Seiten-ID im Lauf — eine STABILE, inhaltsgebundene Identität.
+        // Bewusst NICHT der Lauf-Index: ein über Filterungen wiederverwendeter
+        // Integer (0, 1, …) lässt SwiftUI in der `LazyVStack` mit gepinnten
+        // Sektionen die alte (z. B. zuvor oben stehende) Sektion samt Zeilen
+        // recyceln, statt sie an den neuen Treffer zu binden — sichtbar als
+        // „falsche Seiten unter richtigem Kapitel-Header".
+        let id: Int
         let path: [String]   // voller Kapitelpfad; leer = Top-Level
         let rows: [IndexedRow]
         var depth: Int { path.count }
     }
 
-    /// Gruppiert `filtered` in Kapitelblöcke. Da `pickerRows` depth-first abflacht
-    /// (alle Seiten eines Kapitels stehen am Stück), genügt das Aufbrechen bei
-    /// jedem Wechsel des VOLLEN Pfads — gleichnamige Unterkapitel verschiedener
+    /// Rechnet Trefferliste (`filtered`) + Kapitel-Gruppierung (`groups`) neu und
+    /// legt sie im State ab. Nur bei echter Änderung der Eingabe/Seitenliste
+    /// aufrufen (s. `filtered`-Doku) — NICHT bei jedem Render.
+    private func recompute() {
+        let rows: [PagePickerRow]
+        if query.isEmpty {
+            rows = library.pages
+        } else {
+            rows = library.pages.filter { row in
+                row.name.localizedCaseInsensitiveContains(query)
+                // Treffer in JEDEM Pfad-Segment (Jahr ODER Monat), nicht nur im Leaf —
+                // so findet „2026" auch die Seiten unter dem Jahres-Kapitel.
+                || row.chapterPath.contains { $0.localizedCaseInsensitiveContains(query) }
+            }
+        }
+        filtered = rows
+        groups = Self.group(rows)
+    }
+
+    /// Gruppiert die Trefferliste in Kapitelblöcke. Da `pickerRows` depth-first
+    /// abflacht (alle Seiten eines Kapitels stehen am Stück), genügt das Aufbrechen
+    /// bei jedem Wechsel des VOLLEN Pfads — gleichnamige Unterkapitel verschiedener
     /// Eltern (z. B. „Januar" in 2025 und 2026) bleiben so getrennte Blöcke, statt
     /// fälschlich zu verschmelzen.
-    private var groups: [PickerGroup] {
+    private static func group(_ rows: [PagePickerRow]) -> [PickerGroup] {
         var result: [PickerGroup] = []
         var current: [IndexedRow] = []
         var currentPath: [String] = []
-        var groupStart = 0
 
         func flush() {
-            guard !current.isEmpty else { return }
-            result.append(PickerGroup(id: groupStart, path: currentPath, rows: current))
+            guard let first = current.first else { return }
+            // Identität = erste Seiten-ID des Laufs (stabil, eindeutig) statt
+            // Lauf-Index — s. `PickerGroup.id`.
+            result.append(PickerGroup(id: first.row.id, path: currentPath, rows: current))
             current = []
         }
 
-        for (index, row) in filtered.enumerated() {
+        for (index, row) in rows.enumerated() {
             if !current.isEmpty && row.chapterPath != currentPath { flush() }
-            if current.isEmpty { currentPath = row.chapterPath; groupStart = index }
+            if current.isEmpty { currentPath = row.chapterPath }
             current.append(IndexedRow(index: index, row: row))
         }
         flush()
@@ -108,16 +135,19 @@ struct PagePickerOverlay: View {
         .onAppear {
             focusSearchField()
             installKeyMonitor()
+            recompute()                           // Trefferliste/Gruppen aus dem Cache
             selectOpenPage()                      // falls Seiten schon im Cache stehen
             Task { await library.refreshPages() } // beim Öffnen frisch ziehen
         }
         .onDisappear { removeKeyMonitor() }
         .onChange(of: library.pages) { _, _ in          // async nachgeladen → springen
+            recompute()                                 // neue Liste → Treffer/Gruppen neu
             selectOpenPage()
         }
         .onChange(of: query) { _, _ in                  // neue Suche → oben anfangen
+            recompute()                                 // gefilterte Liste/Gruppen neu
             selected = 0
-            scrollTarget = 0
+            scrollTarget = filtered.first?.id           // erste Trefferzeile (Seiten-ID)
         }
     }
 
@@ -164,8 +194,13 @@ struct PagePickerOverlay: View {
                         ForEach(groups) { group in
                             Section {
                                 ForEach(group.rows) { entry in
+                                    // KEINE explizite `.id(entry.index)` — der
+                                    // Lauf-Index wird über Filterungen wiederverwendet
+                                    // und liess SwiftUI alte Zeilen recyceln (falscher
+                                    // Seitenname unter richtigem Kapitel). Die `ForEach`-
+                                    // Identität ist `IndexedRow.id` = Seiten-ID (stabil);
+                                    // der Auto-Scroll zielt darum ebenfalls auf die Seiten-ID.
                                     rowButton(entry.row, isSelected: entry.index == selected)
-                                        .id(entry.index)
                                         .onHover { if $0 { selected = entry.index } }
                                     Divider().opacity(0.4)
                                 }
@@ -183,6 +218,14 @@ struct PagePickerOverlay: View {
                         proxy.scrollTo(new, anchor: .center)
                     }
                 }
+                // Buchwechsel → komplette Scroll-Subtree neu aufbauen. Trotz
+                // inhaltsgebundener Sektions-/Zeilen-IDs hält die `LazyVStack` mit
+                // gepinnten Sektionen beim Datentausch (altes Buch → neues Buch)
+                // gelegentlich einen recycelten Header der alten Sektion → „neuer
+                // Kapitel-Header über alten Seiten". Das buch-gebundene `.id` wirft
+                // den alten Baum weg (feuert NUR beim Buchwechsel, nicht bei
+                // Hover/Tippen → keine Scroll-Performance-Kosten).
+                .id(library.activeBookId)
             }
         }
     }
@@ -317,11 +360,20 @@ struct PagePickerOverlay: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
+    /// Wiederverwendeter Formatter — `RelativeDateTimeFormatter` ist teuer in der
+    /// Erzeugung; bei einem grossen Buch würde ein neuer pro Zeile/Render beim
+    /// Scrollen spürbar bremsen. Locale wird vor jeder Nutzung nachgeführt (falls
+    /// der Nutzer die App-Sprache umstellt). MainActor-gebunden wie die ganze View.
+    private static let relativeFormatter: RelativeDateTimeFormatter = {
+        let f = RelativeDateTimeFormatter()
+        f.unitsStyle = .abbreviated
+        return f
+    }()
+
     /// Letzte Änderung als kurze Relativ-Zeit in der App-Sprache (z. B. „vor 3 Std.").
     private static func relative(_ date: Date) -> String {
-        let f = RelativeDateTimeFormatter()
+        let f = relativeFormatter
         f.locale = Locale(identifier: L10nStore.shared.localeCode)
-        f.unitsStyle = .abbreviated
         return f.localizedString(for: date, relativeTo: Date())
     }
 
@@ -340,7 +392,7 @@ struct PagePickerOverlay: View {
               let openId = library.openPageId,
               let idx = filtered.firstIndex(where: { $0.id == openId }) else { return }
         selected = idx
-        scrollTarget = idx
+        scrollTarget = openId   // Seiten-ID (Scroll-Identität), nicht der Index
     }
 
     /// Öffnet die aktuell markierte Zeile (Tastatur/Hover); fällt auf den ersten
@@ -355,7 +407,7 @@ struct PagePickerOverlay: View {
     private func moveSelection(_ delta: Int) {
         guard !filtered.isEmpty else { return }
         selected = max(0, min(filtered.count - 1, selected + delta))
-        scrollTarget = selected   // nur Tastatur-Nav scrollt mit
+        scrollTarget = filtered[selected].id   // Seiten-ID; nur Tastatur-Nav scrollt mit
     }
 
     private func close() {

@@ -192,9 +192,15 @@ final class LibraryStore: ObservableObject {
         isLoadingPages = true
         defer { isLoadingPages = false }
         do {
-            pages = try await content.pickerRows(bookId: bookId)
+            let rows = try await content.pickerRows(bookId: bookId)
+            // Buchwechsel-Race: Während dieses (evtl. langsamen) Tree-Loads kann der
+            // Nutzer schon zum nächsten Buch gewechselt haben — eine späte Antwort
+            // des ALTEN Buchs darf die Seiten des neuen nicht überschreiben.
+            guard bookId == activeBookId else { return }
+            pages = rows
             lastError = nil
         } catch {
+            guard bookId == activeBookId else { return }
             // Offline / Serverfehler → lokalen Spiegel zeigen (kein Datenverlust,
             // nur ohne Kapitel-Gruppierung/Order).
             log.notice("Tree nicht erreichbar — lokaler Fallback für Buch \(bookId, privacy: .public)")
