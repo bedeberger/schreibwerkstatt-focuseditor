@@ -39,8 +39,33 @@ struct schreibwerkstatt_focuseditorApp: App {
     @StateObject private var writingStats = WritingStatsStore()
     @StateObject private var loc = LocalizationController()
     @StateObject private var updater = UpdaterController()
+    /// Geteilter UI-Zustand zwischen Editor-Host und der im Titelleisten-Accessory
+    /// gehosteten Toolbar (Seiten-Picker + Konflikt-Sheet).
+    @StateObject private var toolbarUI = ToolbarUIState()
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.openWindow) private var openWindow
+
+    /// Baut die SwiftUI-`AppToolbar` als AppKit-`NSView` für das Titelleisten-
+    /// Accessory. Die App-`@StateObject`s sind hier direkt greifbar und werden
+    /// dem isolierten Hosting-Baum als Environment mitgegeben — über die
+    /// SwiftUI↔AppKit-Grenze fließen sie sonst NICHT (anders als im normalen
+    /// View-Baum der WindowGroup). `windowChrome` braucht die Toolbar nicht mehr.
+    @MainActor
+    private func makeToolbarHost() -> NSView {
+        let root = AppToolbar()
+            .environmentObject(core.auth)
+            .environmentObject(core.sync)
+            .environmentObject(core.library)
+            .environmentObject(appearance)
+            .environmentObject(focus)
+            .environmentObject(writingStats)
+            .environmentObject(toolbarUI)
+            .environmentObject(loc)
+        let host = NSHostingView(rootView: root)
+        host.frame = NSRect(x: 0, y: 0, width: 900, height: 50)   // Höhe = AppToolbar.frame(height:)
+        host.autoresizingMask = [.width]
+        return host
+    }
 
     var body: some Scene {
         WindowGroup {
@@ -56,7 +81,10 @@ struct schreibwerkstatt_focuseditorApp: App {
                 .environmentObject(typography)
                 .environmentObject(writingStats)
                 .environmentObject(loc)
-                .background(WindowAccessor { windowChrome.bind($0) })
+                .environmentObject(toolbarUI)
+                .background(WindowAccessor { window in
+                    windowChrome.bind(window, toolbarHost: makeToolbarHost())
+                })
                 .task {
                     // Fokus- + Typografie-Controller an die app-weite Bridge
                     // koppeln (Push der Live-Umschaltung), Stats-Kanal anhängen,
@@ -171,8 +199,8 @@ struct schreibwerkstatt_focuseditorApp: App {
                 Divider()
 
                 // Vollbild ein/aus. Eigener Menüpunkt als zuverlässiger Einstieg:
-                // im Vollbild sind die Ampel-Buttons ausgeblendet; die Toolbar bleibt
-                // zwar sichtbar, hat aber keinen eigenen Vollbild-Knopf.
+                // im Vollbild blendet macOS Ampel-Buttons und Titelleiste (samt
+                // Toolbar) aus — ein Menüpunkt ist der verlässliche Rückweg.
                 // Label folgt dem Zustand, damit der Rückweg klar benannt ist.
                 Button(windowChrome.isNativeFullscreen
                        ? t("menu.exitFullscreen")

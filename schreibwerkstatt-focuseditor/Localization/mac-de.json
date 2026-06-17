@@ -46,9 +46,6 @@
   "settings.appearance.focusSection": "Fokus",
   "settings.appearance.granularity": "Granularität",
   "settings.appearance.focusHint": "Bestimmt, wie stark der Editor die Umgebung des aktiven Absatzes abblendet. Die Änderung wirkt sofort im offenen Editor.",
-  "settings.appearance.windowSection": "Fenster",
-  "settings.appearance.autoHideToolbar": "Toolbar bei Inaktivität ausblenden",
-  "settings.appearance.windowHint": "Für ablenkungsfreies Schreiben den nativen Vollbild nutzen (⌃⌘F) — dort blendet sich die Toolbar automatisch aus. Die Auto-Ausblendung zeigt die Toolbar im Fenster erst wieder, wenn der Zeiger an den oberen Rand fährt.",
 
   "appearance.mode.system": "Automatisch (System)",
   "appearance.mode.light": "Hell",

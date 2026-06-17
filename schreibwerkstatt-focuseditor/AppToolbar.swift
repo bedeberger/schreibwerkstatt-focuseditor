@@ -2,31 +2,45 @@
 //  AppToolbar.swift
 //  schreibwerkstatt-focuseditor
 //
-//  Eigene, markengerechte Toolbar-Leiste im Content — bewusst NICHT die native
-//  Fenster-Toolbar (die wirkte wie ein Menü). Eine schlanke Papier-Leiste mit
-//  feiner Trennlinie sitzt am oberen Rand des Inhalts, direkt unter der
-//  (transparenten, titellosen) Fenster-Titelleiste mit den Ampel-Buttons.
+//  Eigene, markengerechte Toolbar-Leiste — eine schlanke Papier-Leiste mit
+//  feiner Trennlinie. Sie wird als natives Titelleisten-Accessory gehostet
+//  (s. `WindowChromeController`), als vollbreiter Streifen direkt unter den
+//  Ampel-Buttons — NICHT mehr als oberste Content-Leiste (das verschluckte im
+//  Vollbild die Klicks auf die Icons). Geteilter Zustand mit dem Editor-Host
+//  läuft über `ToolbarUIState` (getrennte SwiftUI-Bäume über die AppKit-Grenze).
 //
 //  Inhalt: Buch-Picker (links), Öffnen (⌘O), Sync-Status und ein Überlauf-Menü
-//  (Darstellung + Abmelden) rechts. Die Leiste bleibt immer sichtbar (auch im
-//  Vollbild); nur die Auto-Hide-Option blendet sie bei Inaktivität aus.
+//  rechts. Im Fenster immer sichtbar; im Vollbild blendet macOS sie samt
+//  Titelleiste aus und zeigt sie beim Hochfahren der Maus wieder.
 //
 
 import SwiftUI
 import AppKit
+import Combine
+
+/// Geteilter UI-Zustand der Toolbar, seit sie als natives Titelleisten-Accessory
+/// (statt als Content-Leiste) gehostet wird: Der Editor-Host und die im
+/// `NSTitlebarAccessoryViewController` gehostete `AppToolbar` leben in getrennten
+/// SwiftUI-Bäumen — gemeinsamer Zustand (offener Seiten-Picker, zu prüfender
+/// Konflikt) läuft darum über dieses geteilte ObservableObject statt über
+/// `@State`/`@Binding`.
+@MainActor
+final class ToolbarUIState: ObservableObject {
+    /// Sichtbarkeit des beschwörbaren Seiten-Pickers (⌘O).
+    @Published var pickerOpen = false
+    /// Aktuell im Auflösungs-Sheet geprüfter Konflikt (`nil` = zu).
+    @Published var inspectingConflict: SyncEngine.Conflict?
+}
 
 struct AppToolbar: View {
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var sync: SyncEngine
     @EnvironmentObject private var library: LibraryStore
     @EnvironmentObject private var writingStats: WritingStatsStore
-    @EnvironmentObject private var windowChrome: WindowChromeController
-
-    /// Steuert den beschwörbaren Seiten-Picker (⌘O) im Host.
-    @Binding var pickerOpen: Bool
-
-    /// Öffnet die Konflikt-Auflösungs-Ansicht im Host (Sheet).
-    var onInspectConflict: (SyncEngine.Conflict) -> Void = { _ in }
+    /// Geteilter UI-Zustand mit dem Editor-Host (Seiten-Picker + Konflikt-Sheet) —
+    /// nötig, weil die Toolbar jetzt in einem eigenen, vom Host getrennten
+    /// SwiftUI-Baum (Titelleisten-Accessory) lebt.
+    @EnvironmentObject private var toolbarUI: ToolbarUIState
 
     /// Hover-Zustand des Überlauf-Menüs (Material-Highlight).
     @State private var overflowHover = false
@@ -79,7 +93,7 @@ struct AppToolbar: View {
             ToolbarIconButton(systemName: "doc.text.magnifyingglass",
                               help: t("toolbar.openPageHelp"),
                               accessibilityLabel: t("toolbar.openPage")) {
-                pickerOpen.toggle()
+                toolbarUI.pickerOpen.toggle()
             }
 
             // Seite schliessen — nur sichtbar, wenn eine Seite offen ist. Schliesst
@@ -118,7 +132,7 @@ struct AppToolbar: View {
             SyncStatusLabel(status: sync.status,
                             conflicts: sync.conflicts,
                             lastSyncedAt: sync.lastSyncedAt,
-                            onInspect: onInspectConflict)
+                            onInspect: { toolbarUI.inspectingConflict = $0 })
 
             // Fokus-Stufe + Darstellung direkt in der Leiste (statt zwei Klicks
             // tief im Überlauf): immer sichtbar — auch im nativen Vollbild, wo die
@@ -130,7 +144,7 @@ struct AppToolbar: View {
         }
         .padding(.leading, 16)
         .padding(.trailing, 16)
-        .frame(height: 42)
+        .frame(height: 50)
         .frame(maxWidth: .infinity)
         // Pfeil-Cursor über der ganzen Leiste erzwingen — sonst drückt die
         // darunterliegende Editor-WebView am unteren Rand ihren I-Beam durch
@@ -144,31 +158,17 @@ struct AppToolbar: View {
             }
         )
         .onPreferenceChange(ToolbarWidthKey.self) { toolbarWidth = $0 }
-        // Im Vollbild auch den Leisten-INHALT (Icons, Breadcrumb, Status) dezent
-        // durchscheinen lassen — nicht nur den Hintergrund. Die Deckkraft sitzt
-        // VOR den Hintergrund-Ebenen, fadet also nur den Vordergrund; die
-        // Materialschicht behält ihre eigene (ohnehin schon niedrige) Opazität.
-        // Bewusst sehr weit zurückgenommen — die Leiste soll beim Schreiben fast
-        // verschwinden und erst beim Hinschauen (bzw. Hover) wieder lesbar werden.
-        .opacity(windowChrome.isNativeFullscreen ? 0.3 : 1)
-        .background(WindowDragArea())          // leere Flächen ziehen das Fenster
-        // Sichtbar abgesetzte Leiste: `.regularMaterial` ist das eigentlich
-        // sichtbare, klar vom Editor abgehobene Frosted-Panel (im Dark Mode
-        // deutlich heller als der fast schwarze Editor-`bg`); die warme
-        // `surface`-Tönung davor gibt ihr den Marken-Papierton.
-        // Im (nativen) Vollbild stark zurückgenommen — im Vollbild gar keine
-        // Tönung und kein Frosted-Material mehr, nur der durchscheinende Inhalt
-        // (s. `.opacity` oben), damit die Leiste kaum noch als Block über dem
-        // ablenkungsfreien Schreiben sitzt und der Editor klar durchscheint.
-        .background(windowChrome.isNativeFullscreen ? Color.clear
-                                                    : BrandColor.surface.opacity(0.35))
-        .background(windowChrome.isNativeFullscreen ? AnyShapeStyle(Color.clear)
-                                                    : AnyShapeStyle(.regularMaterial))
+        // Leere Flächen ziehen das Fenster (auch im Titelleisten-Accessory).
+        .background(WindowDragArea())
+        // Nur eine dezente Marken-Papier-Tönung — KEIN `.regularMaterial`-Frosted
+        // mehr: die Toolbar sitzt jetzt im nativen Titelleisten-Bereich
+        // (NSTitlebarAccessory), der schon eine eigene Vibrancy mitbringt; eine
+        // zweite Materialschicht wirkte doppelt/zu schwer. Im Vollbild blendet
+        // macOS die Leiste samt Titelleiste automatisch aus.
+        .background(BrandColor.surface.opacity(0.35))
         .overlay(alignment: .bottom) {
             Rectangle()
-                // Trennlinie im Vollbild ganz weg — sonst bleibt sie als harte
-                // Kante über der fast unsichtbaren Leiste stehen.
-                .fill(BrandColor.faint.opacity(windowChrome.isNativeFullscreen ? 0 : 0.9))
+                .fill(BrandColor.faint.opacity(0.9))
                 .frame(height: 1)
         }
     }

@@ -158,7 +158,6 @@ private struct GeneralSettingsTab: View {
 private struct AppearanceSettingsTab: View {
     @EnvironmentObject private var appearance: AppearanceController
     @EnvironmentObject private var focus: FocusController
-    @AppStorage("toolbar.autoHide") private var autoHideToolbar = false
 
     var body: some View {
         Form {
@@ -185,14 +184,6 @@ private struct AppearanceSettingsTab: View {
                 .pickerStyle(.inline)
 
                 Text(t("settings.appearance.focusHint"))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-
-            Section(t("settings.appearance.windowSection")) {
-                Toggle(t("settings.appearance.autoHideToolbar"), isOn: $autoHideToolbar)
-                Text(t("settings.appearance.windowHint"))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

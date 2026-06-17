@@ -46,9 +46,6 @@
   "settings.appearance.focusSection": "Focus",
   "settings.appearance.granularity": "Granularity",
   "settings.appearance.focusHint": "Controls how strongly the editor dims the surroundings of the active paragraph. The change takes effect immediately in the open editor.",
-  "settings.appearance.windowSection": "Window",
-  "settings.appearance.autoHideToolbar": "Hide toolbar when inactive",
-  "settings.appearance.windowHint": "For distraction-free writing use native full screen (⌃⌘F) — there the toolbar hides automatically. Auto-hide brings the toolbar back in the window only when the pointer moves to the top edge.",
 
   "appearance.mode.system": "Automatic (system)",
   "appearance.mode.light": "Light",

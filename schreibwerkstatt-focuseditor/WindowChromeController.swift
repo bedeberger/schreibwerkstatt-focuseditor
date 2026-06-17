@@ -2,17 +2,20 @@
 //  WindowChromeController.swift
 //  schreibwerkstatt-focuseditor
 //
-//  Fenster-Chrome des Editor-Fensters: hält die Ampel-Buttons sichtbar und
-//  beobachtet den **nativen** macOS-Vollbild (grüner Button / View ▸ Vollbild).
-//  Die Toolbar bleibt **immer** sichtbar — auch im Vollbild; ablenkungsfreies
-//  Ausblenden macht allein die Auto-Hide-Option (Toolbar bei Inaktivität).
+//  Fenster-Chrome des Editor-Fensters: hält die Ampel-Buttons sichtbar,
+//  hostet die Toolbar als natives Titelleisten-Accessory und beobachtet den
+//  **nativen** macOS-Vollbild (grüner Button / View ▸ Vollbild).
 //
-//  Bewusst KEIN `fullSizeContentView` mehr: damit lag die schwere, transparente
-//  `WKWebView` über der eigenen Toolbar und verschluckte sie optisch (nur ein
-//  paar Pixel der Leiste blieben sichtbar). Mit normaler Titelleiste sitzt der
-//  Inhalt (Toolbar + WebView) verlässlich UNTER der Titelleiste — kein Overlap,
-//  keine Z-Order-Tricks nötig. Die Ampel-Buttons stehen in der Titelleiste, die
-//  eigene Leiste direkt darunter.
+//  Die Toolbar sitzt als `NSTitlebarAccessoryViewController` (vollbreiter
+//  Streifen unter den Ampel-Buttons) im Fenster-Chrome — NICHT mehr als
+//  oberste Content-Leiste. Grund: als Content-Leiste verschluckte im Vollbild
+//  die auto-ausblendende System-Titelleiste die Klicks auf die Icons. Als
+//  echtes Chrome-Element ist die Toolbar im Vollbild bedienbar; macOS blendet
+//  sie dort samt Titelleiste automatisch aus und zeigt sie beim Hochfahren der
+//  Maus wieder (gewollter ablenkungsfreier Effekt). Im Fenster bleibt sie sichtbar.
+//
+//  Bewusst KEIN `fullSizeContentView`: der Inhalt (WebView) sitzt verlässlich
+//  UNTER Titelleiste + Accessory — kein Overlap, keine Z-Order-Tricks nötig.
 //
 
 import SwiftUI
@@ -28,19 +31,31 @@ final class WindowChromeController: ObservableObject {
 
     private weak var window: NSWindow?
 
+    /// Native Titelleisten-Toolbar (NSTitlebarAccessory): hostet die SwiftUI-
+    /// `AppToolbar` im Chrome-Bereich, damit sie auch im Vollbild bedienbar ist.
+    private var toolbarAccessory: NSTitlebarAccessoryViewController?
+
+    /// Gewünschte Sichtbarkeit der Toolbar — gemerkt, falls `setToolbarVisible`
+    /// feuert, BEVOR der `WindowAccessor` das Accessory installiert hat (sonst
+    /// bliebe die Toolbar bei diesem Race verborgen). `installToolbar` wendet ihn an.
+    private var toolbarVisible = false
+
     // Beobachter für die nativen Vollbild-Notifications des Fensters.
     private var fullscreenObservers: [NSObjectProtocol] = []
 
     private static let buttons: [NSWindow.ButtonType] = [.closeButton, .miniaturizeButton, .zoomButton]
 
-    /// Vom `WindowAccessor` gereicht, sobald das NSWindow existiert.
-    func bind(_ window: NSWindow?) {
+    /// Vom `WindowAccessor` gereicht, sobald das NSWindow existiert. `toolbarHost`
+    /// ist die in SwiftUI gebaute Toolbar (NSHostingView); sie wird als
+    /// Titelleisten-Accessory installiert (s. `installToolbar`).
+    func bind(_ window: NSWindow?, toolbarHost: NSView? = nil) {
         guard window !== self.window else { return }
         teardownFullscreenObservers()
         self.window = window
         guard let window else { return }
 
         applyBaseChrome(window)
+        installToolbar(toolbarHost, in: window)
 
         let center = NotificationCenter.default
         fullscreenObservers = [
@@ -102,9 +117,38 @@ final class WindowChromeController: ObservableObject {
         }
     }
 
+    /// Hängt die (in SwiftUI gebaute) Toolbar als Titelleisten-Accessory ins
+    /// Fenster — vollbreiter Streifen direkt unter den Ampel-Buttons. Dadurch
+    /// gehört sie zum Fenster-Chrome: im nativen Vollbild blendet macOS sie samt
+    /// Titelleiste automatisch aus und zeigt sie beim Hochfahren der Maus wieder,
+    /// und Klicks landen — anders als bei der früheren Content-Leiste — nicht
+    /// mehr in der auto-ausblendenden System-Titelleiste. Startet verborgen
+    /// (Login-/Ladebildschirm); `setToolbarVisible` zeigt sie, sobald der Editor da ist.
+    private func installToolbar(_ host: NSView?, in window: NSWindow) {
+        guard let host, toolbarAccessory == nil else { return }
+        host.frame = NSRect(x: 0, y: 0, width: window.frame.width, height: 50)   // = AppToolbar-Höhe
+        host.autoresizingMask = [.width]   // volle Fensterbreite mitwachsen
+        let vc = NSTitlebarAccessoryViewController()
+        vc.layoutAttribute = .bottom
+        vc.view = host
+        vc.isHidden = !toolbarVisible   // bereits gemeldeten Wunsch-Zustand anwenden
+        window.addTitlebarAccessoryViewController(vc)
+        toolbarAccessory = vc
+    }
+
+    /// Blendet das Toolbar-Accessory ein/aus (vom Editor-Host gesteuert: nur
+    /// sichtbar, solange der Editor offen ist — sonst stünde im Login-/Lade-
+    /// zustand ein leerer Streifen in der Titelleiste). Vor der Installation
+    /// gemeldete Werte merkt sich `toolbarVisible` (s. dort).
+    func setToolbarVisible(_ visible: Bool) {
+        toolbarVisible = visible
+        toolbarAccessory?.isHidden = !visible
+    }
+
     /// Schaltet den nativen macOS-Vollbild um. Pendant zum grünen Ampel-Button /
-    /// ⌃⌘F als Menüpunkt — die Toolbar bleibt im Vollbild sichtbar, der Rückweg
-    /// in die normale Fensteransicht ist also auch über das Menü erreichbar.
+    /// ⌃⌘F als Menüpunkt — im Vollbild blendet macOS die Toolbar samt Titelleiste
+    /// aus (Reveal beim Hochfahren der Maus); der Rückweg ist über das Menü (oder
+    /// die enthüllte Titelleiste) erreichbar.
     func toggleFullscreen() {
         window?.toggleFullScreen(nil)
     }
@@ -114,8 +158,9 @@ final class WindowChromeController: ObservableObject {
         fullscreenObservers.removeAll()
     }
 
-    /// Reaktion auf nativen Vollbild-Wechsel. Die Toolbar bleibt auch im Vollbild
-    /// sichtbar (CLAUDE.md); beim Verlassen die Ampel-Buttons wieder einblenden.
+    /// Reaktion auf nativen Vollbild-Wechsel. Im Vollbild verwaltet macOS die
+    /// Sichtbarkeit der Titelleiste (samt Toolbar-Accessory) selbst; beim
+    /// Verlassen die Ampel-Buttons wieder einblenden.
     private func nativeFullscreenChanged(_ entered: Bool) {
         isNativeFullscreen = entered
         if !entered, let window {

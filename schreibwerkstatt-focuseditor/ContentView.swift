@@ -53,17 +53,9 @@ private struct EditorHostView: View {
     @EnvironmentObject private var library: LibraryStore
     @EnvironmentObject private var windowChrome: WindowChromeController
     @EnvironmentObject private var editorBundle: EditorBundleStore
-    /// Sichtbarkeit des beschwörbaren Seiten-Pickers (⌘O).
-    @State private var pickerOpen = false
-    /// Aktuell geprüfter Konflikt (treibt das Auflösungs-Sheet). `nil` = zu.
-    @State private var inspectingConflict: SyncEngine.Conflict?
-
-    /// „Toolbar bei Inaktivität ausblenden" (gerätelokal, gleicher Key wie der
-    /// Darstellungs-Tab der Settings).
-    @AppStorage("toolbar.autoHide") private var autoHideToolbar = false
-    /// Steuert die eingeblendete Toolbar im Auto-Hide-Modus.
-    @State private var toolbarRevealed = true
-    @State private var hideTask: Task<Void, Never>?
+    /// Geteilter UI-Zustand mit der (im Titelleisten-Accessory gehosteten)
+    /// Toolbar: Seiten-Picker-Sichtbarkeit + zu prüfender Konflikt.
+    @EnvironmentObject private var toolbarUI: ToolbarUIState
 
     var body: some View {
         Group {
@@ -78,102 +70,66 @@ private struct EditorHostView: View {
                 BundleLoadingView()
             }
         }
-        .animation(.easeOut(duration: 0.12), value: pickerOpen)
-        .animation(.easeOut(duration: 0.18), value: toolbarRevealed)
+        .animation(.easeOut(duration: 0.12), value: toolbarUI.pickerOpen)
         .animation(.easeOut(duration: 0.18), value: library.openPageId)
         .animation(.easeOut(duration: 0.12), value: library.isSwitchingBook)
         .task { await editorBundle.ensureReady() }
         .task { await library.loadBooks() }
-        // Beim Ausschalten von Auto-Hide die Toolbar wieder dauerhaft zeigen.
-        .onChange(of: autoHideToolbar) { _, on in
-            if !on { hideTask?.cancel(); toolbarRevealed = true }
-        }
-        // Verwaisten Hide-Timer beim Teardown (z. B. Abmelden → LoginView) stoppen.
-        .onDisappear { hideTask?.cancel() }
         // Buchwechsel: die LibraryStore schliesst die offene Seite und signalisiert
         // hier, den Seiten-Picker zu öffnen (Seite des neuen Buchs wählen).
         .onChange(of: library.pickerOpenRequest) { _, _ in
-            pickerOpen = true
+            toolbarUI.pickerOpen = true
         }
         // Beginnt ein Buchwechsel, den (evtl. offenen) Picker sofort schliessen —
         // der Lade-Donut übernimmt, bis die Seiten des neuen Buchs geladen sind.
         .onChange(of: library.isSwitchingBook) { _, switching in
-            if switching { pickerOpen = false }
+            if switching { toolbarUI.pickerOpen = false }
         }
     }
 
-    /// Editor + Toolbar im Ready-Zustand. Zwei Layouts:
-    ///  • normal     — Toolbar oben im Fluss, WebView darunter (keine Overlap-
-    ///    Probleme: das Fenster nutzt KEIN `fullSizeContentView` mehr, die WebView
-    ///    sitzt sauber unter der Titelleiste — s. `WindowChromeController`).
-    ///  • Auto-Hide  — Toolbar als Overlay über der WebView, das bei Inaktivität
-    ///    weggeblendet wird; sie bleibt IMMER im Baum, damit ⌘O & Co. greifen.
-    ///    Ein dünner Hover-Streifen am oberen Rand blendet sie wieder ein.
+    /// Editor im Ready-Zustand. Die Toolbar lebt NICHT mehr hier im Content,
+    /// sondern als natives Titelleisten-Accessory (s. `WindowChromeController`) —
+    /// dadurch ist sie auch im macOS-Vollbild klickbar (früher verschluckte die
+    /// auto-ausblendende System-Titelleiste die Klicks auf die Content-Leiste).
+    /// Beim Erscheinen/Verschwinden wird das Accessory ein-/ausgeblendet, damit
+    /// es auf Login-/Ladebildschirmen nicht als leerer Streifen stehen bleibt.
     @ViewBuilder
     private var editorReady: some View {
-        let autoHideActive = autoHideToolbar
-        VStack(spacing: 0) {
-            if !autoHideActive {
-                AppToolbar(pickerOpen: $pickerOpen, onInspectConflict: { inspectingConflict = $0 })
+        ZStack(alignment: .top) {
+            // App-weiter, geteilter Store — dieselbe Instanz, die die SyncEngine bedient.
+            FocusWebView(bridge: core.bridge, webRoot: editorBundle.webRoot)
+                .background(BrandColor.bg)
+                .frame(minWidth: 640, minHeight: 480)
+
+            // Ruhiger Leerzustand: keine Seite offen und kein Picker — statt
+            // der schwarzen WebView-Fläche eine zentrierte Karte mit Kontext
+            // (Buch) und dem klaren nächsten Schritt (Seite öffnen / zuletzt
+            // fortsetzen). Deckt die WebView voll ab, damit nichts durchscheint.
+            if library.openPageId == nil && !toolbarUI.pickerOpen {
+                EmptyEditorView(openPicker: { toolbarUI.pickerOpen = true })
+                    .transition(.opacity)
             }
-            ZStack(alignment: .top) {
-                // App-weiter, geteilter Store — dieselbe Instanz, die die SyncEngine bedient.
-                FocusWebView(bridge: core.bridge, webRoot: editorBundle.webRoot)
-                    .background(BrandColor.bg)
-                    .frame(minWidth: 640, minHeight: 480)
 
-                if autoHideActive {
-                    // Hover-Fangstreifen am oberen Rand (über der WebView).
-                    Color.clear
-                        .frame(height: 8)
-                        .contentShape(Rectangle())
-                        .onContinuousHover { phase in
-                            if case .active = phase { revealToolbar() }
-                        }
-                    AppToolbar(pickerOpen: $pickerOpen, onInspectConflict: { inspectingConflict = $0 })
-                        .opacity(toolbarRevealed ? 1 : 0)
-                        .offset(y: toolbarRevealed ? 0 : -52)
-                        .allowsHitTesting(toolbarRevealed)
-                        .onHover { if $0 { revealToolbar() } }
-                }
+            if toolbarUI.pickerOpen {
+                PagePickerOverlay(isOpen: $toolbarUI.pickerOpen)
+                    .transition(.opacity.combined(with: .scale(scale: 0.97)))
+            }
 
-                // Ruhiger Leerzustand: keine Seite offen und kein Picker — statt
-                // der schwarzen WebView-Fläche eine zentrierte Karte mit Kontext
-                // (Buch) und dem klaren nächsten Schritt (Seite öffnen / zuletzt
-                // fortsetzen). Deckt die WebView voll ab, damit nichts durchscheint.
-                if library.openPageId == nil && !pickerOpen {
-                    EmptyEditorView(openPicker: { pickerOpen = true })
-                        .transition(.opacity)
-                }
-
-                if pickerOpen {
-                    PagePickerOverlay(isOpen: $pickerOpen)
-                        .transition(.opacity.combined(with: .scale(scale: 0.97)))
-                }
-
-                // Buchwechsel: zentrierter Lade-Donut über der leeren WebView, bis
-                // die Seiten des neuen Buchs geladen sind und der Picker wieder öffnet.
-                if library.isSwitchingBook {
-                    BookSwitchLoadingView()
-                        .transition(.opacity)
-                }
+            // Buchwechsel: zentrierter Lade-Donut über der leeren WebView, bis
+            // die Seiten des neuen Buchs geladen sind und der Picker wieder öffnet.
+            if library.isSwitchingBook {
+                BookSwitchLoadingView()
+                    .transition(.opacity)
             }
         }
+        // Toolbar-Accessory nur zeigen, solange der Editor sichtbar ist (sonst
+        // stünde im Login-/Ladezustand ein leerer Streifen in der Titelleiste).
+        .onAppear { windowChrome.setToolbarVisible(true) }
+        .onDisappear { windowChrome.setToolbarVisible(false) }
         // Konflikt-Auflösung (Nebeneinander-Diff): aus dem Toolbar-Konfliktmenü
         // beschworen. `item:` bindet an die geprüfte Seite → ein Sheet je Konflikt.
-        .sheet(item: $inspectingConflict) { conflict in
+        .sheet(item: $toolbarUI.inspectingConflict) { conflict in
             ConflictResolutionView(conflict: conflict)
-        }
-    }
-
-    /// Blendet die Toolbar ein und plant das erneute Ausblenden nach Inaktivität.
-    private func revealToolbar() {
-        if !toolbarRevealed { toolbarRevealed = true }
-        hideTask?.cancel()
-        hideTask = Task {
-            try? await Task.sleep(for: .seconds(2.5))
-            guard !Task.isCancelled else { return }
-            if autoHideToolbar { toolbarRevealed = false }
         }
     }
 }
