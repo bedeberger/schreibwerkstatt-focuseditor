@@ -206,6 +206,7 @@ private struct AppearanceSettingsTab: View {
 
 private struct TypographySettingsTab: View {
     @EnvironmentObject private var typography: TypographyController
+    @State private var showResetAlert = false
 
     var body: some View {
         Form {
@@ -295,11 +296,22 @@ private struct TypographySettingsTab: View {
             Section {
                 HStack {
                     Spacer()
-                    Button(t("settings.typo.reset")) { typography.resetToDefaults() }
+                    // Bestätigung wie bei den anderen Einklick-Destruktiven (Abmelden,
+                    // Cache leeren, Server-Wechsel) — ein versehentlicher Klick würde
+                    // sonst alle Typografie-Einstellungen auf einmal verwerfen.
+                    Button(t("settings.typo.reset")) { showResetAlert = true }
                 }
             }
         }
         .formStyle(.grouped)
+        .alert(t("settings.typo.resetAlertTitle"), isPresented: $showResetAlert) {
+            Button(t("general.cancel"), role: .cancel) {}
+            Button(t("settings.typo.resetConfirm"), role: .destructive) {
+                typography.resetToDefaults()
+            }
+        } message: {
+            Text(t("settings.typo.resetAlertMessage"))
+        }
     }
 
     /// Slider 0…1 (links dezent, rechts stark) ⇄ Opazität (0.6…0.05).

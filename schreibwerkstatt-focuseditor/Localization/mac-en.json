@@ -75,6 +75,9 @@
   "settings.typo.dimAmount": "Dimming",
   "settings.typo.dimHint": "In focus mode the editor dims the inactive paragraphs. “Off” uses the editor default (theme-correct); when on, you set the strength yourself.",
   "settings.typo.reset": "Reset to defaults",
+  "settings.typo.resetAlertTitle": "Reset typography?",
+  "settings.typo.resetAlertMessage": "Font size, line height, column width, font family, paper tone and focus dimming are reset to their defaults. Your texts are kept.",
+  "settings.typo.resetConfirm": "Reset",
 
   "typo.font.serif": "Serif (Source Serif)",
   "typo.font.sans": "Sans (Inter)",

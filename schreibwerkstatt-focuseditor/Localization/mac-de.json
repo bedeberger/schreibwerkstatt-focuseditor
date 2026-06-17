@@ -75,6 +75,9 @@
   "settings.typo.dimAmount": "Abdunklung",
   "settings.typo.dimHint": "Im Fokus-Modus blendet der Editor die nicht-aktiven Absätze ab. „Aus“ nutzt die Editor-Vorgabe (theme-korrekt); eingeschaltet bestimmst du die Stärke selbst.",
   "settings.typo.reset": "Auf Standard zurücksetzen",
+  "settings.typo.resetAlertTitle": "Typografie zurücksetzen?",
+  "settings.typo.resetAlertMessage": "Schriftgrösse, Zeilenhöhe, Spaltenbreite, Schriftart, Papier-Ton und Fokus-Abdunklung werden auf die Vorgaben zurückgesetzt. Deine Texte bleiben erhalten.",
+  "settings.typo.resetConfirm": "Zurücksetzen",
 
   "typo.font.serif": "Serif (Source Serif)",
   "typo.font.sans": "Sans (Inter)",

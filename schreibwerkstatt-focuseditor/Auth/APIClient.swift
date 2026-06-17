@@ -40,6 +40,15 @@ final class APIClient {
         let cfg = URLSessionConfiguration.default
         cfg.timeoutIntervalForRequest = 30
         cfg.waitsForConnectivity = false
+        // Cookie-los: rein stateless Bearer-Auth. Ohne das speichert der Client
+        // das `connect.sid`-Session-Cookie, das der Server beim ersten Device-
+        // Token-Touch setzt, und sendet es fortan mit. Der Server-Auth-Guard
+        // kurzschliesst dann ueber die Session und ueberspringt die Device-Auth
+        // → touchTokenUsage-Telemetrie (Zugriffe/Zuletzt-aktiv/Version) friert
+        // ein und widerrufene Tokens blieben bis zum Cookie-Ablauf gueltig.
+        cfg.httpShouldSetCookies = false
+        cfg.httpCookieAcceptPolicy = .never
+        cfg.httpCookieStorage = nil
         return URLSession(configuration: cfg)
     }
 

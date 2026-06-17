@@ -14,8 +14,14 @@
 //
 
 import Foundation
+import OSLog
 
-struct SyncState: Codable, Sendable {
+private let syncStateLog = Logger(subsystem: "ch.schreibwerkstatt.focuseditor", category: "syncstate")
+
+// `nonisolated`, weil der Snapshot off-main (auf der `ioQueue`) encodiert wird —
+// unter der MainActor-Default-Isolation des Targets wäre die Codable-Conformance
+// sonst MainActor-isoliert und off-main nicht nutzbar (wie StoredPage/OutboxEntry).
+nonisolated struct SyncState: Codable, Sendable {
     /// Bekannte Buch-IDs (Server `id`).
     var bookIds: [Int] = []
     /// Pull-Cursor je Buch-ID.
@@ -58,13 +64,30 @@ final class SyncStateStore {
         self.filename = filename
         AppSupport.migrateLegacyFileIfNeeded(named: filename)
         self.url = AppSupport.serverDir().appendingPathComponent(filename)
+        self.state = Self.loadState(from: url)
+    }
 
-        if let data = try? Data(contentsOf: url),
-           let loaded = try? JSONDecoder().decode(SyncState.self, from: data) {
-            self.state = loaded
-        } else {
-            self.state = SyncState()
+    /// Lädt den Snapshot defensiv: Eine fehlende Datei ist der Normalfall
+    /// (Erststart) → leerer Zustand, kommentarlos. Eine VORHANDENE, aber nicht
+    /// dekodierbare Datei ist dagegen ein echter Fehler: Cursor + ISO-Basen sind
+    /// die Push-Koordinaten — geht das verloren, droht ein Voll-Pull oder ein
+    /// Push gegen die falsche Basis. Darum die korrupte Datei NICHT überschreiben,
+    /// sondern als `.corrupt`-Sidecar wegsichern (forensisch + Recovery von Hand)
+    /// und den Vorfall loggen, statt ihn still zu verschlucken.
+    private static func loadState(from url: URL) -> SyncState {
+        guard let data = try? Data(contentsOf: url) else { return SyncState() }
+        if let loaded = try? JSONDecoder().decode(SyncState.self, from: data) {
+            return loaded
         }
+        let backup = url.appendingPathExtension("corrupt")
+        try? FileManager.default.removeItem(at: backup)
+        do {
+            try FileManager.default.moveItem(at: url, to: backup)
+            syncStateLog.error("SyncState korrupt — nach \(backup.lastPathComponent, privacy: .public) gesichert; starte mit leerem Zustand (Voll-Pull folgt)")
+        } catch {
+            syncStateLog.error("SyncState korrupt UND Sicherung fehlgeschlagen (\(error.localizedDescription, privacy: .public)); starte mit leerem Zustand")
+        }
+        return SyncState()
     }
 
     /// Server-Wechsel: Pfad auf den Namespace des aktuellen Servers umlenken und
@@ -74,12 +97,7 @@ final class SyncStateStore {
     func reloadForCurrentServer() {
         AppSupport.migrateLegacyFileIfNeeded(named: filename)
         url = AppSupport.serverDir().appendingPathComponent(filename)
-        if let data = try? Data(contentsOf: url),
-           let loaded = try? JSONDecoder().decode(SyncState.self, from: data) {
-            state = loaded
-        } else {
-            state = SyncState()
-        }
+        state = Self.loadState(from: url)
     }
 
     /// Mutiert den Zustand (MainActor) und stößt einen Background-Snapshot an.
@@ -94,8 +112,16 @@ final class SyncStateStore {
         let snapshot = state
         let url = self.url
         ioQueue.async {
-            guard let data = try? JSONEncoder().encode(snapshot) else { return }
-            try? data.write(to: url, options: .atomic)
+            do {
+                let data = try JSONEncoder().encode(snapshot)
+                try data.write(to: url, options: .atomic)
+            } catch {
+                // Schreibfehler (Platte voll/Permissions) nicht still schlucken:
+                // sonst läuft der In-Memory-Zustand weiter, während die Cursor/
+                // Basen auf der Platte veralten — beim nächsten Start unbemerkt
+                // ein Voll-Pull oder Push gegen alte Basis.
+                syncStateLog.error("SyncState-Persistenz fehlgeschlagen: \(error.localizedDescription, privacy: .public)")
+            }
         }
     }
 }

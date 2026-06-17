@@ -249,11 +249,19 @@ final class LibraryStore: ObservableObject {
 
     /// Hebt die gewählte Seite über die Bridge in den Editor.
     func openPage(_ row: PagePickerRow) {
+        let previous = openPageId
         openPageId = row.id   // sofortige Toolbar-Anzeige; editorState bestätigt später
         openPageDirty = false // frisch geöffnete Seite ist sauber
         Task {
             let ok = await bridge.openPage(pageId: String(row.id))
-            if !ok { log.notice("openPage ohne WebView — Editor noch nicht bereit") }
+            if !ok {
+                log.notice("openPage ohne WebView — Editor noch nicht bereit")
+                // Die optimistische Anzeige zurücknehmen: ohne WebView kommt keine
+                // `editorState`-Bestätigung, sonst zeigte die Toolbar dauerhaft eine
+                // Seite als „offen", die der Editor nie geladen hat. Nur zurückrollen,
+                // falls sich die Auswahl seither nicht schon weiterbewegt hat.
+                if openPageId == row.id { openPageId = previous }
+            }
         }
     }
 

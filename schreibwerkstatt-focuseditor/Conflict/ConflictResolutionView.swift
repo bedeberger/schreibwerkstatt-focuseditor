@@ -81,12 +81,21 @@ struct ConflictResolutionView: View {
             ProgressView().controlSize(.small)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         case .failed:
-            VStack(spacing: 8) {
+            VStack(spacing: 10) {
                 Image(systemName: "wifi.slash").foregroundStyle(BrandColor.muted)
                 Text(t("conflict.loadFailed"))
                     .font(BrandFont.sans(12))
                     .foregroundStyle(BrandColor.muted)
                     .multilineTextAlignment(.center)
+                // Transienter Lade-/Netzfehler → erneut versuchen, ohne das Sheet zu
+                // schliessen und neu öffnen zu müssen (wie der Picker-Leerzustand).
+                Button(t("content.retry")) {
+                    state = .loading
+                    Task { await load() }
+                }
+                .buttonStyle(.plain)
+                .font(BrandFont.sans(11, weight: .semibold))
+                .foregroundStyle(BrandColor.primary)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .padding(24)

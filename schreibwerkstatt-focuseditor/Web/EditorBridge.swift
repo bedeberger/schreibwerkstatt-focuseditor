@@ -345,10 +345,17 @@ final class EditorBridge: NSObject, WKScriptMessageHandlerWithReply, EditorCoord
         // (anders als der Sync-Pull) → ggf. nil. Dann bleibt das Buch vorerst
         // ungesetzt; der Delete-Reconcile trägt es über den Buch-Tree nach
         // (LocalStore.assignBook), damit die Seite nicht als Waise unsichtbar wird.
-        try? await store.applyServerPage(id: pageId, html: html,
-                                         pageName: resp.name,
-                                         bookId: resp.book_id, chapterId: resp.chapter_id,
-                                         serverUpdatedAtMillis: ms)
+        //
+        // Datenverlust-Schutz: der `pending`-Check oben liegt VOR dem (suspendierenden)
+        // GET — bis hierher kann ein lokaler Save einen Outbox-Eintrag angelegt haben.
+        // Darum den Server-Stand ATOMAR-bedingt schreiben (`…IfClean` prüft die Outbox
+        // in derselben Transaktion wie der Write, wie der Sync-Pull): liegt nun eine
+        // lokale Änderung vor, bleibt sie unangetastet und wir liefern den lokalen
+        // Stand zurück (der Push/409-Merge löst die Divergenz auf).
+        _ = try? await store.applyServerPageIfClean(id: pageId, html: html,
+                                                    pageName: resp.name,
+                                                    bookId: resp.book_id, chapterId: resp.chapter_id,
+                                                    serverUpdatedAtMillis: ms)
         return try? await store.page(id: pageId)
     }
 
