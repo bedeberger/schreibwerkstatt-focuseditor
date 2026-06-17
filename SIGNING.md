@@ -118,3 +118,14 @@ Pfad) und legt das GitHub-Release `v<VERSION>` mit `.dmg` + `appcast.xml` als
 
 > Voraussetzung: vor dem Publish einmal builden (löst das Sparkle-Paket auf →
 > `generate_appcast` ist da). Alternativer Pfad per `SPARKLE_BIN=…` überschreibbar.
+
+> ⚠️ **Skript nie durch eine Pipe schicken** (`… | tee log`, `… | …`). `release-dmg.sh`
+> läuft mit `set -euo pipefail`; bricht ein Schritt (z. B. ein transienter
+> `notarytool submit`-Fehler) ab, **maskiert die Pipe den echten Exit-Code** — der
+> Aufrufer sieht fälschlich `0`, obwohl das Release mittendrin stehenblieb (kein
+> DMG/Release). Stattdessen direkt in eine Datei umlenken: `… > release.log 2>&1`,
+> dann zählt `$?` des Skripts. **Falls die Notarisierung doch mal abbricht**
+> (z. B. langer Wait wird vom Aufrufer-Prozess gekillt): die Apple-Submission läuft
+> server-seitig weiter — Status mit `xcrun notarytool info <id>` prüfen und ab dem
+> Punkt manuell weiterfahren (App stapeln → DMG bauen/signieren → DMG notarisieren/
+> stapeln → `scripts/publish-github-release.sh <dmg>`), statt alles neu zu bauen.
