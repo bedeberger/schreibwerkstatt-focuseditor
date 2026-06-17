@@ -612,6 +612,21 @@ enum WebAssets {
                     ':root[data-sw-dim="custom"] .focus-editor {',
                     '  --focus-dim-opacity: var(--sw-focus-dim) !important;',
                     '}',
+                    // Sentence-Modus-Dim an denselben Override koppeln. Der
+                    // Block-Dim ist Opazität auf der Papier-Textfarbe; der
+                    // Sentence-Dim MUSS eine Farbe sein (Custom Highlight API
+                    // kennt kein opacity). color-mix rekonstruiert dieselbe
+                    // effektive Farbe: Papier-/Theme-Text bei der Dim-Opazität.
+                    // Ohne das bliebe der Sentence-Dim auf dem hartcodierten
+                    // Token (--color-focus-sentence-dim) stehen und passte bei
+                    // custom Papier/Dim nicht zum Block-Dim. Token-Fallback
+                    // greift weiter, solange weder Papier noch Dim custom sind.
+                    ':root[data-sw-dim="custom"] ::highlight(focus-sentence-dim) {',
+                    '  color: color-mix(in srgb, var(--color-text) calc(var(--sw-focus-dim) * 100%), transparent);',
+                    '}',
+                    ':root[data-sw-paper="custom"] ::highlight(focus-sentence-dim) {',
+                    '  color: color-mix(in srgb, var(--sw-paper-text, var(--color-text)) calc(var(--sw-focus-dim, 0.35) * 100%), transparent);',
+                    '}',
                   ].join('\\n');
                   document.head.appendChild(style);
                 }
@@ -655,6 +670,10 @@ enum WebAssets {
                 const cfg = await fb.spellcheckConfig();
                 if (cfg && cfg.enabled) {
                   const mod = await import('./js/cards/editor-spellcheck/controller.js');
+                  // Range-Mutation + Caret-Restore aus dem gebündelten Helper
+                  // (geteilt mit dem SPA-Dispatcher des Hauptrepos) — keine
+                  // Client-Kopie der Caret-Logik. Kommt per OTA-Bundle.
+                  const { applySpellcheckReplacement } = await import('./js/editor/shared/apply-replacement.js');
                   const root = document.querySelector('.focus-editor__content');
                   if (mod && typeof mod.createSpellcheckController === 'function' && root) {
                     // Popover-/Status-Strings kommen lokalisiert (de/en) über die
@@ -673,22 +692,7 @@ enum WebAssets {
                       isEnabled: () => true,
                       getDebounceMs: () => Number(cfg.debounceMs) || 1500,
                       i18n: (k) => I18N[k] || k,
-                      onApplyReplacement: (range, text) => {
-                        if (!range) return;
-                        try {
-                          range.deleteContents();
-                          range.insertNode(document.createTextNode(text));
-                        } catch (_) { return; }
-                        try {
-                          const sel = window.getSelection();
-                          sel?.removeAllRanges();
-                          const r2 = document.createRange();
-                          r2.setStartAfter(range.endContainer);
-                          r2.collapse(true);
-                          sel?.addRange(r2);
-                        } catch (_) {}
-                        root.dispatchEvent(new Event('input', { bubbles: true }));
-                      },
+                      onApplyReplacement: (range, text) => applySpellcheckReplacement(range, text),
                       // Transport über die Bridge (kein direkter fetch).
                       checkText: async ({ text, language, bookId, pageId }) => {
                         const res = await fb.languagetoolCheck({
