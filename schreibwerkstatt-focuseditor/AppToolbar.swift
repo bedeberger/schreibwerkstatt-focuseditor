@@ -106,7 +106,9 @@ struct AppToolbar: View {
 
                 if writingStats.showStats {
                     WritingStatsLabel(words: writingStats.words,
+                                      characters: writingStats.characters,
                                       wordsToday: writingStats.wordsToday,
+                                      charactersToday: writingStats.charactersToday,
                                       readingMinutes: writingStats.readingMinutes,
                                       goal: writingStats.pageGoalWords,
                                       progress: writingStats.goalProgress)
@@ -130,6 +132,11 @@ struct AppToolbar: View {
         .padding(.trailing, 16)
         .frame(height: 42)
         .frame(maxWidth: .infinity)
+        // Pfeil-Cursor über der ganzen Leiste erzwingen — sonst drückt die
+        // darunterliegende Editor-WebView am unteren Rand ihren I-Beam durch
+        // (sichtbar, wenn man von der Schreibfläche hochfährt). An die View
+        // gebunden, daher zuverlässiger als ein transientes `NSCursor.set()`.
+        .pointerStyle(.default)
         // Breite messen (treibt `showChapter`); Color.clear ist unsichtbar.
         .background(
             GeometryReader { geo in
@@ -351,12 +358,17 @@ struct SaveStateLabel: View {
     }
 }
 
-/// Lebende Schreibstatistik für die Toolbar: Wortzahl, heute geschriebene Wörter
-/// und Lesezeit, plus eine schlanke Fortschrittsleiste, wenn ein Seitenziel
-/// gesetzt ist. Der Tooltip nennt zusätzlich die Zeichenzahl bzw. den Zielwert.
+/// Lebende Schreibstatistik für die Toolbar: Wort- und Zeichenzahl der offenen
+/// Seite, heute auf ihr geschriebene Wörter UND Zeichen (Tages-Delta, überlebt
+/// Neustart über die persistierte Baseline im `WritingStatsStore`) und Lesezeit,
+/// plus eine schlanke Fortschrittsleiste, wenn ein Seitenziel gesetzt ist.
+/// Format spiegelt den Focus-Counter des Mutterprojekts („… Wörter · … Zeichen"
+/// / „… Wörter · … Zeichen heute", `editor.focus.counterTotal/counterToday`).
 struct WritingStatsLabel: View {
     let words: Int
+    let characters: Int
     let wordsToday: Int
+    let charactersToday: Int
     let readingMinutes: Int
     let goal: Int
     let progress: Double?
@@ -365,9 +377,10 @@ struct WritingStatsLabel: View {
         HStack(spacing: 6) {
             Image(systemName: "text.word.spacing")
                 .foregroundStyle(BrandColor.muted)
-            Text(tn(words, "toolbar.words"))
-            Text(t("toolbar.today", ["n": signed(wordsToday)]))
-                .foregroundStyle(wordsToday > 0 ? BrandColor.muted : BrandColor.faint)
+            Text(t("toolbar.chars", ["n": "\(characters)"]))
+            // Tages-Delta: nur Zeichen („… heute") — Zeichen sind die führende Metrik.
+            Text(t("toolbar.todayChars", ["c": signed(charactersToday)]))
+                .foregroundStyle(charactersToday != 0 ? BrandColor.muted : BrandColor.faint)
             if readingMinutes > 0 {
                 Text(t("toolbar.minutes", ["n": "\(readingMinutes)"]))
                     .foregroundStyle(BrandColor.faint)
@@ -401,7 +414,7 @@ struct WritingStatsLabel: View {
     }
 
     private var tooltip: String {
-        let heute = t("toolbar.tip.todayWords", ["n": signed(wordsToday)])
+        let heute = t("toolbar.tip.todayChars", ["c": signed(charactersToday)])
         if goal > 0 {
             let pct = "\(Int(((progress ?? 0) * 100).rounded()))"
             return t("toolbar.tip.goal", ["words": "\(words)", "goal": "\(goal)", "pct": pct, "today": heute])

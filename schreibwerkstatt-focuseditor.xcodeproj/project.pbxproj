@@ -26,6 +26,12 @@
 			7E0000000000000000000052 /* LocalStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E0000000000000000000042 /* LocalStore.swift */; };
 			7E0000000000000000000053 /* TypographyController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E0000000000000000000043 /* TypographyController.swift */; };
 			7E0000000000000000000054 /* FocusController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E0000000000000000000044 /* FocusController.swift */; };
+			7E0000000000000000000055 /* SyncEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E0000000000000000000045 /* SyncEngine.swift */; };
+			7E0000000000000000000056 /* SyncEngine+Push.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E0000000000000000000046 /* SyncEngine+Push.swift */; };
+			7E0000000000000000000057 /* SyncEngine+Pull.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E0000000000000000000047 /* SyncEngine+Pull.swift */; };
+			7E0000000000000000000058 /* ContentAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E0000000000000000000048 /* ContentAPI.swift */; };
+			7E0000000000000000000059 /* Reachability.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E0000000000000000000049 /* Reachability.swift */; };
+			7E000000000000000000005A /* SyncPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E000000000000000000004A /* SyncPreferences.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -52,6 +58,12 @@
 		7E0000000000000000000042 /* LocalStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LocalStore.swift; path = "schreibwerkstatt-focuseditor/Store/LocalStore.swift"; sourceTree = SOURCE_ROOT; };
 		7E0000000000000000000043 /* TypographyController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = TypographyController.swift; path = "schreibwerkstatt-focuseditor/Theme/TypographyController.swift"; sourceTree = SOURCE_ROOT; };
 		7E0000000000000000000044 /* FocusController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = FocusController.swift; path = "schreibwerkstatt-focuseditor/Focus/FocusController.swift"; sourceTree = SOURCE_ROOT; };
+		7E0000000000000000000045 /* SyncEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SyncEngine.swift; path = "schreibwerkstatt-focuseditor/Sync/SyncEngine.swift"; sourceTree = SOURCE_ROOT; };
+		7E0000000000000000000046 /* SyncEngine+Push.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "SyncEngine+Push.swift"; path = "schreibwerkstatt-focuseditor/Sync/SyncEngine+Push.swift"; sourceTree = SOURCE_ROOT; };
+		7E0000000000000000000047 /* SyncEngine+Pull.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "SyncEngine+Pull.swift"; path = "schreibwerkstatt-focuseditor/Sync/SyncEngine+Pull.swift"; sourceTree = SOURCE_ROOT; };
+		7E0000000000000000000048 /* ContentAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ContentAPI.swift; path = "schreibwerkstatt-focuseditor/Content/ContentAPI.swift"; sourceTree = SOURCE_ROOT; };
+		7E0000000000000000000049 /* Reachability.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = Reachability.swift; path = "schreibwerkstatt-focuseditor/Sync/Reachability.swift"; sourceTree = SOURCE_ROOT; };
+		7E000000000000000000004A /* SyncPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SyncPreferences.swift; path = "schreibwerkstatt-focuseditor/Sync/SyncPreferences.swift"; sourceTree = SOURCE_ROOT; };
 		7E0000000000000000000025 /* MiniZip.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = MiniZip.swift; path = "schreibwerkstatt-focuseditor/Web/MiniZip.swift"; sourceTree = SOURCE_ROOT; };
 		7E0000000000000000000026 /* SyncState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SyncState.swift; path = "schreibwerkstatt-focuseditor/Sync/SyncState.swift"; sourceTree = SOURCE_ROOT; };
 		7E0000000000000000000027 /* WebAssets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = WebAssets.swift; path = "schreibwerkstatt-focuseditor/Web/WebAssets.swift"; sourceTree = SOURCE_ROOT; };
@@ -109,6 +121,12 @@
 				7E0000000000000000000028 /* Localization.swift */,
 				7E0000000000000000000029 /* ServerNamespace.swift */,
 				7E0000000000000000000031 /* DeviceIdentity.swift */,
+				7E0000000000000000000045 /* SyncEngine.swift */,
+				7E0000000000000000000046 /* SyncEngine+Push.swift */,
+				7E0000000000000000000047 /* SyncEngine+Pull.swift */,
+				7E0000000000000000000048 /* ContentAPI.swift */,
+				7E0000000000000000000049 /* Reachability.swift */,
+				7E000000000000000000004A /* SyncPreferences.swift */,
 			);
 			name = "Recovered References";
 			sourceTree = "<group>";
@@ -273,6 +291,12 @@
 				7E0000000000000000000052 /* LocalStore.swift in Sources */,
 				7E0000000000000000000053 /* TypographyController.swift in Sources */,
 				7E0000000000000000000054 /* FocusController.swift in Sources */,
+				7E0000000000000000000055 /* SyncEngine.swift in Sources */,
+				7E0000000000000000000056 /* SyncEngine+Push.swift in Sources */,
+				7E0000000000000000000057 /* SyncEngine+Pull.swift in Sources */,
+				7E0000000000000000000058 /* ContentAPI.swift in Sources */,
+				7E0000000000000000000059 /* Reachability.swift in Sources */,
+				7E000000000000000000005A /* SyncPreferences.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -58,6 +58,12 @@ protocol LocalStore: AnyObject {
     /// Seitenliste (ohne HTML-Body — schlanke Übersicht). `bookId == nil`
     /// liefert alle Seiten, sonst nur die des gewählten Buchs (Picker-Filter).
     func list(bookId: Int?) async throws -> [PageSummary]
+    /// Volltextsuche über den lokal gespiegelten Seiten-INHALT (nicht nur den
+    /// Namen) — speist die Inhaltstreffer des Pickers. Liefert die IDs passender
+    /// Seiten nach Relevanz; `bookId` skopiert auf ein Buch. Nur lokal vorhandener
+    /// Inhalt ist durchsuchbar (offline-first) — Seiten, deren Body noch nie
+    /// gepullt wurde, sind (noch) nicht auffindbar. Leere/triviale Query → `[]`.
+    func searchContent(query: String, bookId: Int?) async throws -> [String]
     /// Schreibt eine Seite lokal UND legt einen Outbox-Eintrag an (local-first).
     /// Liefert die gespeicherte Seite mit neuem `updatedAt` zurück.
     func save(id: String, html: String, baseUpdatedAt: Double?) async throws -> StoredPage
@@ -129,6 +135,23 @@ nonisolated enum PageTitle {
         guard !stripped.isEmpty else { return nil }
         let firstLine = stripped.split(whereSeparator: \.isNewline).first.map(String.init) ?? stripped
         return String(firstLine.prefix(80))
+    }
+}
+
+/// Klartext-Quelle für den Volltext-Index (Picker-Suche). Anders als
+/// `PageTitle.derive` OHNE Zeilen-/Längenbegrenzung — der ganze Seitentext plus
+/// der Seitenname werden indiziert. `nonisolated`, weil GRDB die Ableitung im
+/// DB-Writer-Thread aufruft. Geteilt zwischen In-Memory- und GRDB-Spiegel, damit
+/// beide denselben durchsuchbaren Text erzeugen.
+nonisolated enum PageText {
+    static func plain(html: String, pageName: String?) -> String {
+        let stripped = html
+            .replacingOccurrences(of: "<[^>]+>", with: " ", options: .regularExpression)
+            .replacingOccurrences(of: "&nbsp;", with: " ")
+        // Seitenname mit indizieren, damit eine reine Inhaltssuche auch den Namen
+        // abdeckt (der Picker kombiniert es ohnehin, aber so bleibt die FTS allein
+        // schon vollständig).
+        return (pageName ?? "") + " " + stripped
     }
 }
 
@@ -212,6 +235,23 @@ final class InMemoryLocalStore: LocalStore {
 
         persistSnapshot()
         return page
+    }
+
+    func searchContent(query: String, bookId: Int?) async throws -> [String] {
+        // Einfache UND-Substring-Suche über den Klartext — der In-Memory-Spiegel
+        // ist der Platzhalter; die echte FTS lebt im GRDB-Spiegel.
+        let terms = query.lowercased()
+            .split(whereSeparator: { $0.isWhitespace })
+            .map(String.init)
+        guard !terms.isEmpty else { return [] }
+        return pages.values
+            .filter { bookId == nil || $0.bookId == bookId }
+            .filter { page in
+                let hay = PageText.plain(html: page.html, pageName: page.pageName).lowercased()
+                return terms.allSatisfy { hay.contains($0) }
+            }
+            .sorted { $0.updatedAt > $1.updatedAt }
+            .map(\.id)
     }
 
     func pendingOutbox() async throws -> [OutboxEntry] {

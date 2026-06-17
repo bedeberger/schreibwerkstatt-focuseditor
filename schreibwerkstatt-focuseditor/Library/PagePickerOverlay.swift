@@ -44,6 +44,10 @@ struct PagePickerOverlay: View {
     /// sodass Hover/Tastatur-Navigation rein über `selected` läuft.
     @State private var filtered: [PagePickerRow] = []
     @State private var groups: [PickerGroup] = []
+    /// Seiten-IDs, deren INHALT (Body, nicht nur Name) zur aktuellen Suche passt —
+    /// async aus dem lokalen Volltext-Index (`library.searchContentIds`) gespeist.
+    /// Erweitert die rein synchrone Namens-/Kapitelsuche in `recompute()`.
+    @State private var contentMatches: Set<Int> = []
     /// Lief `recompute()` schon mindestens einmal? `filtered`/`groups` sind im
     /// ALLERERSTEN Body-Render noch leer (SwiftUI rendert einmal VOR `onAppear`,
     /// wo recompute läuft) — obwohl der Cache `library.pages` schon gefüllt ist.
@@ -90,6 +94,8 @@ struct PagePickerOverlay: View {
                 // Treffer in JEDEM Pfad-Segment (Jahr ODER Monat), nicht nur im Leaf —
                 // so findet „2026" auch die Seiten unter dem Jahres-Kapitel.
                 || row.chapterPath.contains { $0.localizedCaseInsensitiveContains(query) }
+                // Volltext-Treffer im Seiteninhalt (async nachgeladen, s. contentMatches).
+                || contentMatches.contains(row.id)
             }
         }
         filtered = rows
@@ -137,6 +143,12 @@ struct PagePickerOverlay: View {
                 content
             }
             .frame(width: 460, height: 420)
+            // Pfeil-Cursor für das GANZE Overlay erzwingen. An die View gebunden
+            // (nicht das transiente `NSCursor.set()`) → gewinnt zuverlässig über
+            // die darunterliegende WebView, die sonst ihren I-Beam durchdrückt
+            // (sichtbar v. a. wenn man aus dem Editor in die Liste fährt). Das
+            // Suchfeld setzt seinen eigenen Text-Cursor lokal (s. `searchField`).
+            .pointerStyle(.default)
             .background(.regularMaterial)
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay(
@@ -147,11 +159,9 @@ struct PagePickerOverlay: View {
         }
         .onExitCommand { close() }               // ⎋
         .onAppear {
-            // Pfeil-Cursor sofort erzwingen: ohne Mausbewegung bleibt sonst der
-            // I-Beam der darunterliegenden WebView stehen (sieht aus wie „Edit-
-            // Modus"), bis ein Hover ihn umstellt. Wer rein per Tastatur navigiert,
-            // löst nie einen Hover aus — s. moveSelection().
-            NSCursor.arrow.set()
+            // Cursor wird über `.pointerStyle(.default)` am Overlay erzwungen —
+            // kein manuelles `NSCursor.set()` mehr nötig (war unzuverlässig, die
+            // WebView überschrieb es wieder).
             focusSearchField()
             installKeyMonitor()
             recompute()                           // Trefferliste/Gruppen aus dem Cache
@@ -163,10 +173,30 @@ struct PagePickerOverlay: View {
             recompute()                                 // neue Liste → Treffer/Gruppen neu
             selectOpenPage()
         }
-        .onChange(of: query) { _, _ in                  // neue Suche → oben anfangen
-            recompute()                                 // gefilterte Liste/Gruppen neu
+        .onChange(of: query) { _, newQuery in           // neue Suche → oben anfangen
+            recompute()                                 // sofort: Namens-/Kapiteltreffer
             selected = 0
             scrollTarget = filtered.first?.id           // erste Trefferzeile (Seiten-ID)
+            runContentSearch(for: newQuery)             // async: Inhaltstreffer nachladen
+        }
+    }
+
+    /// Stösst die Volltextsuche über den Seiteninhalt an (async, lokaler Index) und
+    /// führt nach Eintreffen ein erneutes `recompute()` aus. Erst ab zwei Zeichen,
+    /// damit eine Ein-Zeichen-Eingabe nicht das halbe Buch als Inhaltstreffer zieht.
+    /// Staleness-Schutz: ein Ergebnis wird nur übernommen, wenn die Eingabe seither
+    /// unverändert ist (sonst überschriebe ein langsamer Lauf eine neuere Suche).
+    private func runContentSearch(for q: String) {
+        let trimmed = q.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= 2 else {
+            if !contentMatches.isEmpty { contentMatches = []; recompute() }
+            return
+        }
+        Task {
+            let ids = await library.searchContentIds(query: trimmed)
+            guard q == query else { return }   // Eingabe inzwischen weiter → verwerfen
+            contentMatches = ids
+            recompute()
         }
     }
 
@@ -182,6 +212,8 @@ struct PagePickerOverlay: View {
                 .font(BrandFont.sans(14))
                 .focused($searchFocused)
                 .onSubmit(openSelected)         // ⏎ (Fallback; Monitor fängt i. d. R. ab)
+                // Text-Cursor nur hier — übersteuert das `.default` des Overlays.
+                .pointerStyle(.horizontalText)
 
             if !library.pages.isEmpty {
                 Text("\(filtered.count)")
@@ -225,13 +257,11 @@ struct PagePickerOverlay: View {
                                     // Identität ist `IndexedRow.id` = Seiten-ID (stabil);
                                     // der Auto-Scroll zielt darum ebenfalls auf die Seiten-ID.
                                     rowButton(entry.row, isSelected: entry.index == selected)
-                                        // Hover markiert die Zeile UND erzwingt den Pfeil-
-                                        // Cursor: ohne das bleibt der I-Beam des Suchfelds
-                                        // (bzw. der darunterliegenden WebView) über den
-                                        // klickbaren Zeilen stehen — sieht aus wie „Edit-Modus".
+                                        // Hover markiert die Zeile. Der Pfeil-Cursor kommt
+                                        // jetzt vom `.pointerStyle(.default)` am Overlay
+                                        // (zuverlässiger als das frühere `NSCursor.set()`).
                                         .onHover { hovering in
                                             guard hovering else { return }
-                                            NSCursor.arrow.set()
                                             // Nur ECHTE Mausbewegung darf die Auswahl
                                             // verschieben. Beim Scrollen ruht der Cursor,
                                             // während die Zeilen unter ihm durchrutschen →
@@ -373,6 +403,16 @@ struct PagePickerOverlay: View {
                         .padding(.vertical, 1)
                         .background(BrandColor.primary.opacity(0.12),
                                     in: Capsule())
+                } else if isContentOnlyMatch(row) {
+                    // Erklärt, warum diese Zeile auftaucht, obwohl der Name nicht
+                    // zur Suche passt: der Treffer steckt im Seitentext.
+                    Text(t("picker.textMatch"))
+                        .font(BrandFont.sans(9, weight: .semibold))
+                        .foregroundStyle(BrandColor.muted)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(BrandColor.muted.opacity(0.12),
+                                    in: Capsule())
                 }
                 Spacer(minLength: 8)
                 // Dezente Relativ-Zeit der letzten Änderung — Orientierung im
@@ -397,6 +437,15 @@ struct PagePickerOverlay: View {
             .background(isSelected ? BrandColor.primary.opacity(0.14) : Color.clear)
         }
         .buttonStyle(.plain)
+    }
+
+    /// Passt die Zeile NUR über ihren Inhalt (Volltext), nicht über Name oder
+    /// Kapitelpfad? Dann trägt sie das „im Text"-Badge. Bei leerer Suche nie.
+    private func isContentOnlyMatch(_ row: PagePickerRow) -> Bool {
+        guard !query.isEmpty, contentMatches.contains(row.id) else { return false }
+        let nameOrChapter = row.name.localizedCaseInsensitiveContains(query)
+            || row.chapterPath.contains { $0.localizedCaseInsensitiveContains(query) }
+        return !nameOrChapter
     }
 
     private func centered<V: View>(@ViewBuilder _ inner: () -> V) -> some View {
@@ -459,9 +508,6 @@ struct PagePickerOverlay: View {
         guard !filtered.isEmpty else { return }
         selected = max(0, min(filtered.count - 1, selected + delta))
         scrollTarget = filtered[selected].id   // Seiten-ID; nur Tastatur-Nav scrollt mit
-        // Tastatur-Navigation bewegt die Maus nicht → onHover feuert nicht →
-        // der I-Beam der WebView bliebe stehen. Hier mitführen wie beim Hover.
-        NSCursor.arrow.set()
     }
 
     private func close() {

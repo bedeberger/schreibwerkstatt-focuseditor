@@ -223,6 +223,17 @@ final class LibraryStore: ObservableObject {
         }
     }
 
+    /// Volltextsuche über den lokal gespiegelten Seiteninhalt des aktiven Buchs —
+    /// liefert die IDs der Seiten, deren BODY (nicht nur Name) zur Eingabe passt.
+    /// Speist die zusätzlichen Inhaltstreffer im Picker. Nur lokal vorhandener
+    /// Inhalt ist durchsuchbar (offline-first); ein Suchfehler degradiert still
+    /// (leere Menge → der Picker zeigt einfach nur die Namens-/Kapiteltreffer).
+    func searchContentIds(query: String) async -> Set<Int> {
+        guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return [] }
+        let ids = (try? await store.searchContent(query: query, bookId: activeBookId)) ?? []
+        return Set(ids.compactMap(Int.init))
+    }
+
     /// Fallback: Picker-Zeilen aus dem lokalen Spiegel (ohne Kapitel/Order).
     private func localRows(bookId: Int) async -> [PagePickerRow] {
         let summaries = (try? await store.list(bookId: bookId)) ?? []

@@ -51,6 +51,19 @@ private final class FakeLocalStore: LocalStore {
         return page
     }
 
+    func searchContent(query: String, bookId: Int?) async throws -> [String] {
+        let terms = query.lowercased().split(whereSeparator: { $0.isWhitespace }).map(String.init)
+        guard !terms.isEmpty else { return [] }
+        return pages.values
+            .filter { bookId == nil || $0.bookId == bookId }
+            .filter { p in
+                let hay = PageText.plain(html: p.html, pageName: p.pageName).lowercased()
+                return terms.allSatisfy { hay.contains($0) }
+            }
+            .sorted { $0.updatedAt > $1.updatedAt }
+            .map(\.id)
+    }
+
     func pendingOutbox() async throws -> [OutboxEntry] {
         outbox.values.sorted { $0.queuedAt < $1.queuedAt }
     }

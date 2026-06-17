@@ -29,6 +29,7 @@ final class GRDBLocalStore: LocalStore {
         let dbURL = try url ?? Self.defaultURL()
         dbQueue = try DatabaseQueue(path: dbURL.path)
         try Self.migrator.migrate(dbQueue)
+        try Self.rebuildSearchIndexIfNeeded(dbQueue)
     }
 
     /// Wechselt den Spiegel auf den aktuell konfigurierten Server (Per-Server-
@@ -40,6 +41,7 @@ final class GRDBLocalStore: LocalStore {
         let dbURL = try Self.defaultURL()
         let newQueue = try DatabaseQueue(path: dbURL.path)
         try Self.migrator.migrate(newQueue)
+        try Self.rebuildSearchIndexIfNeeded(newQueue)
         dbQueue = newQueue
     }
 
@@ -79,7 +81,64 @@ final class GRDBLocalStore: LocalStore {
             // bremsen. Index hält die geordnete Lese-Operation auch dann flott.
             try db.create(index: "outbox_on_queuedAt", on: "outbox", columns: ["queuedAt"])
         }
+        m.registerMigration("v3_page_fts") { db in
+            // Volltext-Index über den Seiteninhalt (Picker-Inhaltssuche). Standalone-
+            // FTS5 (KEIN external-content): der durchsuchbare Klartext muss erst aus
+            // dem HTML gezogen werden (SQL kann keine Tags strippen), darum pflegt
+            // der Swift-Code den Index bei jedem Write (s. `upsertSearchIndex`) statt
+            // per Trigger. `unicode61 remove_diacritics 2` → akzentunabhängige Suche
+            // („cafe" findet „café"); `id UNINDEXED` hält nur die Verknüpfung, ohne
+            // die ID selbst zu tokenisieren.
+            try db.execute(sql: """
+                CREATE VIRTUAL TABLE page_fts USING fts5(
+                    id UNINDEXED,
+                    content,
+                    tokenize = 'unicode61 remove_diacritics 2'
+                )
+                """)
+        }
         return m
+    }
+
+    // MARK: - Volltext-Index (FTS5)
+
+    /// Schreibt/aktualisiert den FTS-Eintrag einer Seite (löschen + neu einfügen —
+    /// ein Eintrag pro ID). `nonisolated`, da im DB-Writer-Thread aufgerufen.
+    nonisolated private static func upsertSearchIndex(_ db: Database, id: String, html: String, pageName: String?) throws {
+        try db.execute(sql: "DELETE FROM page_fts WHERE id = ?", arguments: [id])
+        let text = PageText.plain(html: html, pageName: pageName)
+        try db.execute(sql: "INSERT INTO page_fts (id, content) VALUES (?, ?)", arguments: [id, text])
+    }
+
+    /// Baut den FTS-Index aus dem `page`-Tisch neu auf, wenn er nicht zum Bestand
+    /// passt (Anzahl FTS-Einträge ≠ Anzahl Seiten) — greift einmalig nach der
+    /// Erst-Migration mit bereits vorhandenen Seiten (oder falls der Index je
+    /// driftet). Danach hält jeder Write den Index synchron, sodass die beiden
+    /// Counts gleich bleiben und der teure Rebuild ausbleibt.
+    nonisolated private static func rebuildSearchIndexIfNeeded(_ queue: DatabaseQueue) throws {
+        try queue.write { db in
+            let pageCount = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM page") ?? 0
+            let ftsCount = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM page_fts") ?? 0
+            guard pageCount != ftsCount else { return }
+            try db.execute(sql: "DELETE FROM page_fts")
+            let rows = try Row.fetchAll(db, sql: "SELECT id, html, pageName FROM page")
+            for row in rows {
+                try upsertSearchIndex(db, id: row["id"], html: row["html"], pageName: row["pageName"])
+            }
+        }
+    }
+
+    /// Baut aus freier Nutzereingabe eine sichere FTS5-MATCH-Query: jedes Token
+    /// als quotiertes Präfix (`"wort"*`), per implizitem AND verknüpft. Das Quoting
+    /// (innere `"` verdoppelt) schützt vor FTS5-Syntaxfehlern bei Sonderzeichen;
+    /// `nil`, wenn nichts Sinnvolles übrig bleibt.
+    nonisolated private static func ftsQuery(_ raw: String) -> String? {
+        let tokens = raw
+            .split(whereSeparator: { $0.isWhitespace })
+            .map { $0.replacingOccurrences(of: "\"", with: "\"\"") }
+            .filter { !$0.isEmpty }
+        guard !tokens.isEmpty else { return nil }
+        return tokens.map { "\"\($0)\"*" }.joined(separator: " ")
     }
 
     // MARK: - Lesen
@@ -103,6 +162,27 @@ final class GRDBLocalStore: LocalStore {
             return try PageSummary.fetchAll(
                 db,
                 sql: "SELECT \(columns) FROM page ORDER BY updatedAt DESC")
+        }
+    }
+
+    func searchContent(query: String, bookId: Int?) async throws -> [String] {
+        guard let match = Self.ftsQuery(query) else { return [] }
+        return try await dbQueue.read { db in
+            // Nach `rank` (FTS5-Relevanz) sortiert, auf den Buch-Spiegel skopiert.
+            // LIMIT als defensive Schranke gegen Riesentreffer bei sehr kurzen
+            // Präfixen — der Picker zeigt ohnehin eine gefilterte Liste.
+            if let bookId {
+                return try String.fetchAll(db, sql: """
+                    SELECT f.id FROM page_fts f JOIN page p ON p.id = f.id
+                    WHERE f.content MATCH ? AND p.bookId = ?
+                    ORDER BY rank LIMIT 500
+                    """, arguments: [match, bookId])
+            }
+            return try String.fetchAll(db, sql: """
+                SELECT f.id FROM page_fts f
+                WHERE f.content MATCH ?
+                ORDER BY rank LIMIT 500
+                """, arguments: [match])
         }
     }
 
@@ -146,6 +226,8 @@ final class GRDBLocalStore: LocalStore {
             // Outbox: einen Eintrag pro Seite (save = upsert auf pageId).
             let entry = OutboxEntry(pageId: id, html: html, baseUpdatedAt: base, queuedAt: now)
             try entry.save(db)
+            // Volltext-Index nachführen (selbe Transaktion → kein Drift).
+            try Self.upsertSearchIndex(db, id: id, html: html, pageName: page.pageName)
             return page
         }
     }
@@ -205,12 +287,14 @@ final class GRDBLocalStore: LocalStore {
                               updatedAt: serverUpdatedAtMillis,
                               baseUpdatedAt: serverUpdatedAtMillis)
         try page.save(db)
+        try upsertSearchIndex(db, id: id, html: html, pageName: page.pageName)
     }
 
     func deletePage(id: String) async throws {
         try await dbQueue.write { db in
             _ = try StoredPage.deleteOne(db, key: id)
             _ = try OutboxEntry.deleteOne(db, key: id)
+            try db.execute(sql: "DELETE FROM page_fts WHERE id = ?", arguments: [id])
         }
     }
 

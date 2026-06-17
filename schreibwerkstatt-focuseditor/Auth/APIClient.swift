@@ -47,6 +47,13 @@ final class APIClient {
         case GET, POST, PUT, DELETE
     }
 
+    /// Installierte App-Version für den `X-Client-Version`-Telemetrie-Header
+    /// (CFBundleShortVersionString, gespeist aus MARKETING_VERSION). OHNE
+    /// führendes „v“ — der Server loggt den reinen Versionsstring (z. B.
+    /// `1.2.3`). Einmal berechnet, da pro Prozess konstant.
+    static let clientVersion: String =
+        (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "unknown"
+
     /// Führt einen Request gegen `ServerConfig.baseURL` + `path` aus und
     /// dekodiert die Antwort. `overrideToken` erlaubt das Validieren eines
     /// noch nicht gespeicherten Tokens beim Login.
@@ -173,6 +180,10 @@ final class APIClient {
 
         var request = URLRequest(url: url)
         request.httpMethod = method.rawValue
+        // Telemetrie: installierte App-Version auf JEDEM ausgehenden Request
+        // (Sync-Pull/-Push, OTA-Bundle, Content, Auth-Probe) — zentral hier,
+        // nicht pro Call dupliziert.
+        request.setValue(APIClient.clientVersion, forHTTPHeaderField: "X-Client-Version")
         if acceptJSON {
             request.setValue("application/json", forHTTPHeaderField: "Accept")
         }
