@@ -9,3 +9,6 @@ build/
 # Signier-/Notarisierungs-Zugang (Secrets — NIE committen)
 scripts/release.env
 *.p8
+
+# Release-Log (Ausgabe von scripts/release-dmg.sh, s. SIGNING.md)
+release.log
