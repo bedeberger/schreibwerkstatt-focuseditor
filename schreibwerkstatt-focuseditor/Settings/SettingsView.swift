@@ -329,11 +329,21 @@ private struct WritingSettingsTab: View {
     @EnvironmentObject private var stats: WritingStatsStore
     /// Auto-Save-Debounce in ms (an mountStandaloneFocus durchgereicht).
     @AppStorage(EditorBehaviorPrefs.autosaveKey) private var autosaveMs = 1500.0
+    /// Synonym-Hilfe (Cmd+Shift+S) gerätelokal an/aus.
+    @AppStorage(SynonymPrefs.enabledKey) private var synonymsEnabled = true
 
     var body: some View {
         Form {
             Section(t("settings.writing.statsSection")) {
                 Toggle(t("settings.writing.showStats"), isOn: $stats.showStats)
+            }
+
+            Section(t("settings.writing.synonymSection")) {
+                Toggle(t("settings.writing.synonymToggle"), isOn: $synonymsEnabled)
+                Text(t("settings.writing.synonymHint"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             Section(t("settings.writing.goalSection")) {

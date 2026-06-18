@@ -22,6 +22,7 @@
 		7E000000000000000000001A /* DeviceIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E0000000000000000000031 /* DeviceIdentity.swift */; };
 		7E000000000000000000003A /* ConflictDiff.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E000000000000000000003B /* ConflictDiff.swift */; };
 			7E0000000000000000000050 /* EditorBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E0000000000000000000040 /* EditorBridge.swift */; };
+			7E000000000000000000005B /* EditorBridge+Proxies.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E000000000000000000004B /* EditorBridge+Proxies.swift */; };
 			7E0000000000000000000051 /* EditorCoordinating.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E0000000000000000000041 /* EditorCoordinating.swift */; };
 			7E0000000000000000000052 /* LocalStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E0000000000000000000042 /* LocalStore.swift */; };
 			7E0000000000000000000053 /* TypographyController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E0000000000000000000043 /* TypographyController.swift */; };
@@ -54,6 +55,7 @@
 		7E0000000000000000000024 /* SyncModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SyncModels.swift; path = "schreibwerkstatt-focuseditor/Sync/SyncModels.swift"; sourceTree = SOURCE_ROOT; };
 		7E000000000000000000003B /* ConflictDiff.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ConflictDiff.swift; path = "schreibwerkstatt-focuseditor/Conflict/ConflictDiff.swift"; sourceTree = SOURCE_ROOT; };
 		7E0000000000000000000040 /* EditorBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = EditorBridge.swift; path = "schreibwerkstatt-focuseditor/Web/EditorBridge.swift"; sourceTree = SOURCE_ROOT; };
+		7E000000000000000000004B /* EditorBridge+Proxies.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "EditorBridge+Proxies.swift"; path = "schreibwerkstatt-focuseditor/Web/EditorBridge+Proxies.swift"; sourceTree = SOURCE_ROOT; };
 		7E0000000000000000000041 /* EditorCoordinating.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = EditorCoordinating.swift; path = "schreibwerkstatt-focuseditor/Web/EditorCoordinating.swift"; sourceTree = SOURCE_ROOT; };
 		7E0000000000000000000042 /* LocalStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LocalStore.swift; path = "schreibwerkstatt-focuseditor/Store/LocalStore.swift"; sourceTree = SOURCE_ROOT; };
 		7E0000000000000000000043 /* TypographyController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = TypographyController.swift; path = "schreibwerkstatt-focuseditor/Theme/TypographyController.swift"; sourceTree = SOURCE_ROOT; };
@@ -121,6 +123,7 @@
 				7E0000000000000000000028 /* Localization.swift */,
 				7E0000000000000000000029 /* ServerNamespace.swift */,
 				7E0000000000000000000031 /* DeviceIdentity.swift */,
+				7E000000000000000000004B /* EditorBridge+Proxies.swift */,
 				7E0000000000000000000045 /* SyncEngine.swift */,
 				7E0000000000000000000046 /* SyncEngine+Push.swift */,
 				7E0000000000000000000047 /* SyncEngine+Pull.swift */,
@@ -287,6 +290,7 @@
 				7E000000000000000000001A /* DeviceIdentity.swift in Sources */,
 				7E000000000000000000003A /* ConflictDiff.swift in Sources */,
 				7E0000000000000000000050 /* EditorBridge.swift in Sources */,
+				7E000000000000000000005B /* EditorBridge+Proxies.swift in Sources */,
 				7E0000000000000000000051 /* EditorCoordinating.swift in Sources */,
 				7E0000000000000000000052 /* LocalStore.swift in Sources */,
 				7E0000000000000000000053 /* TypographyController.swift in Sources */,

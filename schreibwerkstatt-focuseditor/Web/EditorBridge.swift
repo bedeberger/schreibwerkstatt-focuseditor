@@ -27,6 +27,14 @@
 //    • dictionaryAdd { word, lang?, bookId? }  → { ok }   (Wort ins User-Wörterbuch)
 //    • focusGranularity {}                     → { granularity }  (lokale Fokus-Stufe, Boot-Pull)
 //
+//  Synonyme (Cmd+Shift+S) — ebenfalls Proxy über den Swift-Kern, NIE direkter
+//  fetch. Zwei Quellen wie im Web-Editor; der KI-Job wird serverseitig fertig
+//  gepollt (EIN awaitbares Ergebnis):
+//    • synonymConfig {}                        → { enabled, i18n }   (lokal an/aus + UI-Strings)
+//    • synonymsThesaurus { word, bookId? }     → { synonyme:[{wort,hinweis}], disabled } (OpenThesaurus, de-only)
+//    • synonymsAi { wort, satz, bookId?, pageId? }
+//                                              → { synonyme:[{wort,hinweis}] } | { error } | { disabled }
+//
 //  Events (Swift → JS, via `__focusBridge._receive(event, payload)`):
 //    • serverUpdate { pageId, html, baseUpdatedAt }  (offene Seite serverseitig aktualisiert)
 //    • openPage     { pageId, html?, baseUpdatedAt? } (nativer Picker öffnet Seite)
@@ -81,16 +89,19 @@ final class EditorBridge: NSObject, WKScriptMessageHandlerWithReply, EditorCoord
     static var activeBookKey: String { "library.activeBookId.\(ServerNamespace.currentSlug)" }
 
     private let store: any LocalStore
-    /// HTTP-Client für den LanguageTool-/Wörterbuch-Proxy. Optional, damit die
-    /// Bridge ohne Netz-Abhängigkeit (Tests/Dev-Harness) konstruierbar bleibt;
-    /// fehlt er, melden die Spellcheck-Ops „deaktiviert".
-    private let api: APIClient?
+    /// HTTP-Client für den LanguageTool-/Wörterbuch-/Synonym-Proxy. Optional,
+    /// damit die Bridge ohne Netz-Abhängigkeit (Tests/Dev-Harness) konstruierbar
+    /// bleibt; fehlt er, melden die Proxy-Ops „deaktiviert". `internal` (nicht
+    /// `private`), damit die Proxy-Methoden in `EditorBridge+Proxies.swift` (eigene
+    /// Datei, hält EditorBridge.swift unter dem Größen-Limit) darauf zugreifen.
+    let api: APIClient?
     private let log = Logger(subsystem: "ch.schreibwerkstatt.focuseditor", category: "bridge")
 
     /// Zuletzt vom Server gelesene LanguageTool-Konfiguration (aus `/config`).
     /// Wird gecacht, damit ein Offline-Tick den letzten bekannten Stand behält
-    /// statt die Prüfung fälschlich abzuschalten.
-    private var ltConfig: (enabled: Bool, debounceMs: Int)?
+    /// statt die Prüfung fälschlich abzuschalten. `internal` für die Proxy-
+    /// Extension (s. `api`).
+    var ltConfig: (enabled: Bool, debounceMs: Int)?
 
     /// WebView für den Swift→JS-Kanal (`callAsyncJavaScript`). Schwach: die
     /// View besitzt die Bridge (Handler-Registrierung), nicht umgekehrt.
@@ -304,6 +315,21 @@ final class EditorBridge: NSObject, WKScriptMessageHandlerWithReply, EditorCoord
             let bookId = (params["bookId"] as? Int) ?? 0
             return try await dictionaryAdd(word: word, lang: lang, bookId: bookId)
 
+        case "synonymConfig":
+            return synonymConfig()
+
+        case "synonymsThesaurus":
+            let word = try requireString(params, "word")
+            let bookId = params["bookId"] as? Int
+            return try await synonymsThesaurus(word: word, bookId: bookId)
+
+        case "synonymsAi":
+            let wort = try requireString(params, "wort")
+            let satz = (params["satz"] as? String) ?? wort
+            let bookId = params["bookId"] as? Int
+            let pageId = params["pageId"] as? String
+            return try await synonymsAi(wort: wort, satz: satz, bookId: bookId, pageId: pageId)
+
         default:
             throw BridgeError.unknownOp(op)
         }
@@ -357,111 +383,6 @@ final class EditorBridge: NSObject, WKScriptMessageHandlerWithReply, EditorCoord
                                                     bookId: resp.book_id, chapterId: resp.chapter_id,
                                                     serverUpdatedAtMillis: ms)
         return try? await store.page(id: pageId)
-    }
-
-    // MARK: LanguageTool-Proxy
-    //
-    // Netzwerk macht ausschliesslich der Swift-Kern — die WebView reicht nur
-    // Plain-Text + Sprache durch. Alle LT-Settings (enabled/url/picky/rules)
-    // liegen serverseitig in app_settings und werden vom `/languagetool/check`-
-    // Proxy angewandt; der Client kennt sie nicht.
-
-    /// Liefert die LanguageTool-Konfiguration aus `/config`. Bei Netz-/Auth-
-    /// Fehler den letzten gecachten Stand, sonst „deaktiviert" (degradiert
-    /// still — Spellcheck ist online-only und kein Offline-Kern-Inhalt).
-    private func spellcheckConfig() async -> [String: Any] {
-        // Lokaler Override: auch bei serverseitig aktivem LT kann der Nutzer die
-        // Prüfung pro Gerät abschalten (greift beim nächsten Editor-Boot; ein
-        // Live-Aus wirkt zusätzlich über `languagetoolCheck`).
-        let localOn = SpellcheckPrefs.localEnabled
-        let i18n = Self.spellcheckI18n()
-        guard let api else { return ["enabled": false, "debounceMs": 1500, "i18n": i18n] }
-        do {
-            let cfg = try await api.send("/config", decode: ConfigDTO.self)
-            let serverEnabled = cfg.languagetool?.enabled ?? false
-            let debounce = cfg.languagetool?.debounceMs ?? 1500
-            ltConfig = (serverEnabled, debounce)
-            return ["enabled": serverEnabled && localOn, "debounceMs": debounce, "i18n": i18n]
-        } catch {
-            if let cached = ltConfig {
-                return ["enabled": cached.enabled && localOn, "debounceMs": cached.debounceMs, "i18n": i18n]
-            }
-            return ["enabled": false, "debounceMs": 1500, "i18n": i18n]
-        }
-    }
-
-    /// Lokalisierte Popover-/Status-Strings für den Spellcheck-Controller.
-    /// Schlüssel = die i18n-Keys, die der unveränderte Controller (Hauptrepo)
-    /// anfragt; Werte aus den gebündelten Katalogen via `t()` (de/en). Über die
-    /// Bridge geliefert statt ins gecachte `index.html` gebacken → ein lokaler
-    /// Sprachwechsel greift sofort, nicht erst beim nächsten Bundle-Refresh.
-    private static func spellcheckI18n() -> [String: String] {
-        [
-            "spellcheck.popover.ignore": t("spell.popover.ignore"),
-            "spellcheck.popover.add_to_dict": t("spell.popover.addToDict"),
-            "spellcheck.popover.no_suggestions": t("spell.popover.noSuggestions"),
-            "spellcheck.popover.rule_info": t("spell.popover.ruleInfo"),
-            "spellcheck.status.active": t("spell.status.active"),
-            "spellcheck.status.disabled": t("spell.status.disabled"),
-            "spellcheck.status.error": t("spell.status.error"),
-            "spellcheck.status.matches": t("spell.status.matches"),
-            "spellcheck.status.no_matches": t("spell.status.noMatches"),
-            "spellcheck.extension_conflict.title": t("spell.extensionConflict.title"),
-        ]
-    }
-
-    /// Liest die serverseitige Fokus-Granularität aus `/config`
-    /// (`userSettings.focus_granularity`, die Web-Einstellung des Users). Dient
-    /// dem `FocusController` als Initial-Default, solange keine lokale Wahl
-    /// vorliegt. `nil` bei Netz-/Auth-Fehler oder fehlendem User-Kontext.
-    func serverFocusGranularity() async -> String? {
-        guard let api else { return nil }
-        let cfg = try? await api.send("/config", decode: ConfigDTO.self)
-        return cfg?.userSettings?.focus_granularity
-    }
-
-    /// Liest die serverseitige UI-Sprache aus `/config`
-    /// (`userSettings.locale`, die Web-Profil-Einstellung des Users — Werte
-    /// `de`/`en`). Dient dem `LocalizationController` als Initial-Default,
-    /// solange keine lokale Wahl vorliegt. `nil` bei Netz-/Auth-Fehler oder
-    /// fehlendem User-Kontext.
-    func serverLocale() async -> String? {
-        guard let api else { return nil }
-        let cfg = try? await api.send("/config", decode: ConfigDTO.self)
-        return cfg?.userSettings?.locale
-    }
-
-    /// Proxyt den Prüf-Request an `POST /languagetool/check`. `404` (LT
-    /// serverseitig aus) wird als `{ disabled: true }` zurückgegeben — kein
-    /// Fehler. Die `matches` werden als roher JSON-Baum durchgereicht
-    /// (NSJSON-konform → direkt als Bridge-Reply nutzbar).
-    private func languagetoolCheck(text: String, language: String,
-                                   pageId: String?, bookId: Int?) async throws -> [String: Any] {
-        guard let api else { return ["disabled": true] }
-        // Lokaler Aus-Schalter wirkt sofort (auch mitten in der Sitzung): keine
-        // neuen Treffer mehr, bestehende Markierungen verschwinden beim nächsten
-        // Prüf-Zyklus des Controllers.
-        guard SpellcheckPrefs.localEnabled else { return ["disabled": true] }
-        // Lokaler Sprach-Override: gewinnt über das vom Controller gelieferte
-        // „auto" (sonst löst der Server die Locale via bookId auf → de-CH).
-        let effectiveLanguage = SpellcheckPrefs.languageOverride ?? language
-        let req = LTCheckRequest(text: text, language: effectiveLanguage, bookId: bookId, pageId: pageId)
-        let (status, data) = try await api.postExpectingJSON("/languagetool/check", body: req)
-        if status == 404 { return ["disabled": true] }   // Feature serverseitig aus
-        guard (200...299).contains(status) else {
-            throw BridgeError.languagetool(status: status)
-        }
-        let obj = try? JSONSerialization.jsonObject(with: data)
-        let matches = (obj as? [String: Any])?["matches"] as? [Any] ?? []
-        return ["matches": matches]
-    }
-
-    /// Fügt ein Wort dem serverseitigen User-Wörterbuch hinzu (`POST /dictionary`).
-    private func dictionaryAdd(word: String, lang: String, bookId: Int) async throws -> [String: Any] {
-        guard let api else { return ["ok": false] }
-        let req = DictionaryAddRequest(word: word, bookId: bookId, lang: lang)
-        let (status, _) = try await api.postExpectingJSON("/dictionary", body: req)
-        return ["ok": (200...299).contains(status)]
     }
 
     // MARK: EditorCoordinating (Swift→JS)
@@ -682,109 +603,6 @@ enum BridgeError: LocalizedError {
         case .mergeFailed:           return "Bridge: Block-Merge lieferte kein Ergebnis"
         case .mergeTimedOut:         return "Bridge: Block-Merge zeitüberschritten"
         case .languagetool(let s):   return "Bridge: LanguageTool-Proxy antwortete mit Status \(s)"
-        }
-    }
-}
-
-// MARK: - Spellcheck-DTOs
-
-/// Antwort-Ausschnitt von `GET /config` — nur der LanguageTool-Block.
-private struct ConfigDTO: Decodable {
-    struct LanguageTool: Decodable {
-        let enabled: Bool?
-        let debounceMs: Int?
-    }
-    struct UserSettings: Decodable {
-        let focus_granularity: String?
-        let locale: String?
-    }
-    let languagetool: LanguageTool?
-    /// Pro-User-Einstellungen (nur mit aufgelöstem User, also auch per
-    /// Device-Token — der Guard setzt `req.session.user`). `nil` ohne User.
-    let userSettings: UserSettings?
-}
-
-/// Body für `POST /languagetool/check` (Server-Vertrag, siehe
-/// routes/languagetool.js). `bookId`/`pageId` treiben serverseitiges Caching
-/// + Wörterbuch-Filter; beide optional.
-private struct LTCheckRequest: Encodable {
-    let text: String
-    let language: String
-    let bookId: Int?
-    let pageId: String?
-}
-
-/// Body für `POST /dictionary` (Wort ins User-Wörterbuch). `bookId: 0` =
-/// global (alle Bücher), `lang: "*"` = alle Sprachen.
-private struct DictionaryAddRequest: Encodable {
-    let word: String
-    let bookId: Int
-    let lang: String
-}
-
-// MARK: - Lokale Rechtschreib-Vorlieben (UserDefaults)
-
-/// Gerätelokale Overrides der Rechtschreibprüfung. Die eigentlichen LT-Settings
-/// (Server-URL, Picky, Regeln) liegen serverseitig — hier nur, was der Client
-/// pro Gerät übersteuern darf: an/aus und die Sprache. Picky/Regeln bleiben
-/// bewusst serverseitig (Client kann sie nicht setzen).
-enum SpellcheckPrefs {
-    static let enabledKey = "spellcheck.localEnabled"
-    static let languageKey = "spellcheck.languageOverride"
-
-    /// Lokal aktiviert? Default an (folgt dann dem Server-Schalter).
-    static var localEnabled: Bool {
-        (UserDefaults.standard.object(forKey: enabledKey) as? Bool) ?? true
-    }
-
-    /// Sprach-Override oder `nil` für „auto" (Server löst via bookId auf).
-    static var languageOverride: String? {
-        let raw = UserDefaults.standard.string(forKey: languageKey) ?? "auto"
-        return raw == "auto" ? nil : raw
-    }
-}
-
-/// Auswahl für den Sprach-Override in den Einstellungen. RawValue = der
-/// LanguageTool-Sprachcode (bzw. „auto" für die serverseitige Auflösung).
-// MARK: - Editor-Verhalten (UserDefaults)
-
-/// Gerätelokales Editor-Verhalten, das der Boot-Glue beim Mount durchreicht.
-/// Aktuell nur das Auto-Save-Debounce (`mountStandaloneFocus({ autosaveMs })`).
-enum EditorBehaviorPrefs {
-    static let autosaveKey = "editor.autosaveMs"
-    /// Erlaubter Bereich des Auto-Save-Debounce (auch in der Settings-UI genutzt).
-    static let autosaveRange: ClosedRange<Double> = 500...5000
-
-    /// Auto-Save-Verzögerung in ms. Default 1500 (= Editor-Default), in die
-    /// erlaubte Spanne geklemmt.
-    static var autosaveMs: Int {
-        guard UserDefaults.standard.object(forKey: autosaveKey) != nil else { return 1500 }
-        let v = UserDefaults.standard.double(forKey: autosaveKey)
-        let clamped = min(max(v, autosaveRange.lowerBound), autosaveRange.upperBound)
-        return Int(clamped.rounded())
-    }
-}
-
-enum SpellcheckLanguage: String, CaseIterable, Identifiable {
-    case auto
-    case deCH = "de-CH"
-    case deDE = "de-DE"
-    case frCH = "fr-CH"
-    case fr
-    case it
-    case enGB = "en-GB"
-
-    var id: String { rawValue }
-
-    var label: String {
-        switch self {
-        case .auto: return t("spell.lang.auto")
-        case .deCH: return t("spell.lang.deCH")
-        case .deDE: return t("spell.lang.deDE")
-        case .frCH: return t("spell.lang.frCH")
-        case .fr:   return t("spell.lang.fr")
-        case .it:   return t("spell.lang.it")
-        case .enGB: return t("spell.lang.enGB")
         }
     }
 }

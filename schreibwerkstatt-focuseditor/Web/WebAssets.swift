@@ -75,6 +75,14 @@ enum WebAssets {
         languagetoolCheck: (params) => call('languagetoolCheck', params || {}),
         dictionaryAdd: (params) => call('dictionaryAdd', params || {}),
 
+        // Synonyme (Cmd+Shift+S) — wie die Rechtschreibung über den Swift-Kern,
+        // NIE direkter fetch. synonymsThesaurus: OpenThesaurus (synchron, de-only);
+        // synonymsAi: KI-Job — der Swift-Kern pollt die Job-Queue fertig und
+        // liefert EIN Ergebnis zurück (der Editor muss nicht selbst pollen).
+        synonymConfig: () => call('synonymConfig', {}),
+        synonymsThesaurus: (params) => call('synonymsThesaurus', params || {}),
+        synonymsAi: (params) => call('synonymsAi', params || {}),
+
         // Lokale Fokus-Granularität (paragraph/sentence/window-3/typewriter-only).
         // Boot-Pull; Live-Umschalten kommt zusätzlich als 'focusGranularity'-Event.
         focusGranularity: () => call('focusGranularity', {}),
@@ -714,6 +722,64 @@ enum WebAssets {
                 }
               } catch (e) {
                 fb.log?.('Rechtschreibprüfung nicht verfügbar: ' + (e && e.message ? e.message : e), 'info');
+              }
+
+              // ── Synonyme (Cmd+Shift+S) ──────────────────────────────────────
+              // Wiederverwendet den Synonym-Controller aus dem Hauptrepo (kein
+              // Fork). Thesaurus + KI laufen über die Bridge → Swift → Server
+              // (OpenThesaurus synchron, KI als serverseitig fertig gepollter
+              // Job). Greift nur, wenn lokal aktiviert UND das Bundle den
+              // Controller mitliefert; sonst still übersprungen (online-only —
+              // offline ohnehin kein Roundtrip). i18n kommt lokalisiert (de/en)
+              // über die Bridge (synonymConfig.i18n) — kein hartkodierter String.
+              try {
+                const scfg = await fb.synonymConfig();
+                if (scfg && scfg.enabled) {
+                  const mod = await import('./js/cards/editor-synonyme/controller.js');
+                  // Range-Mutation + Caret + bubbelndes input-Event (markiert die
+                  // Seite dirty) — derselbe geteilte Helper wie die Spellcheck-
+                  // Ersetzung; keine Client-Kopie der Caret-Logik.
+                  const { applySpellcheckReplacement } = await import('./js/editor/shared/apply-replacement.js');
+                  const root = document.querySelector('.focus-editor__content');
+                  if (mod && typeof mod.createSynonymController === 'function' && root) {
+                    const I18N = (scfg && scfg.i18n) || {};
+                    const i18n = (k, params) => {
+                      let s = I18N[k] || k;
+                      if (params) for (const kk in params) s = s.replace('{' + kk + '}', params[kk]);
+                      return s;
+                    };
+                    const ctl = mod.createSynonymController({
+                      root,
+                      getBookId: () => currentBookId,
+                      getPageId: () => currentPageId,
+                      isEnabled: () => true,
+                      i18n,
+                      onApplyReplacement: (range, text) => applySpellcheckReplacement(range, text),
+                      // Transport über die Bridge (kein direkter fetch).
+                      lookupThesaurus: async ({ word, bookId }) => {
+                        const res = await fb.synonymsThesaurus({ word, bookId });
+                        if (res && res.disabled) return { disabled: true, synonyme: [] };
+                        return { synonyme: (res && res.synonyme) || [] };
+                      },
+                      // Der Swift-Kern pollt den Job fertig → EIN Ergebnis. Bei
+                      // Fehler einen Fehler werfen (Controller zeigt KI-Fehler).
+                      lookupAi: async ({ wort, satz, bookId, pageId }) => {
+                        const res = await fb.synonymsAi({
+                          wort, satz, bookId,
+                          pageId: pageId == null ? null : String(pageId),
+                        });
+                        if (res && res.disabled) return { disabled: true, synonyme: [] };
+                        if (res && res.error) throw new Error(res.error);
+                        return { synonyme: (res && res.synonyme) || [] };
+                      },
+                    });
+                    ctl.attach();
+                    window.__synonyms = ctl;
+                    fb.log?.('Synonyme aktiv');
+                  }
+                }
+              } catch (e) {
+                fb.log?.('Synonyme nicht verfügbar: ' + (e && e.message ? e.message : e), 'info');
               }
             } catch (e) {
               status.className = 'err';

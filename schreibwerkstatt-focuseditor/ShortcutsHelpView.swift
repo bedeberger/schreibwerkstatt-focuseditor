@@ -82,6 +82,7 @@ struct ShortcutsHelpView: View {
                 ShortcutSection(title: t("shortcuts.section.editor"), rows: [
                     (["⌘", "⇧", "E"], t("shortcuts.focusToggle")),
                     (["⌘", "L"], t("shortcuts.centerLine")),
+                    (["⌘", "⇧", "S"], t("shortcuts.synonyms")),
                     (["⌘", "B"], t("shortcuts.bold")),
                     (["⌘", "I"], t("shortcuts.italic")),
                     (["⌘", "U"], t("shortcuts.underline")),
