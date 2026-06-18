@@ -763,9 +763,9 @@ enum WebAssets {
                       },
                       // Der Swift-Kern pollt den Job fertig → EIN Ergebnis. Bei
                       // Fehler einen Fehler werfen (Controller zeigt KI-Fehler).
-                      lookupAi: async ({ wort, satz, bookId, pageId }) => {
+                      lookupAi: async ({ word, satz, bookId, pageId }) => {
                         const res = await fb.synonymsAi({
-                          wort, satz, bookId,
+                          wort: word, satz, bookId,
                           pageId: pageId == null ? null : String(pageId),
                         });
                         if (res && res.disabled) return { disabled: true, synonyme: [] };
