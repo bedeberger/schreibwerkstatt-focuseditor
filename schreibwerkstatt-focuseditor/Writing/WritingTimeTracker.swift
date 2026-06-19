@@ -12,11 +12,13 @@
 //  Web-Bedingung `(editMode||focusActive) && selectedBookId && visible`. (Dieser
 //  Client hat keinen Buchorganizer; „in der App mit offener Seite" = „im Editor".)
 //
-//  Best-effort und nur in-memory gepuffert: nicht bestätigte Sekunden bleiben in
-//  `pending` (pro Buch) und werden beim nächsten Tick erneut gesendet — eine
-//  kurze Offline-Phase geht so nicht verloren. KEIN persistenter Puffer über
-//  App-Neustarts hinaus (wie die Web-Seite). Inhalte/Outbox sind nie betroffen;
-//  ein verlorener Ping kostet höchstens ein paar Sekunden Statistik.
+//  Best-effort: nicht bestätigte Sekunden bleiben in `pending` (pro Buch) und
+//  werden beim nächsten Tick erneut gesendet — eine kurze Offline-Phase geht so
+//  nicht verloren. Der Puffer wird zusätzlich SERVER-SKOPIERT in den UserDefaults
+//  persistiert (`writingtime.pending.<slug>`), damit ein Crash/Beenden ZWISCHEN
+//  zwei Heartbeats die bereits gezählte Zeit nicht verliert — beim nächsten Start
+//  (oder Server-Rückwechsel) wird sie geladen und gesendet. Inhalte/Outbox sind
+//  nie betroffen; ein verlorener Ping kostet höchstens ein paar Sekunden Statistik.
 //
 
 import Foundation
@@ -54,8 +56,15 @@ final class WritingTimeTracker {
     private var segmentBookId: Int?
 
     /// Noch nicht vom Server bestätigte Sekunden, pro Buch. Wächst bei Sende-
-    /// Fehlern (offline) und wird beim nächsten Tick erneut versucht.
-    private var pending: [Int: Int] = [:]
+    /// Fehlern (offline) und wird beim nächsten Tick erneut versucht. Jede Änderung
+    /// wird persistiert (server-skopiert), damit der Puffer einen Neustart übersteht.
+    private var pending: [Int: Int] = [:] {
+        didSet { persistPending() }
+    }
+    /// Server-Slug, zu dem der aktuelle `pending` gehört (Buch-IDs gelten nur am
+    /// Server, der sie vergeben hat). Bestimmt den Persistenz-Schlüssel; bei einem
+    /// Server-Wechsel über `reset()` umgebunden.
+    private var slug: String
     /// Verhindert überlappende Sendeläufe (Heartbeat + Stop-Flush gleichzeitig).
     private var isFlushing = false
 
@@ -64,6 +73,10 @@ final class WritingTimeTracker {
     init(api: APIClient, isSignedIn: @escaping () -> Bool) {
         self.api = api
         self.isSignedIn = isSignedIn
+        // Puffer des aktuell konfigurierten Servers aus einer früheren Sitzung
+        // laden. Initialer Set im Init → didSet feuert nicht (kein Rück-Schreiben).
+        self.slug = ServerNamespace.currentSlug
+        self.pending = Self.loadPersisted(slug: self.slug)
     }
 
     /// Koppelt den Tracker an den LibraryStore: jede Änderung am „wo schreibt der
@@ -85,17 +98,25 @@ final class WritingTimeTracker {
     func setActive(_ active: Bool) {
         guard active != isActive else { return }
         isActive = active
+        // Beim Aktivieren einen evtl. aus einer früheren Sitzung restaurierten
+        // Puffer best-effort senden — auch ohne offene Seite. `flushPending` no-opt,
+        // falls (noch) nicht angemeldet; sonst greift der nächste Heartbeat-Tick.
+        if active && !pending.isEmpty { Task { await self.flushPending() } }
         reevaluate()
     }
 
-    /// Server-Wechsel: laufendes Segment + Puffer verwerfen. Buch-IDs gelten nur
-    /// am Server, der sie vergeben hat — sonst würde die Zeit am neuen Server auf
-    /// eine fremde Buch-ID gebucht.
+    /// Server-Wechsel: laufendes Segment beenden und die In-Memory-Sicht auf den
+    /// neuen Server umbinden. Buch-IDs gelten nur am Server, der sie vergeben hat —
+    /// sonst würde die Zeit am neuen Server auf eine fremde Buch-ID gebucht. Der
+    /// persistierte Puffer des ALTEN Servers bleibt unter dessen Slug liegen (kein
+    /// `removeAll` → kein Lösch-Schreiben) und wird bei einem Rückwechsel erneut
+    /// gesendet; geladen wird der Puffer des NEUEN Servers.
     func reset() {
         stopHeartbeat()
         segmentStart = nil
         segmentBookId = nil
-        pending.removeAll()
+        slug = ServerNamespace.currentSlug
+        pending = Self.loadPersisted(slug: slug)
     }
 
     // MARK: - Zähl-Logik
@@ -199,6 +220,35 @@ final class WritingTimeTracker {
                 break
             }
         }
+    }
+
+    // MARK: - Persistenz (server-skopiert, überlebt App-Neustart)
+
+    private static let pendingKeyPrefix = "writingtime.pending."
+
+    /// Schreibt `pending` in die UserDefaults — unter dem Slug des Servers, zu dem
+    /// die Buch-IDs gehören. Leerer Puffer → Eintrag entfernen (kein Müll-Key).
+    private func persistPending() {
+        let key = Self.pendingKeyPrefix + slug
+        if pending.isEmpty {
+            UserDefaults.standard.removeObject(forKey: key)
+        } else {
+            // UserDefaults verlangt String-Keys → Buch-ID als String ablegen.
+            let encoded = Dictionary(uniqueKeysWithValues: pending.map { (String($0.key), $0.value) })
+            UserDefaults.standard.set(encoded, forKey: key)
+        }
+    }
+
+    /// Liest den persistierten Puffer eines Servers zurück (defensiv: nur positive
+    /// Sekunden, nur ganzzahlige Buch-IDs — Fremdformate werden verworfen).
+    private static func loadPersisted(slug: String) -> [Int: Int] {
+        let key = pendingKeyPrefix + slug
+        guard let raw = UserDefaults.standard.dictionary(forKey: key) as? [String: Int] else { return [:] }
+        var out: [Int: Int] = [:]
+        for (k, v) in raw where v > 0 {
+            if let id = Int(k) { out[id] = v }
+        }
+        return out
     }
 }
 

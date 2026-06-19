@@ -24,9 +24,7 @@ final class SourceFileSizeTests: XCTestCase {
     /// Bewusst geduldete Ausnahmen: Dateiname → Begründung. Diese dürfen das
     /// Limit überschreiten (der zweite Test wacht darüber, dass ein Eintrag
     /// wieder verschwindet, sobald die Datei unters Limit fällt).
-    private let allowedOverLimit: [String: String] = [
-        "WebAssets.swift": "Ein zusammenhängendes HTML/JS-Boot-Template (Client-Glue) — kein sinnvoller Schnitt; gehört bewusst in eine Datei.",
-    ]
+    private let allowedOverLimit: [String: String] = [:]
 
     func testSwiftSourceFilesStayUnderLineLimit() throws {
         let sourceDir = try Self.sourceRoot()
