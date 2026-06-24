@@ -7,10 +7,19 @@
 //  pro Buch/Tag aufaddiert). Das native Pendant zum Heartbeat der Web-Plattform
 //  (`public/js/book/writing-time.js` im Hauptrepo).
 //
-//  Wie dort gibt es bewusst KEINE Idle-Erkennung: gezählt wird, solange das
-//  Fenster aktiv ist UND eine Seite im aktiven Buch offen ist — das Analog zur
-//  Web-Bedingung `(editMode||focusActive) && selectedBookId && visible`. (Dieser
-//  Client hat keinen Buchorganizer; „in der App mit offener Seite" = „im Editor".)
+//  Kontext-Bedingung wie dort: gezählt wird, solange das Fenster aktiv ist UND
+//  eine Seite im aktiven Buch offen ist — das Analog zur Web-Bedingung
+//  `(editMode||focusActive) && selectedBookId && visible`. (Dieser Client hat
+//  keinen Buchorganizer; „in der App mit offener Seite" = „im Editor".)
+//
+//  ZUSÄTZLICH (anders als die Web-Plattform) eine Idle-Erkennung: liegt das
+//  Tippen länger als `idleThreshold` (120 s) zurück, wird die Schreibzeit
+//  pausiert. Anrechenbar ist nur Zeit bis `letzte Aktivität + idleThreshold`;
+//  längere Tipp-Pausen (Lesen, Weglaufen) zählen nicht. „Aktivität" ist jede
+//  `reportStats`-Meldung der WebView (debounced bei `input` → echtes Tippen),
+//  geliefert über `bridge.onActivity` → `notifyActivity()`; ein frischer
+//  Segment-Start (Seite geöffnet / Fenster aktiviert) zählt ebenfalls als
+//  Aktivität, damit die Uhr nicht sofort abläuft.
 //
 //  Best-effort: nicht bestätigte Sekunden bleiben in `pending` (pro Buch) und
 //  werden beim nächsten Tick erneut gesendet — eine kurze Offline-Phase geht so
@@ -37,6 +46,9 @@ final class WritingTimeTracker {
     /// genauso deckeln, damit ein Ping nie serverseitig beschnitten „verloren"
     /// scheint — Überhang drainiert über mehrere Ticks.
     private let maxSecondsPerPing = 3600
+    /// Tipp-Pause, ab der die Schreibzeit als idle pausiert. Zeit über diese
+    /// Schwelle hinaus (seit der letzten Aktivität) wird nicht angerechnet.
+    private let idleThreshold: TimeInterval = 120
 
     // MARK: - Eingänge (gespiegelt)
 
@@ -54,6 +66,10 @@ final class WritingTimeTracker {
     /// Buch, unter dem das laufende Segment verbucht wird. Eingefroren beim Start,
     /// damit ein Buchwechsel die bereits gezählte Zeit nicht umbucht.
     private var segmentBookId: Int?
+    /// Zeitpunkt der letzten Nutzer-Aktivität (Tippen / Segment-Start). Deckelt die
+    /// anrechenbare Zeit (`+ idleThreshold`) und treibt das Idle-Aufwachen. `nil` =
+    /// noch keine Aktivität in dieser Sitzung gesehen.
+    private var lastActivityAt: Date?
 
     /// Noch nicht vom Server bestätigte Sekunden, pro Buch. Wächst bei Sende-
     /// Fehlern (offline) und wird beim nächsten Tick erneut versucht. Jede Änderung
@@ -115,6 +131,7 @@ final class WritingTimeTracker {
         stopHeartbeat()
         segmentStart = nil
         segmentBookId = nil
+        lastActivityAt = nil
         slug = ServerNamespace.currentSlug
         pending = Self.loadPersisted(slug: slug)
     }
@@ -127,11 +144,35 @@ final class WritingTimeTracker {
         isActive && hasOpenPage && activeBookId != nil && isSignedIn()
     }
 
+    /// Liegt die letzte Aktivität länger als `idleThreshold` zurück? Ohne je
+    /// gesehene Aktivität `false` (nicht spurios pausieren — der Segment-Start
+    /// setzt `lastActivityAt` ohnehin sofort).
+    private var isIdle: Bool {
+        guard let last = lastActivityAt else { return false }
+        return Date().timeIntervalSince(last) > idleThreshold
+    }
+
+    /// Vom `bridge.onActivity`-Hook bei jeder `reportStats`-Meldung gerufen
+    /// (debounced bei `input` → echtes Tippen). Setzt die Idle-Uhr zurück und
+    /// nimmt ein idle-pausiertes Segment wieder auf (Kontext zählt, Segment ruht).
+    func notifyActivity() {
+        lastActivityAt = Date()
+        if shouldCount, segmentStart == nil, let book = activeBookId {
+            segmentStart = Date()
+            segmentBookId = book
+            startHeartbeat()
+        }
+    }
+
     /// Bewertet nach jeder Eingangs-Änderung, ob (und unter welchem Buch) gezählt
     /// wird: startet/stoppt das Segment und schaltet den Heartbeat entsprechend.
     private func reevaluate() {
         if shouldCount, let book = activeBookId {
             if segmentStart == nil {
+                // Frischer Start (Seite geöffnet / Fenster aktiviert / Login, oder
+                // Aufwachen aus Idle-Pause): zählt als Aktivität, damit die Idle-Uhr
+                // nicht sofort wieder abläuft.
+                lastActivityAt = Date()
                 segmentStart = Date()
                 segmentBookId = book
                 startHeartbeat()
@@ -156,10 +197,15 @@ final class WritingTimeTracker {
     private func captureSegment(continueCounting: Bool) {
         guard let start = segmentStart, let book = segmentBookId else { return }
         let now = Date()
+        // Idle-Deckel: anrechenbar nur bis `letzte Aktivität + idleThreshold`.
+        // Eine längere Tipp-Pause (Idle) wird so nicht mitgezählt — auch wenn der
+        // Heartbeat sie erst beim nächsten Tick bemerkt, bindet der Deckel hier.
+        let deadline = (lastActivityAt ?? start).addingTimeInterval(idleThreshold)
+        let creditUntil = min(now, deadline)
         // Uhrsprung-Schutz: negativ (Uhr zurückgestellt) → verwerfen; nach oben
         // auf das Server-Limit deckeln. `.rounded()` mittelt die Sub-Sekunden-
         // Reste über die Ticks aus (kein systematisches Unterzählen).
-        let elapsed = Int(now.timeIntervalSince(start).rounded())
+        let elapsed = Int(creditUntil.timeIntervalSince(start).rounded())
         let seconds = min(max(0, elapsed), maxSecondsPerPing)
         if continueCounting {
             segmentStart = now
@@ -181,6 +227,15 @@ final class WritingTimeTracker {
             while !Task.isCancelled {
                 try? await Task.sleep(for: self.heartbeatInterval)
                 if Task.isCancelled { break }
+                if self.isIdle {
+                    // Idle: das Reststück bis zur Deadline gutschreiben (greift im
+                    // Deckel von captureSegment), Segment schließen und pausieren.
+                    // `notifyActivity()` nimmt es beim nächsten Tippen wieder auf.
+                    self.captureSegment(continueCounting: false)
+                    self.stopHeartbeat()
+                    await self.flushPending()
+                    break
+                }
                 self.captureSegment(continueCounting: true)
                 await self.flushPending()
             }

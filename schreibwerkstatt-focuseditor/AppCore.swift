@@ -70,6 +70,9 @@ final class AppCore: ObservableObject {
                                              isSignedIn: { auth.state == .signedIn })
         self.writingTime = writingTime
         writingTime.attach(to: library)
+        // Tippaktivität der WebView (eigener Hook neben `onStats`) speist die
+        // Idle-Erkennung der Schreibzeit — pausiert bei längerer Tipp-Pause.
+        bridge.onActivity = { [weak writingTime] in writingTime?.notifyActivity() }
         let sync = SyncEngine(api: auth.api,
                               content: content,
                               store: store,

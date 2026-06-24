@@ -153,6 +153,11 @@ final class EditorBridge: NSObject, WKScriptMessageHandlerWithReply, EditorCoord
     /// erlaubt dem Store, „heute geschrieben" PRO Seite zu führen. Gesetzt vom
     /// `WritingStatsStore`.
     var onStats: ((String?, Int, Int) -> Void)?
+    /// Nutzer-Tippaktivität (jede `reportStats`-Meldung der WebView). Vom `onStats`
+    /// bewusst GETRENNT, damit der `WritingStatsStore` seinen `onStats`-Slot behält.
+    /// Treibt die Idle-Erkennung im `WritingTimeTracker` (Schreibzeit pausiert bei
+    /// längerer Tipp-Pause). Gesetzt von `AppCore`.
+    var onActivity: (() -> Void)?
     /// Seiten mit ungespeicherten Editor-Änderungen.
     private var dirtyPages: Set<String> = []
 
@@ -296,6 +301,8 @@ final class EditorBridge: NSObject, WKScriptMessageHandlerWithReply, EditorCoord
             let chars = (params["chars"] as? Int) ?? (params["chars"] as? NSNumber)?.intValue ?? 0
             let pageId = params["pageId"] as? String
             onStats?(pageId, words, chars)
+            // Jede Meldung ist ein Lebenszeichen → Idle-Uhr der Schreibzeit zurück.
+            onActivity?()
             return nil
 
         case "spellcheckConfig":
