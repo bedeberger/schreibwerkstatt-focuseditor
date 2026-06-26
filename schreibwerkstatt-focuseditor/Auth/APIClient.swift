@@ -63,6 +63,16 @@ final class APIClient {
     static let clientVersion: String =
         (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "unknown"
 
+    /// Plattform-Code für den `X-Client-Platform`-Header. Der Server baut daraus
+    /// das Revision-„Gerät"-Label per Request — bleibt korrekt, selbst wenn
+    /// dasselbe Device-Token auf mehreren Geräten genutzt wird.
+    static let clientPlatform = "macos"
+
+    /// Gerätename für den `X-Client-Device`-Header (Computer-Name, z. B.
+    /// „MacBook Pro von David"). Fällt auf den Hostnamen zurück.
+    static let clientDevice: String =
+        Host.current().localizedName ?? (Host.current().name ?? "Mac")
+
     /// Führt einen Request gegen `ServerConfig.baseURL` + `path` aus und
     /// dekodiert die Antwort. `overrideToken` erlaubt das Validieren eines
     /// noch nicht gespeicherten Tokens beim Login.
@@ -193,6 +203,8 @@ final class APIClient {
         // (Sync-Pull/-Push, OTA-Bundle, Content, Auth-Probe) — zentral hier,
         // nicht pro Call dupliziert.
         request.setValue(APIClient.clientVersion, forHTTPHeaderField: "X-Client-Version")
+        request.setValue(APIClient.clientPlatform, forHTTPHeaderField: "X-Client-Platform")
+        request.setValue(APIClient.clientDevice, forHTTPHeaderField: "X-Client-Device")
         if acceptJSON {
             request.setValue("application/json", forHTTPHeaderField: "Accept")
         }
