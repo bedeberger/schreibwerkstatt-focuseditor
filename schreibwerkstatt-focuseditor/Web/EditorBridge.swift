@@ -158,6 +158,12 @@ final class EditorBridge: NSObject, WKScriptMessageHandlerWithReply, EditorCoord
     /// Treibt die Idle-Erkennung im `WritingTimeTracker` (Schreibzeit pausiert bei
     /// längerer Tipp-Pause). Gesetzt von `AppCore`.
     var onActivity: (() -> Void)?
+    /// Ergebnis eines lokalen Saves: `nil` = erfolgreich, sonst die Fehlermeldung.
+    /// Ein fehlgeschlagener `save` bedeutet, dass der Tippstand NICHT im lokalen
+    /// Spiegel landete (Platte voll / DB-Fehler) — ein echter, sonst nur geloggter
+    /// Datenverlust-Pfad. Treibt einen sichtbaren Warn-Banner (gesetzt von `AppCore`
+    /// → `LibraryStore`), statt den Fehler still im Log verschwinden zu lassen.
+    var onSaveResult: ((String?) -> Void)?
     /// Seiten mit ungespeicherten Editor-Änderungen.
     private var dirtyPages: Set<String> = []
 
@@ -221,8 +227,18 @@ final class EditorBridge: NSObject, WKScriptMessageHandlerWithReply, EditorCoord
             let pageId = try requireString(params, "pageId")
             let html = try requireString(params, "html")
             let base = params["baseUpdatedAt"] as? Double
-            let saved = try await store.save(id: pageId, html: html, baseUpdatedAt: base)
-            return ["id": saved.id, "updatedAt": saved.updatedAt]
+            do {
+                let saved = try await store.save(id: pageId, html: html, baseUpdatedAt: base)
+                // Erfolgreicher Save → einen zuvor gezeigten Save-Fehler-Banner lösen.
+                onSaveResult?(nil)
+                return ["id": saved.id, "updatedAt": saved.updatedAt]
+            } catch {
+                // Lokaler Save fehlgeschlagen = potenzieller Datenverlust → den
+                // Nutzer warnen (sichtbarer Banner), nicht nur loggen. Fehler
+                // trotzdem an die WebView durchreichen (Editor-Promise lehnt ab).
+                onSaveResult?(error.localizedDescription)
+                throw error
+            }
 
         case "list":
             // Optionaler Buch-Filter: nil = alle Seiten (Picker reicht book_id durch).

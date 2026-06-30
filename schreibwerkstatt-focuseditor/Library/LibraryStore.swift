@@ -57,7 +57,17 @@ final class LibraryStore: ObservableObject {
     @Published private(set) var isSwitchingBook = false
     @Published private(set) var isLoadingBooks = false
     @Published private(set) var isLoadingPages = false
+    /// Wurde die Bücherliste schon mindestens einmal (erfolgreich) geladen?
+    /// Unterscheidet „lädt noch / unbekannt" von „geladen, aber leer" — nur im
+    /// zweiten Fall zeigt der Editor-Host den „keine Bücher"-Hinweis statt der
+    /// generischen Leerfläche (sonst blitzte er beim Start kurz auf).
+    @Published private(set) var booksLoaded = false
     @Published var lastError: String?
+    /// Meldung eines fehlgeschlagenen LOKALEN Saves (Platte voll / DB-Fehler) —
+    /// treibt einen sichtbaren Warn-Banner über dem Editor. `nil` = kein Fehler.
+    /// Wird vom nächsten erfolgreichen Save automatisch wieder gelöst. Über die
+    /// Bridge (`onSaveResult`) in `AppCore` gespeist.
+    @Published var saveError: String?
 
     private let content: ContentAPI
     private let store: any LocalStore
@@ -147,6 +157,7 @@ final class LibraryStore: ObservableObject {
         do {
             let fetched = try await content.books()
             books = fetched
+            booksLoaded = true
             lastError = nil
             // Aktives Buch validieren / Default setzen.
             if let id = activeBookId, fetched.contains(where: { $0.id == id }) {
@@ -287,6 +298,18 @@ final class LibraryStore: ObservableObject {
         pickerOpenRequest &+= 1
     }
 
+    /// Ergebnis eines lokalen Saves aus der Bridge: `nil` = erfolgreich (löst einen
+    /// etwaigen Warn-Banner), sonst die Fehlermeldung (zeigt den Banner). Nur bei
+    /// echter Änderung publizieren — der Erfolgsfall feuert bei JEDEM Auto-Save.
+    func reportSaveResult(_ message: String?) {
+        if saveError != message { saveError = message }
+    }
+
+    /// Verwirft eine offene Save-Fehler-Meldung (Banner-Schliessen durch den Nutzer).
+    func dismissSaveError() {
+        if saveError != nil { saveError = nil }
+    }
+
     // MARK: - Server-Wechsel
 
     /// Server-Wechsel: Buch-/Seiten-Zustand des alten Servers verwerfen, das
@@ -294,10 +317,12 @@ final class LibraryStore: ObservableObject {
     /// neu ziehen. So zeigt der Picker keine Bücher des alten Servers mehr.
     func reloadForCurrentServer() {
         books = []
+        booksLoaded = false
         pages = []
         openPageId = nil
         openPageDirty = false
         lastError = nil
+        saveError = nil
         let saved = UserDefaults.standard.integer(forKey: defaultsKey)
         activeBookId = saved == 0 ? nil : saved
         Task { await loadBooks() }

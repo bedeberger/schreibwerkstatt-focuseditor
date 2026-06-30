@@ -31,18 +31,35 @@ nonisolated struct SyncState: Codable, Sendable {
     /// Server-HTML der letzten Basis je Seite — gemeinsamer Vorfahr (Ancestor)
     /// für den 3-Wege-Block-Merge bei 409.
     var serverBaseHtml: [String: String] = [:]
+    /// Offene, noch nicht aufgelöste 409-Konflikte. MIT persistiert (statt rein
+    /// in-memory), damit ein App-Neustart die Konflikt-Markierung NICHT verliert:
+    /// sonst würde die betroffene Seite beim nächsten Start blind neu gepusht,
+    /// liefe wieder ins 409 und der Nutzer verlöre die Spur (mehrere nutzlose
+    /// Merge-Roundtrips je Start). Spiegelt `SyncEngine.Conflict`.
+    var conflicts: [PersistedConflict] = []
 
     init() {}
 
-    // Tolerant gegen fehlende Keys (ältere Snapshots ohne `serverBaseHtml`),
-    // damit ein neues Feld nicht den ganzen Sync-Zustand verwirft.
+    // Tolerant gegen fehlende Keys (ältere Snapshots ohne `serverBaseHtml`/
+    // `conflicts`), damit ein neues Feld nicht den ganzen Sync-Zustand verwirft.
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         bookIds = try c.decodeIfPresent([Int].self, forKey: .bookIds) ?? []
         cursors = try c.decodeIfPresent([Int: SyncCursorDTO].self, forKey: .cursors) ?? [:]
         serverBaseISO = try c.decodeIfPresent([String: String].self, forKey: .serverBaseISO) ?? [:]
         serverBaseHtml = try c.decodeIfPresent([String: String].self, forKey: .serverBaseHtml) ?? [:]
+        conflicts = try c.decodeIfPresent([PersistedConflict].self, forKey: .conflicts) ?? []
     }
+}
+
+/// Persistierbare Form eines 409-Konflikts (Codable-Spiegel von
+/// `SyncEngine.Conflict`, der MainActor-isoliert ist und daher nicht direkt in
+/// den off-main encodierten `SyncState` passt).
+nonisolated struct PersistedConflict: Codable, Sendable, Equatable {
+    var pageId: String
+    var pageName: String?
+    var serverUpdatedAt: String?
+    var serverEditorName: String?
 }
 
 /// Lädt/speichert `SyncState` als JSON-Snapshot.
@@ -105,6 +122,14 @@ final class SyncStateStore {
         block(&state)
         persist()
     }
+
+    #if DEBUG
+    /// Test-Helfer: blockiert, bis alle anstehenden Snapshot-Schreibvorgänge auf
+    /// der seriellen I/O-Queue durch sind. Erlaubt einen deterministischen
+    /// Disk-Roundtrip-Test (persistieren → neuer Store liest denselben Stand),
+    /// ohne auf das asynchrone Schreiben zu pollen. Nur in Debug-Builds.
+    func flushForTesting() { ioQueue.sync {} }
+    #endif
 
     /// Reicht eine Wert-Kopie (COW, Sendable) an die I/O-Queue; encode + write
     /// passieren dort, nicht auf dem MainActor.

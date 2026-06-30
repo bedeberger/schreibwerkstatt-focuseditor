@@ -73,6 +73,10 @@ final class AppCore: ObservableObject {
         // Tippaktivität der WebView (eigener Hook neben `onStats`) speist die
         // Idle-Erkennung der Schreibzeit — pausiert bei längerer Tipp-Pause.
         bridge.onActivity = { [weak writingTime] in writingTime?.notifyActivity() }
+        // Ergebnis eines lokalen Saves → Warn-Banner (Fehler) bzw. dessen Auflösung
+        // (Erfolg). Ein fehlgeschlagener Save ist ein echter Datenverlust-Pfad und
+        // darf nicht nur im Log stehen.
+        bridge.onSaveResult = { [weak library] message in library?.reportSaveResult(message) }
         let sync = SyncEngine(api: auth.api,
                               content: content,
                               store: store,

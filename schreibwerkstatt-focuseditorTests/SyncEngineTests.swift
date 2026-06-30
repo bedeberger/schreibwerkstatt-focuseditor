@@ -151,6 +151,9 @@ private final class FakeEditor: EditorCoordinating {
     var dirtyPages: Set<String> = []
     var mergeResult: MergeOutcome?
     var mergeError: Error?
+    /// Test-Hook: läuft INNERHALB von `merge3`, bevor das Ergebnis zurückkommt —
+    /// simuliert einen lokalen Save, der WÄHREND der Konflikt-Auflösung eintrifft.
+    var onMerge: (() async -> Void)?
     private(set) var reloaded: [(pageId: String, html: String)] = []
 
     func isDirty(_ pageId: String) -> Bool { dirtyPages.contains(pageId) }
@@ -158,6 +161,7 @@ private final class FakeEditor: EditorCoordinating {
         reloaded.append((pageId, html))
     }
     func merge3(base: String?, local: String, server: String) async throws -> MergeOutcome {
+        await onMerge?()
         if let mergeError { throw mergeError }
         return mergeResult ?? MergeOutcome(merged: local, conflictCount: 0)
     }
@@ -199,6 +203,17 @@ final class SyncEngineTests: XCTestCase {
         // Sync-Zustand frisch (setUp löscht die Datei, aber der Store lädt im init).
         engine.stateStore.mutate { $0 = SyncState() }
         return engine
+    }
+
+    /// Wie `makeEngine`, aber OHNE den Sync-Zustand zu leeren — die neue Engine
+    /// liest den auf der Platte persistierten Zustand (für den Neustart-Roundtrip,
+    /// z. B. Konflikt-Persistenz). Kein Editor/keine Stubs nötig.
+    private func makeEngineKeepingState(store: FakeStore) -> SyncEngine {
+        let cfg = URLSessionConfiguration.ephemeral
+        cfg.protocolClasses = [MockURLProtocol.self]
+        let api = APIClient(tokenProvider: { "swd_test" }, session: URLSession(configuration: cfg))
+        return SyncEngine(api: api, content: ContentAPI(api: api), store: store,
+                          reachability: nil, shouldSync: { true })
     }
 
     private func push(_ status: Int, _ json: String) -> Stub { Stub(status: status, json: json) }
@@ -442,6 +457,119 @@ final class SyncEngineTests: XCTestCase {
         await engine.reconcileDeletesIfDue()
 
         XCTAssertNotNil(store.pages["7"], "leerer Tree ist verdächtig → nichts löschen")
+    }
+
+    // MARK: Robustheit / Persistenz
+
+    /// Ein offener 409-Konflikt muss einen App-Neustart überleben (persistiert im
+    /// Sync-Zustand) — sonst würde die Seite blind neu gepusht und der Nutzer
+    /// verlöre die Konflikt-Spur.
+    func testConflictsPersistAcrossEngineRestart() async throws {
+        let store = FakeStore()
+        _ = try await store.save(id: "5", html: "<p>local</p>", baseUpdatedAt: nil)
+        let engine = makeEngine(store: store)   // kein Editor → 409 wird sichtbarer Konflikt
+        engine.stateStore.mutate { $0.serverBaseISO["5"] = base }
+        router.on("PUT", "/content/pages/5", [push(409,
+            #"{"error_code":"PAGE_CONFLICT","server_updated_at":"\#(newer)","server_editor_name":"Bob"}"#)])
+
+        try await engine.pushOutbox()
+        XCTAssertEqual(engine.conflicts.map(\.pageId), ["5"], "Konflikt zunächst erfasst")
+        engine.stateStore.flushForTesting()   // Disk-Write abwarten (deterministisch)
+
+        // „Neustart": frische Engine auf demselben (persistenten) Zustand.
+        let restarted = makeEngineKeepingState(store: store)
+        XCTAssertEqual(restarted.conflicts.map(\.pageId), ["5"], "Konflikt aus dem Zustand wiederhergestellt")
+        XCTAssertEqual(restarted.conflicts.first?.serverEditorName, "Bob", "Konflikt-Metadaten erhalten")
+    }
+
+    /// Ein erfolgreicher Block-Merge muss den Konflikt auch im persistierten
+    /// Zustand löschen — sonst tauchte er nach einem Neustart wieder auf.
+    func testClearedConflictDoesNotResurrectAfterRestart() async throws {
+        let store = FakeStore()
+        _ = try await store.save(id: "5", html: "<p>local</p>", baseUpdatedAt: nil)
+        let engine = makeEngine(store: store)
+        engine.stateStore.mutate { $0.serverBaseISO["5"] = base }
+        router.on("PUT", "/content/pages/5",
+                  [push(409, #"{"error_code":"PAGE_CONFLICT","server_updated_at":"\#(newer)"}"#)])
+        try await engine.pushOutbox()
+        XCTAssertFalse(engine.conflicts.isEmpty)
+
+        engine.clearConflict(pageId: "5")
+        engine.stateStore.flushForTesting()
+
+        let restarted = makeEngineKeepingState(store: store)
+        XCTAssertTrue(restarted.conflicts.isEmpty, "aufgelöster Konflikt bleibt nach Neustart weg")
+    }
+
+    /// Speichert der Nutzer WÄHREND eines Auto-Merges erneut, darf der jüngste
+    /// lokale Stand nicht verloren gehen: der neue Outbox-Eintrag bleibt erhalten
+    /// und die Basis wird NICHT auf den (überholten) Merge-Stand vorgerückt.
+    func testSaveDuringAutoMergeKeepsLatestLocalEdit() async throws {
+        let store = FakeStore()
+        _ = try await store.save(id: "5", html: "<p>local-1</p>", baseUpdatedAt: nil)
+        let editor = FakeEditor()
+        editor.mergeResult = MergeOutcome(merged: "<p>merged</p>", conflictCount: 0)
+        // Während der Merge rechnet, tippt + speichert der Nutzer erneut.
+        editor.onMerge = { _ = try? await store.save(id: "5", html: "<p>local-2</p>", baseUpdatedAt: nil) }
+        let engine = makeEngine(store: store, editor: editor)
+        engine.stateStore.mutate {
+            $0.serverBaseISO["5"] = base
+            $0.serverBaseHtml["5"] = "<p>anc</p>"
+        }
+        let merged = "2026-01-03T00:00:00.000Z"
+        router.on("PUT", "/content/pages/5", [
+            push(409, #"{"error_code":"PAGE_CONFLICT","server_updated_at":"\#(newer)"}"#),
+            push(200, #"{"id":5,"updated_at":"\#(merged)"}"#),
+        ])
+        router.on("GET", "/content/pages/5",
+                  [push(200, #"{"id":5,"updated_at":"\#(newer)","html":"<p>server</p>"}"#)])
+
+        try await engine.pushOutbox()
+
+        let pending = try await store.pendingOutbox()
+        XCTAssertEqual(pending.map(\.pageId), ["5"], "der während des Merges gespeicherte Stand bleibt in der Outbox")
+        XCTAssertEqual(pending.first?.html, "<p>local-2</p>", "der jüngste lokale Tippstand überlebt")
+        XCTAssertNotEqual(engine.stateStore.state.serverBaseISO["5"], merged,
+                          "Basis NICHT auf den Merge-Stand vorgerückt (Save kam dazwischen)")
+    }
+
+    /// Ein 401 mitten in der Outbox-Schleife bricht den Push ab — bereits
+    /// quittierte Einträge bleiben quittiert, der Rest bleibt unangetastet
+    /// (keine doppelten Pushes, keine Inkonsistenz beim Re-Sync nach Re-Login).
+    func testPush401MidLoopKeepsRemainingOutboxConsistent() async throws {
+        let store = FakeStore()
+        _ = try await store.save(id: "5", html: "<p>a</p>", baseUpdatedAt: nil)
+        _ = try await store.save(id: "6", html: "<p>b</p>", baseUpdatedAt: nil)
+        let engine = makeEngine(store: store)
+        engine.stateStore.mutate { $0.serverBaseISO["5"] = base; $0.serverBaseISO["6"] = base }
+        router.on("PUT", "/content/pages/5", [push(200, #"{"id":5,"updated_at":"\#(newer)"}"#)])
+        router.on("PUT", "/content/pages/6", [push(401, #"{"error_code":"UNAUTHORIZED"}"#)])
+
+        do {
+            try await engine.pushOutbox()
+            XCTFail("401 sollte den Push abbrechen")
+        } catch { /* erwartet: AuthError.unauthorized */ }
+
+        let pending = try await store.pendingOutbox()
+        XCTAssertEqual(pending.map(\.pageId), ["6"], "Seite 5 gepusht; Seite 6 unangetastet in der Outbox")
+        XCTAssertEqual(engine.stateStore.state.serverBaseISO["5"], newer, "Basis von 5 vorgerückt")
+    }
+
+    /// Meldet der Server endlos `has_more=true` mit demselben Cursor (Server-Bug),
+    /// darf der Pull nicht endlos pagen, sondern bricht die Schleife ab.
+    func testPullBreaksWhenCursorDoesNotAdvance() async throws {
+        let store = FakeStore()
+        let engine = makeEngine(store: store)
+        seedBook(engine, ids: [1])
+        router.on("GET", "/content/books/1/sync", [push(200, #"""
+            {"now":"\#(newer)","has_more":true,"cursor":{"since":"\#(newer)","since_id":7},
+             "pages":[{"page_id":7,"page_name":"P7","chapter_id":null,"updated_at":"\#(newer)","html":"<p>s7</p>"}]}
+            """#)])
+
+        try await engine.pullDeltas()   // terminiert (sonst Endlosschleife)
+
+        XCTAssertEqual(store.pages["7"]?.html, "<p>s7</p>", "erste Seite übernommen, dann abgebrochen")
+        XCTAssertEqual(engine.stateStore.state.cursors[1], SyncCursorDTO(since: newer, since_id: 7))
     }
 
     // MARK: Helfer

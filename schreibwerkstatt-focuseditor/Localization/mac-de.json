@@ -9,6 +9,8 @@
   "empty.noPageOpen": "Keine Seite geöffnet",
   "empty.openPage": "Seite öffnen",
   "empty.continueLast": "Weiterschreiben: {name}",
+  "empty.noBooksTitle": "Keine Bücher",
+  "empty.noBooksHint": "Diesem Konto ist noch kein Buch zugeteilt. Lege in der Schreibwerkstatt-Web-App ein Buch an oder bitte deinen Administrator um Zugriff.",
 
   "settings.tab.general": "Allgemein",
   "settings.tab.appearance": "Darstellung",
@@ -232,6 +234,8 @@
   "save.saved": "Gesichert",
   "save.tip.dirty": "Nicht gespeicherte Änderung — wird automatisch lokal gesichert",
   "save.tip.saved": "Lokal gesichert",
+  "save.failedTitle": "Speichern fehlgeschlagen",
+  "save.dismiss": "Schliessen",
 
   "shortcuts.section.app": "App & Fenster",
   "shortcuts.section.pages": "Seiten",

@@ -9,6 +9,8 @@
   "empty.noPageOpen": "No page open",
   "empty.openPage": "Open a page",
   "empty.continueLast": "Continue: {name}",
+  "empty.noBooksTitle": "No books",
+  "empty.noBooksHint": "This account has no book assigned yet. Create one in the Schreibwerkstatt web app, or ask your administrator for access.",
 
   "settings.tab.general": "General",
   "settings.tab.appearance": "Appearance",
@@ -232,6 +234,8 @@
   "save.saved": "Saved",
   "save.tip.dirty": "Unsaved change — saved locally on its own in a moment",
   "save.tip.saved": "Saved locally",
+  "save.failedTitle": "Save failed",
+  "save.dismiss": "Dismiss",
 
   "shortcuts.section.app": "App & window",
   "shortcuts.section.pages": "Pages",

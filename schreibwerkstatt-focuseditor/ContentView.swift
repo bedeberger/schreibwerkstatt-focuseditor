@@ -106,13 +106,31 @@ private struct EditorHostView: View {
             // (Buch) und dem klaren nächsten Schritt (Seite öffnen / zuletzt
             // fortsetzen). Deckt die WebView voll ab, damit nichts durchscheint.
             if library.openPageId == nil && !toolbarUI.pickerOpen {
-                EmptyEditorView(openPicker: { toolbarUI.pickerOpen = true })
-                    .transition(.opacity)
+                // „Geladen, aber keine Bücher zugeteilt" klar vom generischen
+                // Leerzustand trennen — sonst führte „Seite öffnen" nur in einen
+                // leeren Picker, ohne den wahren Grund zu nennen.
+                if library.booksLoaded && library.books.isEmpty {
+                    NoBooksView(reload: { Task { await library.loadBooks() } })
+                        .transition(.opacity)
+                } else {
+                    EmptyEditorView(openPicker: { toolbarUI.pickerOpen = true })
+                        .transition(.opacity)
+                }
             }
 
             if toolbarUI.pickerOpen {
                 PagePickerOverlay(isOpen: $toolbarUI.pickerOpen)
                     .transition(.opacity.combined(with: .scale(scale: 0.97)))
+            }
+
+            // Save-Fehler-Banner: ein fehlgeschlagener lokaler Save (Platte voll /
+            // DB-Fehler) bedeutet, dass der Tippstand NICHT gesichert wurde — das
+            // muss sichtbar sein, nicht nur im Log. Liegt oben über allem, bis der
+            // nächste erfolgreiche Save ihn löst oder der Nutzer ihn schliesst.
+            if let saveError = library.saveError {
+                SaveErrorBanner(message: saveError) { library.dismissSaveError() }
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .frame(maxHeight: .infinity, alignment: .top)
             }
 
             // Buchwechsel: zentrierter Lade-Donut über der leeren WebView, bis
@@ -122,6 +140,8 @@ private struct EditorHostView: View {
                     .transition(.opacity)
             }
         }
+        .animation(.easeOut(duration: 0.18), value: library.saveError)
+        .animation(.easeOut(duration: 0.18), value: library.booksLoaded)
         // Toolbar-Accessory nur zeigen, solange der Editor sichtbar ist (sonst
         // stünde im Login-/Ladezustand ein leerer Streifen in der Titelleiste).
         .onAppear { windowChrome.setToolbarVisible(true) }
@@ -186,6 +206,84 @@ private struct EmptyEditorView: View {
             .padding(40)
         }
         .frame(minWidth: 640, minHeight: 480)
+    }
+}
+
+/// Bücherliste erfolgreich geladen, aber leer: dem Account ist (noch) kein Buch
+/// zugeteilt. Klar benannt statt der generischen „keine Seite offen"-Fläche, die
+/// nur in einen leeren Picker führte. Kein Anlege-Pfad im Client (reine
+/// Schreib-Hülle) → Hinweis auf die Web-Plattform + ein „erneut laden"-Knopf
+/// (falls gerade ein Buch in der Web-App entstanden ist).
+private struct NoBooksView: View {
+    let reload: () -> Void
+
+    var body: some View {
+        ZStack {
+            BrandColor.bg.ignoresSafeArea()
+                .onContinuousHover { phase in
+                    if case .active = phase { NSCursor.arrow.set() }
+                }
+            VStack(spacing: 18) {
+                Image(systemName: "books.vertical")
+                    .font(.system(size: 30, weight: .light))
+                    .foregroundStyle(BrandColor.faint)
+                VStack(spacing: 5) {
+                    Text(t("empty.noBooksTitle"))
+                        .font(BrandFont.serif(17))
+                        .foregroundStyle(BrandColor.muted)
+                    Text(t("empty.noBooksHint"))
+                        .font(BrandFont.sans(13))
+                        .foregroundStyle(BrandColor.faint)
+                        .multilineTextAlignment(.center)
+                }
+                EmptyStateButton(title: t("content.retry"), prominent: true, action: reload)
+                    .frame(maxWidth: 240)
+            }
+            .padding(40)
+        }
+        .frame(minWidth: 640, minHeight: 480)
+    }
+}
+
+/// Warn-Banner über dem Editor, wenn ein lokaler Save fehlschlug (potenzieller
+/// Datenverlust). Bewusst auffällig (Warnfarbe) statt einer stillen Log-Zeile —
+/// der Nutzer muss wissen, dass sein Tippstand NICHT gesichert wurde. Schliessen
+/// per Knopf; ein nächster erfolgreicher Save löst ihn ohnehin automatisch.
+private struct SaveErrorBanner: View {
+    let message: String
+    let dismiss: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.white)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(t("save.failedTitle"))
+                    .font(BrandFont.sans(13, weight: .semibold))
+                    .foregroundStyle(.white)
+                Text(message)
+                    .font(BrandFont.sans(11))
+                    .foregroundStyle(.white.opacity(0.85))
+                    .lineLimit(2)
+            }
+            Spacer(minLength: 8)
+            Button(action: dismiss) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.9))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(t("save.dismiss"))
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(Color(red: 0.72, green: 0.22, blue: 0.18))
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .shadow(radius: 12, y: 4)
+        .padding(.horizontal, 16)
+        .padding(.top, 10)
+        .frame(maxWidth: 520)
     }
 }
 

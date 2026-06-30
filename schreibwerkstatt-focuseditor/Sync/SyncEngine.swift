@@ -142,6 +142,10 @@ final class SyncEngine: ObservableObject {
         self.shouldSync = shouldSync
         self.stateStore = SyncStateStore()
         self.pollMode = SyncPollMode.current
+        // Offene Konflikte aus dem persistierten Zustand wiederherstellen —
+        // ein Neustart darf die Konflikt-Markierung nicht verlieren (sonst würde
+        // die Seite blind neu gepusht und liefe wieder ins 409).
+        restoreConflicts()
     }
 
     // MARK: - Lifecycle
@@ -192,7 +196,9 @@ final class SyncEngine: ObservableObject {
     func reloadForCurrentServer() {
         stopPolling()
         stateStore.reloadForCurrentServer()
-        conflicts = []
+        // Konflikte des NEUEN Servers aus dessen persistiertem Zustand laden
+        // (nicht blind leeren — ein offener Konflikt am Zielserver bleibt sichtbar).
+        restoreConflicts()
         pendingCount = 0
         lastReconcileAt = nil
         // Bücherliste beim nächsten Tick zwingend neu (autoritativ) ziehen, damit
@@ -423,12 +429,34 @@ final class SyncEngine: ObservableObject {
         } else {
             conflicts.append(c)
         }
+        persistConflicts()
     }
 
     /// Markiert einen Konflikt als aufgelöst (nach erfolgreichem Block-Merge).
     /// Der nächste Push nimmt die Seite dann wieder mit.
     func clearConflict(pageId: String) {
+        let before = conflicts.count
         conflicts.removeAll { $0.pageId == pageId }
+        if conflicts.count != before { persistConflicts() }
+    }
+
+    /// Stellt die offenen Konflikte aus dem persistierten Sync-Zustand her
+    /// (Boot + Server-Wechsel). Spiegelt `PersistedConflict` → `Conflict`.
+    private func restoreConflicts() {
+        conflicts = stateStore.state.conflicts.map {
+            Conflict(pageId: $0.pageId, pageName: $0.pageName,
+                     serverUpdatedAt: $0.serverUpdatedAt, serverEditorName: $0.serverEditorName)
+        }
+    }
+
+    /// Schreibt die aktuelle Konfliktliste in den persistierten Sync-Zustand,
+    /// sodass sie einen Neustart übersteht. `Conflict` → `PersistedConflict`.
+    private func persistConflicts() {
+        let dtos = conflicts.map {
+            PersistedConflict(pageId: $0.pageId, pageName: $0.pageName,
+                              serverUpdatedAt: $0.serverUpdatedAt, serverEditorName: $0.serverEditorName)
+        }
+        stateStore.mutate { $0.conflicts = dtos }
     }
 
     /// Lokaler (ungepushter) + frischer Server-Stand eines Konflikts — Grundlage
