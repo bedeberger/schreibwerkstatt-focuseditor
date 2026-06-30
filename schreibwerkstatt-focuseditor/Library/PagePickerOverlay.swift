@@ -364,6 +364,13 @@ struct PagePickerOverlay: View {
             .padding(.leading, CGFloat(max(0, path.count - 1)) * 14 + 14)
             .padding(.trailing, 14)
             .background(.regularMaterial)
+            // Der gepinnte Header schwebt beim Scrollen über den Zeilen darunter.
+            // Sein Material-Hintergrund würde sonst die Klicks auf die verdeckte
+            // Zeile schlucken → diese Seite liesse sich nicht mehr per Klick öffnen
+            // (sichtbar als „manche Treffer nicht auswählbar"). Der Header ist rein
+            // dekorativ (kein Button) → für Klicks transparent schalten, damit sie
+            // an den darunterliegenden Zeilen-Button durchgehen.
+            .allowsHitTesting(false)
     }
 
     /// Baut den Breadcrumb-`Text` aus dem Kapitelpfad: Trennzeichen „›" und

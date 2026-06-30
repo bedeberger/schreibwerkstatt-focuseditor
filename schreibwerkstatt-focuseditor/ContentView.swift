@@ -166,11 +166,6 @@ private struct EmptyEditorView: View {
     var body: some View {
         ZStack {
             BrandColor.bg.ignoresSafeArea()
-                // Leerzustand deckt die WebView ab: deren I-Beam-(Text-)Cursor
-                // darf nicht durchscheinen → über der ganzen Fläche den Pfeil setzen.
-                .onContinuousHover { phase in
-                    if case .active = phase { NSCursor.arrow.set() }
-                }
             VStack(spacing: 18) {
                 Image(systemName: "book.closed")
                     .font(.system(size: 30, weight: .light))
@@ -205,6 +200,11 @@ private struct EmptyEditorView: View {
             }
             .padding(40)
         }
+        // Leerzustand deckt die WebView ab: deren I-Beam-(Text-)Cursor darf nicht
+        // durchscheinen → über der ganzen Fläche den Pfeil erzwingen. View-gebunden
+        // (wie Toolbar/Picker), zuverlässiger als das transiente `NSCursor.set()`.
+        // Die Knöpfe übersteuern lokal mit `.pointerStyle(.link)`.
+        .pointerStyle(.default)
         .frame(minWidth: 640, minHeight: 480)
     }
 }
@@ -220,9 +220,6 @@ private struct NoBooksView: View {
     var body: some View {
         ZStack {
             BrandColor.bg.ignoresSafeArea()
-                .onContinuousHover { phase in
-                    if case .active = phase { NSCursor.arrow.set() }
-                }
             VStack(spacing: 18) {
                 Image(systemName: "books.vertical")
                     .font(.system(size: 30, weight: .light))
@@ -241,6 +238,8 @@ private struct NoBooksView: View {
             }
             .padding(40)
         }
+        // Wie der Leerzustand: I-Beam der WebView nicht durchscheinen lassen.
+        .pointerStyle(.default)
         .frame(minWidth: 640, minHeight: 480)
     }
 }
@@ -324,12 +323,14 @@ private struct EmptyStateButton: View {
             )
         }
         .buttonStyle(.plain)
-        .onHover { inside in
-            hovering = inside
-            // Knopf ist ein klickbares Ziel → Zeigehand statt des durchblutenden
-            // I-Beam-Cursors der darunterliegenden WebView.
-            if inside { NSCursor.pointingHand.push() } else { NSCursor.pop() }
-        }
+        .onHover { hovering = $0 }
+        // Knopf ist ein klickbares Ziel → Zeigehand statt des durchblutenden
+        // I-Beam-Cursors der darunterliegenden WebView. View-gebunden über
+        // `.pointerStyle` statt `NSCursor.push()/pop()`: der Stack lief sonst aus
+        // dem Gleichgewicht, wenn der Klick den Knopf entfernt (Seite öffnet),
+        // bevor `onHover(false)` feuert → Zeigehand blieb über der Schreibfläche
+        // hängen. Deklarativ kann das nicht passieren.
+        .pointerStyle(.link)
     }
 
     private var background: Color {
@@ -362,10 +363,6 @@ private struct BookSwitchLoadingView: View {
     var body: some View {
         ZStack {
             BrandColor.bg.ignoresSafeArea()
-                // Wie der Leerzustand: I-Beam der WebView nicht durchscheinen lassen.
-                .onContinuousHover { phase in
-                    if case .active = phase { NSCursor.arrow.set() }
-                }
             VStack(spacing: 14) {
                 ProgressView().controlSize(.large)
                 Text(t("library.switchingBook"))
@@ -373,6 +370,8 @@ private struct BookSwitchLoadingView: View {
                     .foregroundStyle(BrandColor.muted)
             }
         }
+        // Wie der Leerzustand: I-Beam der WebView nicht durchscheinen lassen.
+        .pointerStyle(.default)
     }
 }
 
