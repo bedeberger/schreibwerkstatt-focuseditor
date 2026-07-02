@@ -23,6 +23,9 @@ struct SaveStateLabel: View {
             // Offene Änderung → Marken-Gold (es passiert gleich etwas);
             // gesichert → ruhig zurückgenommen.
             .foregroundStyle(dirty ? BrandColor.accent : BrandColor.faint)
+            // Sanfter Symbol-Wechsel dirty↔gesichert statt hartem Umspringen.
+            .contentTransition(.symbolEffect(.replace))
+            .animation(.easeInOut(duration: 0.2), value: dirty)
             .frame(width: 16)
             .help(dirty ? t("save.tip.dirty") : t("save.tip.saved"))
             .accessibilityLabel(dirty ? t("save.dirty") : t("save.saved"))
@@ -100,6 +103,13 @@ struct SyncStatusLabel: View {
     let status: SyncEngine.Status
     let conflicts: [SyncEngine.Conflict]
     let lastSyncedAt: Date?
+    /// Anzahl lokal noch nicht gepushter Seiten (Outbox) — im idle-Zustand dezent
+    /// sichtbar, damit „X Seiten warten auf Upload" nicht nur im Settings-Tab steht.
+    var pendingCount: Int = 0
+    /// Letzter Sync-Fehler (Server erreicht, aber Push/Pull scheiterte, z. B. 5xx).
+    /// Ein solcher Zustand endet als `.idle`, würde also sonst still verschluckt —
+    /// hier als dezenter Hinweis sichtbar gemacht.
+    var lastError: String?
     /// Öffnet die Konflikt-Auflösungs-Ansicht (Nebeneinander-Diff) für eine Seite.
     /// Die eigentliche lokal/server-Wahl trifft der Nutzer dort informiert.
     var onInspect: (SyncEngine.Conflict) -> Void = { _ in }
@@ -115,14 +125,54 @@ struct SyncStatusLabel: View {
             if !conflicts.isEmpty {
                 conflictMenu
             } else if status == .idle {
-                // „Alles ok" zeigt bewusst NICHTS — kein Dauer-Häkchen (weniger
-                // Chrome). Nur syncing/offline/Fehler/Konflikte sind sichtbar.
-                Color.clear.frame(width: 0, height: 0)
+                idleContent
             } else {
                 statusLabel
             }
         }
         .frame(minWidth: Self.slotWidth, alignment: .trailing)
+    }
+
+    /// idle = kein laufender Sync. Vollständig sauber (nichts offen, kein Fehler)
+    /// zeigt bewusst NICHTS — kein Dauer-Häkchen (weniger Chrome, ruhige Leiste).
+    /// Sichtbar wird nur eine Abweichung: ein wiederholter Sync-Fehler (Server
+    /// erreicht, aber 5xx o. Ä. → sonst still verschluckt) oder ungepushte Seiten
+    /// in der Outbox.
+    @ViewBuilder
+    private var idleContent: some View {
+        if lastError != nil {
+            syncErrorLabel
+        } else if pendingCount > 0 {
+            pendingLabel
+        } else {
+            Color.clear.frame(width: 0, height: 0)
+        }
+    }
+
+    /// Ungepushte Seiten (Outbox) — dezenter Aufwärtspfeil + Zahl. Signalisiert
+    /// „lokal gesichert, wartet auf Upload" ohne Alarm (Marken-Muted, kein Rot).
+    private var pendingLabel: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "arrow.up.circle")
+            Text("\(pendingCount)")
+        }
+        .font(BrandFont.sans(11))
+        .foregroundStyle(BrandColor.muted)
+        .fixedSize()
+        .help(tn(pendingCount, "toolbar.tip.pending"))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(tn(pendingCount, "toolbar.tip.pending"))
+    }
+
+    /// Anhaltender Sync-Fehler bei erreichtem Server (endet als `.idle`) — dezent
+    /// im Warn-Ton, damit die stille Degradierung sichtbar wird. Details im Tooltip.
+    private var syncErrorLabel: some View {
+        Image(systemName: "exclamationmark.arrow.triangle.2.circlepath")
+            .font(.system(size: 12))
+            .foregroundStyle(BrandColor.warning)
+            .fixedSize()
+            .help(t("toolbar.tip.syncError", ["msg": lastError ?? ""]))
+            .accessibilityLabel(t("toolbar.tip.syncError", ["msg": lastError ?? ""]))
     }
 
     /// Klickbares Konflikt-Menü: pro betroffener Seite öffnet ein Klick die
@@ -140,7 +190,7 @@ struct SyncStatusLabel: View {
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.orange)
+                    .foregroundStyle(BrandColor.warning)
                 Text(tn(conflicts.count, "toolbar.conflicts"))
             }
             .font(BrandFont.sans(11))
@@ -166,7 +216,7 @@ struct SyncStatusLabel: View {
             case .serverUnreachable:
                 // Netz da, aber Server antwortet nicht — deutlich (orange)
                 // anzeigen, damit es nicht wie ein sauberer Sync-Zustand wirkt.
-                Image(systemName: "exclamationmark.icloud").foregroundStyle(.orange)
+                Image(systemName: "exclamationmark.icloud").foregroundStyle(BrandColor.warning)
                 Text(t("sync.state.serverUnreachable"))
             case .idle:
                 // Wird via `body` nie erreicht (idle = unsichtbar); nur für die

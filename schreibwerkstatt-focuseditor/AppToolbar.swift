@@ -41,6 +41,9 @@ struct AppToolbar: View {
     @EnvironmentObject private var sync: SyncEngine
     @EnvironmentObject private var library: LibraryStore
     @EnvironmentObject private var writingStats: WritingStatsStore
+    /// Schreibzeit-Tracker — liefert die heute geschriebene Zeit für den Überlauf
+    /// (die Daten wurden bisher nur an den Server gemeldet, nie lokal gezeigt).
+    @EnvironmentObject private var writingTime: WritingTimeTracker
     /// Geteilter UI-Zustand mit dem Editor-Host (Seiten-Picker + Konflikt-Sheet) —
     /// nötig, weil die Toolbar jetzt in einem eigenen, vom Host getrennten
     /// SwiftUI-Baum (Titelleisten-Accessory) lebt.
@@ -136,6 +139,8 @@ struct AppToolbar: View {
             SyncStatusLabel(status: sync.status,
                             conflicts: sync.conflicts,
                             lastSyncedAt: sync.lastSyncedAt,
+                            pendingCount: sync.pendingCount,
+                            lastError: sync.lastError,
                             onInspect: { toolbarUI.inspectingConflict = $0 })
 
             // Fokus-Stufe + Darstellung direkt in der Leiste (statt zwei Klicks
@@ -177,12 +182,33 @@ struct AppToolbar: View {
         }
     }
 
+    /// Heute geschriebene Zeit als lokalisierte, minutengenaue Kurzform
+    /// („1 Std 20 Min" / „45 Min").
+    private var formattedWritingTime: String {
+        let total = writingTime.todaySeconds
+        let h = total / 3600
+        let m = (total % 3600) / 60
+        return h > 0
+            ? t("writingtime.hm", ["h": "\(h)", "m": "\(m)"])
+            : t("writingtime.m", ["m": "\(m)"])
+    }
+
     /// Überlauf: selten gebrauchte Aktionen gebündelt — hält die Leiste ruhig.
     /// Darstellung + Fokus sitzen jetzt als eigene Inline-Knöpfe in der Leiste
     /// (direkt erreichbar, auch im Vollbild) — der Überlauf trägt nur noch die
     /// selten gebrauchten Einstiege (Einstellungen, manueller Sync, Abmelden).
     private var overflowMenu: some View {
         Menu {
+            // Heute geschriebene Zeit — informativ (nicht anklickbar). Nur ab einer
+            // vollen Minute, sonst ist die Zeile Rauschen. Die Daten kommen aus dem
+            // WritingTimeTracker (bisher nur serverseitig, jetzt auch lokal sichtbar).
+            if writingTime.todaySeconds >= 60 {
+                Label(t("menu.writingTimeToday", ["time": formattedWritingTime]),
+                      systemImage: "clock")
+                    .disabled(true)
+                Divider()
+            }
+
             // Natives Einstellungen-Fenster (⌘,). `SettingsLink` öffnet die
             // `Settings`-Scene direkt — ohne Selector-Gefrickel.
             SettingsLink {
@@ -206,6 +232,7 @@ struct AppToolbar: View {
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
                         .fill(overflowHover ? BrandColor.faint.opacity(0.25) : .clear)
                 )
+                .animation(.easeOut(duration: 0.12), value: overflowHover)
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)

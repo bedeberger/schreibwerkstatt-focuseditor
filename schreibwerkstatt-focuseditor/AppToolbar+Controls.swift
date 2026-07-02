@@ -32,6 +32,8 @@ struct ToolbarIconButton: View {
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
                         .fill(hovering ? BrandColor.faint.opacity(0.25) : .clear)
                 )
+                // Hover-Highlight sanft ein-/ausblenden statt hart umschalten.
+                .animation(.easeOut(duration: 0.12), value: hovering)
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
@@ -86,6 +88,7 @@ struct FocusMenuButton: View {
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
                         .fill(hovering ? BrandColor.faint.opacity(0.25) : .clear)
                 )
+                .animation(.easeOut(duration: 0.12), value: hovering)
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
@@ -123,10 +126,14 @@ struct AppearanceMenuButton: View {
                 .font(.system(size: 14))
                 .foregroundStyle(BrandColor.muted)
                 .frame(width: 28, height: 28)
+                // Moderner Symbol-Wechsel beim Umschalten Hell/Dunkel/System.
+                .contentTransition(.symbolEffect(.replace))
                 .background(
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
                         .fill(hovering ? BrandColor.faint.opacity(0.25) : .clear)
                 )
+                .animation(.easeOut(duration: 0.12), value: hovering)
+                .animation(.easeInOut(duration: 0.2), value: icon)
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)

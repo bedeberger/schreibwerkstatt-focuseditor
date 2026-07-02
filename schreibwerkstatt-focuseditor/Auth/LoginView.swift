@@ -126,7 +126,7 @@ struct LoginView: View {
                     if let error = auth.lastError {
                         Text(error)
                             .font(BrandFont.sans(12))
-                            .foregroundStyle(.red)
+                            .foregroundStyle(BrandColor.error)
                             .fixedSize(horizontal: false, vertical: true)
                     }
 

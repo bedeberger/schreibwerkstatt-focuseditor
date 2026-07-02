@@ -32,6 +32,14 @@ enum BrandColor {
     static let pageBg   = dynamic(light: "#fbf8f3", dark: "#1f1d1a")
     static let pageText = dynamic(light: "#2a2620", dark: "#d8d3c8")
 
+    // Semantische Status-Töne — gespiegelt aus der content-severity-Achse des
+    // Hauptrepos (`--color-schwach/mittel/success`, colors.css). Ersetzen die
+    // früher verstreuten `.orange`/`.red`/`.green`/RGB-Literale durch EIN
+    // appearance-abhängiges System (eigene Dark-Töne wie im Web-Theme).
+    static let error   = dynamic(light: "#c43838", dark: "#e25c5c")   // schwach
+    static let warning = dynamic(light: "#b38600", dark: "#d8b040")   // mittel (Amber)
+    static let success = dynamic(light: "#34d399", dark: "#4fd9aa")
+
     /// Baut eine appearance-abhängige Farbe aus zwei Hex-Werten.
     private static func dynamic(light: String, dark: String) -> Color {
         Color(nsColor: NSColor(name: nil) { appearance in

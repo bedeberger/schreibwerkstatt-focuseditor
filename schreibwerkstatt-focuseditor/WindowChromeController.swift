@@ -142,7 +142,14 @@ final class WindowChromeController: ObservableObject {
     /// gemeldete Werte merkt sich `toolbarVisible` (s. dort).
     func setToolbarVisible(_ visible: Bool) {
         toolbarVisible = visible
-        toolbarAccessory?.isHidden = !visible
+        guard let accessory = toolbarAccessory else { return }
+        // Sanft ein-/ausblenden statt hartem Umspringen. `isHidden` des Accessory
+        // ist über den `animator()`-Proxy animierbar (macOS lässt die Leiste dabei
+        // ein-/ausgleiten) — angenehmer beim Übergang Login/Lade ↔ Editor.
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.2
+            accessory.animator().isHidden = !visible
+        }
     }
 
     /// Schaltet den nativen macOS-Vollbild um. Pendant zum grünen Ampel-Button /

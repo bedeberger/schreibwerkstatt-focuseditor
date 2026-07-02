@@ -16,20 +16,23 @@ private struct ShortcutRow: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
             Text(label)
+                .font(BrandFont.sans(13))
+                .foregroundStyle(BrandColor.text)
                 .frame(maxWidth: .infinity, alignment: .leading)
             HStack(spacing: 4) {
                 ForEach(Array(keys.enumerated()), id: \.offset) { _, key in
                     Text(key)
-                        .font(.system(.body, design: .rounded).weight(.medium))
+                        .font(BrandFont.sans(12, weight: .medium))
+                        .foregroundStyle(BrandColor.muted)
                         .frame(minWidth: 22)
                         .padding(.vertical, 3)
                         .padding(.horizontal, 7)
                         .background(
                             RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                .fill(Color(nsColor: .controlBackgroundColor))
+                                .fill(BrandColor.surface)
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                        .strokeBorder(Color(nsColor: .separatorColor))
+                                        .strokeBorder(BrandColor.faint.opacity(0.6))
                                 )
                         )
                 }
@@ -47,12 +50,13 @@ private struct ShortcutSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
-                .font(.headline)
+                .font(BrandFont.serif(15, weight: .semibold))
+                .foregroundStyle(BrandColor.text)
                 .padding(.bottom, 2)
             ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
                 ShortcutRow(keys: row.keys, label: row.label)
                 if row.label != rows.last?.label {
-                    Divider()
+                    Divider().overlay(BrandColor.faint.opacity(0.35))
                 }
             }
         }
@@ -90,13 +94,14 @@ struct ShortcutsHelpView: View {
                 ])
 
                 Text(t("shortcuts.legend"))
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .font(BrandFont.sans(11))
+                    .foregroundStyle(BrandColor.faint)
                     .padding(.top, 4)
             }
             .padding(24)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .background(BrandColor.bg)
         .frame(width: 380, height: 520)
     }
 }

@@ -47,7 +47,7 @@ struct SyncSettingsTab: View {
                 }
                 if !sync.conflicts.isEmpty {
                     LabeledContent(t("settings.sync.conflicts"), value: "\(sync.conflicts.count)")
-                        .foregroundStyle(.orange)
+                        .foregroundStyle(BrandColor.warning)
                 }
                 HStack {
                     Spacer()

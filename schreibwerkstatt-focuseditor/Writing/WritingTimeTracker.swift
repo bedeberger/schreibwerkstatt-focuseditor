@@ -31,10 +31,11 @@
 //
 
 import Foundation
+import Combine
 import os
 
 @MainActor
-final class WritingTimeTracker {
+final class WritingTimeTracker: ObservableObject {
     private let api: APIClient
     /// Nur melden, wenn angemeldet (sonst 401). Spiegelt `SyncEngine.shouldSync`.
     private let isSignedIn: () -> Bool
@@ -84,6 +85,17 @@ final class WritingTimeTracker {
     /// Verhindert überlappende Sendeläufe (Heartbeat + Stop-Flush gleichzeitig).
     private var isFlushing = false
 
+    // MARK: - Heute-Anzeige (lokal, für die UI)
+
+    /// Heute (lokaler Kalendertag) insgesamt angerechnete Schreibsekunden — für
+    /// die UI („heute X Min geschrieben"). Anders als `pending` wird dieser Wert
+    /// beim Senden NICHT abgezogen; er summiert über den Tag und setzt sich beim
+    /// Tageswechsel zurück. Server-skopiert persistiert (überlebt Neustart).
+    @Published private(set) var todaySeconds: Int = 0
+    /// Kalendertag (yyyy-MM-dd), zu dem `todaySeconds` gehört. Wechselt er, wird
+    /// die Tages-Summe zurückgesetzt.
+    private var todayStamp: String = WritingTimeTracker.dayStamp()
+
     private var heartbeat: Task<Void, Never>?
 
     init(api: APIClient, isSignedIn: @escaping () -> Bool) {
@@ -93,6 +105,7 @@ final class WritingTimeTracker {
         // laden. Initialer Set im Init → didSet feuert nicht (kein Rück-Schreiben).
         self.slug = ServerNamespace.currentSlug
         self.pending = Self.loadPersisted(slug: self.slug)
+        loadToday()
     }
 
     /// Koppelt den Tracker an den LibraryStore: jede Änderung am „wo schreibt der
@@ -134,6 +147,7 @@ final class WritingTimeTracker {
         lastActivityAt = nil
         slug = ServerNamespace.currentSlug
         pending = Self.loadPersisted(slug: slug)
+        loadToday()
     }
 
     // MARK: - Zähl-Logik
@@ -215,7 +229,20 @@ final class WritingTimeTracker {
         }
         if seconds > 0 {
             pending[book, default: 0] += seconds
+            creditToday(seconds)
         }
+    }
+
+    /// Schreibt die angerechneten Sekunden der Tages-Summe gut (für die UI). Beim
+    /// Tageswechsel wird zuvor auf 0 zurückgesetzt.
+    private func creditToday(_ seconds: Int) {
+        let today = Self.dayStamp()
+        if today != todayStamp {
+            todayStamp = today
+            todaySeconds = 0
+        }
+        todaySeconds += seconds
+        persistToday()
     }
 
     // MARK: - Heartbeat (Task-Loop wie SyncEngine.startPolling)
@@ -304,6 +331,42 @@ final class WritingTimeTracker {
             if let id = Int(k) { out[id] = v }
         }
         return out
+    }
+
+    // MARK: - Tages-Summe (server-skopiert, überlebt App-Neustart)
+
+    private static let todayKeyPrefix = "writingtime.today."
+
+    /// Lokaler Kalendertag als stabiler Schlüssel (locale-unabhängig, ISO-Datum).
+    private static let dayFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "yyyy-MM-dd"
+        return f
+    }()
+
+    private static func dayStamp(_ date: Date = Date()) -> String {
+        dayFormatter.string(from: date)
+    }
+
+    /// Persistiert die Tages-Summe (Tag + Sekunden) unter dem aktuellen Server-Slug.
+    private func persistToday() {
+        let key = Self.todayKeyPrefix + slug
+        UserDefaults.standard.set(["day": todayStamp, "seconds": todaySeconds], forKey: key)
+    }
+
+    /// Lädt die Tages-Summe des aktuellen Servers zurück — aber nur, wenn sie zum
+    /// heutigen Kalendertag gehört; sonst frisch bei 0 beginnen (Tageswechsel).
+    private func loadToday() {
+        let today = Self.dayStamp()
+        let raw = UserDefaults.standard.dictionary(forKey: Self.todayKeyPrefix + slug)
+        if let raw, raw["day"] as? String == today, let secs = raw["seconds"] as? Int, secs > 0 {
+            todayStamp = today
+            todaySeconds = secs
+        } else {
+            todayStamp = today
+            todaySeconds = 0
+        }
     }
 }
 

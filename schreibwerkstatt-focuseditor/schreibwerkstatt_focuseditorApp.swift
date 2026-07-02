@@ -59,6 +59,7 @@ struct schreibwerkstatt_focuseditorApp: App {
             .environmentObject(appearance)
             .environmentObject(focus)
             .environmentObject(writingStats)
+            .environmentObject(core.writingTime)
             .environmentObject(toolbarUI)
             .environmentObject(loc)
         let host = NSHostingView(rootView: root)

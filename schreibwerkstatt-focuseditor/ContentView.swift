@@ -15,18 +15,24 @@ struct ContentView: View {
     @EnvironmentObject private var loc: LocalizationController
 
     var body: some View {
-        switch auth.state {
-        case .unknown:
-            LoadingView()
-        case .validating:
-            // Beim Erst-Login zeigt LoginView selbst einen Spinner;
-            // hier nur der Bootstrap-Fall (Token wird geprüft).
-            auth.hasStoredToken ? AnyView(LoadingView()) : AnyView(LoginView())
-        case .signedOut:
-            LoginView()
-        case .signedIn:
-            EditorHostView()
+        Group {
+            switch auth.state {
+            case .unknown:
+                LoadingView()
+            case .validating:
+                // Beim Erst-Login zeigt LoginView selbst einen Spinner;
+                // hier nur der Bootstrap-Fall (Token wird geprüft).
+                auth.hasStoredToken ? AnyView(LoadingView()) : AnyView(LoginView())
+            case .signedOut:
+                LoginView()
+            case .signedIn:
+                EditorHostView()
+            }
         }
+        // Sanfter Crossfade zwischen den Grundzuständen (v. a. Login/Laden →
+        // Editor beim Anmelden) statt hartem Umschalten.
+        .transition(.opacity)
+        .animation(.easeInOut(duration: 0.25), value: auth.state)
     }
 }
 
@@ -277,7 +283,7 @@ private struct SaveErrorBanner: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 10)
-        .background(Color(red: 0.72, green: 0.22, blue: 0.18))
+        .background(BrandColor.error)
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
         .shadow(radius: 12, y: 4)
         .padding(.horizontal, 16)
@@ -321,6 +327,7 @@ private struct EmptyStateButton: View {
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
                     .strokeBorder(prominent ? .clear : BrandColor.faint.opacity(0.8), lineWidth: 1)
             )
+            .animation(.easeOut(duration: 0.12), value: hovering)
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }

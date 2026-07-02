@@ -101,7 +101,7 @@ struct ConflictResolutionView: View {
             .padding(24)
         case let .loaded(local, server):
             HStack(spacing: 0) {
-                column(title: t("conflict.column.local"), paragraphs: local, tint: .green)
+                column(title: t("conflict.column.local"), paragraphs: local, tint: BrandColor.success)
                 Divider()
                 column(title: t("conflict.column.server"), paragraphs: server, tint: BrandColor.primary)
             }
