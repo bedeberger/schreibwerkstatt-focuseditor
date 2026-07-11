@@ -14,8 +14,12 @@
 //  sie dort samt Titelleiste automatisch aus und zeigt sie beim Hochfahren der
 //  Maus wieder (gewollter ablenkungsfreier Effekt). Im Fenster bleibt sie sichtbar.
 //
-//  Bewusst KEIN `fullSizeContentView`: der Inhalt (WebView) sitzt verlässlich
-//  UNTER Titelleiste + Accessory — kein Overlap, keine Z-Order-Tricks nötig.
+//  Bewusst MIT `fullSizeContentView`: nötig gegen einen WKWebView-Maus-Event-
+//  Versatz (ohne fullSize rechnet WebKit die Maus-Y bei transparenter
+//  Titelleiste + Accessory gegen die falsche Höhe → Hover/Selektion ~1
+//  Toolbar-Höhe daneben, s. applyBaseChrome). Die Toolbar ist ein Titelleisten-
+//  Accessory (Chrome), darum verdeckt fullSize sie NICHT — SwiftUI hält den
+//  Inhalt über den Safe-Area (contentLayoutRect) darunter.
 //
 
 import SwiftUI
@@ -81,10 +85,17 @@ final class WindowChromeController: ObservableObject {
 
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
-        // Titled-Stil OHNE fullSizeContentView: Inhalt unter der Titelleiste
-        // (s. Datei-Kopf — fullSize ließ die WebView die Toolbar verdecken).
+        // Titled-Stil MIT fullSizeContentView: Die Content-View spannt das ganze
+        // Fenster (inkl. hinter Titelleiste + Toolbar-Accessory). Zwingend wegen
+        // eines WKWebView-Bugs — ohne fullSize (kurze Content-View bei
+        // transparenter Titelleiste + Accessory) rechnet WebKit die Maus-Y
+        // gegen die falsche Höhe um → konstanter Vertikalversatz ≈ Chrome-Höhe
+        // (Hover-Picker UND native Textselektion landen ~1 Toolbar-Höhe daneben).
+        // Das frühere „fullSize verdeckt die Toolbar" gilt nicht mehr: die Toolbar
+        // ist heute ein Titelleisten-Accessory (Chrome), kein Content-Streifen —
+        // SwiftUI hält den Inhalt über den Safe-Area (contentLayoutRect) darunter.
         window.styleMask.insert(.titled)
-        window.styleMask.remove(.fullSizeContentView)
+        window.styleMask.insert(.fullSizeContentView)
         for kind in Self.buttons {
             window.standardWindowButton(kind)?.isHidden = false
         }
