@@ -641,8 +641,14 @@ extension WebAssets {
               // (Root der Schreibfläche, denselben Knoten nutzt die Spellcheck).
               (function () {
                 let statsTimer = null;
+                // Textlänge des letzten Zähllaufs (textContent, NICHT innerText):
+                // billiges Änderungs-Gate ohne Layout-Reflow.
+                let lastTcLen = -1;
                 function countAndReport() {
                   const root = document.querySelector('.focus-editor__content');
+                  // textContent.length zuerst greifen (kein Reflow) und merken,
+                  // damit das Gate unten dieselbe Metrik vergleicht.
+                  lastTcLen = root && root.textContent ? root.textContent.length : 0;
                   const text = root ? (root.innerText || root.textContent || '') : '';
                   const trimmed = text.trim();
                   const words = trimmed ? trimmed.split(/\\s+/).length : 0;
@@ -650,10 +656,24 @@ extension WebAssets {
                   try { fb.reportStats(words, chars, currentPageId); } catch (_) {}
                 }
                 window.__countStats = countAndReport;
+                // Der eigentliche Zähllauf liest innerText → erzwingt ein Layout.
+                // In eine Idle-Phase legen (requestIdleCallback), damit er nie mit
+                // dem Tastatur-Rendering konkurriert; Fallback setTimeout, falls die
+                // WebView-Engine rIC nicht kennt.
+                const ric = window.requestIdleCallback
+                  || function (cb) { return setTimeout(function () { cb(); }, 200); };
+                function scheduleCount() {
+                  const root = document.querySelector('.focus-editor__content');
+                  const len = root && root.textContent ? root.textContent.length : 0;
+                  // Reiner Format-/Selektions-Input ohne Längenänderung → nichts zu
+                  // zählen (spart den Reflow). Echtes Tippen ändert die Länge.
+                  if (len === lastTcLen) return;
+                  ric(countAndReport, { timeout: 1000 });
+                }
                 // Debounced bei Eingabe (input bubblet vom Content nach oben).
                 document.addEventListener('input', function () {
                   if (statsTimer) clearTimeout(statsTimer);
-                  statsTimer = setTimeout(countAndReport, 400);
+                  statsTimer = setTimeout(scheduleCount, 500);
                 }, true);
                 // Initiale Zählung (nach dem ersten Mount/loadPage).
                 setTimeout(countAndReport, 150);
