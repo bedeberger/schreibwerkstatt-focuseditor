@@ -29,6 +29,18 @@ struct schreibwerkstatt_focuseditorApp: App {
         // bevor der erste Tooltip aufgebaut wird. `register` statt `set`, damit eine
         // explizite Nutzer-/System-Einstellung Vorrang behält.
         UserDefaults.standard.register(defaults: ["NSInitialToolTipDelay": 400])
+
+        // macOS „intelligente Anführungszeichen" in der editierbaren WKWebView
+        // abschalten. Die Anführungszeichen sind Sache des gebündelten
+        // Buch-Stil-Normalizers (quote-normalize.js, de-CH «» / de-DE „" / fr « »).
+        // Läuft die OS-Ersetzung parallel, transformieren zwei Schichten dieselben
+        // Zeichen: die System-Ersetzung schiebt (locale-abhängig) Innen-Spaces in
+        // die Guillemets, und wo beide am selben Quote greifen, entstehen doppelte
+        // Zeichen. WebKit liest diesen App-Domain-Default für editierbare Inhalte;
+        // `register` statt `set`, konsistent mit dem Tooltip-Default oben. Nur die
+        // Quote-Ersetzung — Bindestrich-/Text-Ersetzung + Rechtschreibung bleiben,
+        // da der Normalizer sie nicht abdeckt (Bindestriche liefert nur die OS).
+        UserDefaults.standard.register(defaults: ["WebAutomaticQuoteSubstitutionEnabled": false])
     }
 
     @StateObject private var core = AppCore()
