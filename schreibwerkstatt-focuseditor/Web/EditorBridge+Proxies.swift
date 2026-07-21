@@ -88,6 +88,18 @@ extension EditorBridge {
         return cfg?.userSettings?.locale
     }
 
+    /// Liest die Buch-Locale (Sprache + Region) aus `GET /booksettings/:id` für
+    /// die Anführungszeichen-Normalisierung — daraus leitet der gebündelte
+    /// `quote-normalize.js` den Stil ab (de-CH → «», de-DE → „" …, en → "" …).
+    /// Der modulinterne `fetch('/booksettings/:id')` läuft in der lokalen WebView
+    /// ins Leere, darum holt der Swift-Kern die Werte. `nil`-Felder bei Netz-/
+    /// Auth-Fehler oder fehlendem Buch → der Glue fällt auf de/CH zurück.
+    func bookQuoteLocale(bookId: Int?) async -> (language: String?, region: String?) {
+        guard let api, let bookId else { return (nil, nil) }
+        let s = try? await api.send("/booksettings/\(bookId)", decode: BookSettingsDTO.self)
+        return (s?.language, s?.region)
+    }
+
     /// Proxyt den Prüf-Request an `POST /languagetool/check`. `404` (LT
     /// serverseitig aus) wird als `{ disabled: true }` zurückgegeben — kein
     /// Fehler. Die `matches` werden als roher JSON-Baum durchgereicht
@@ -220,6 +232,14 @@ private struct ConfigDTO: Decodable {
     /// Pro-User-Einstellungen (nur mit aufgelöstem User, also auch per
     /// Device-Token — der Guard setzt `req.session.user`). `nil` ohne User.
     let userSettings: UserSettings?
+}
+
+/// Antwort-Ausschnitt von `GET /booksettings/:id` — nur Sprache/Region für den
+/// Anführungszeichen-Stil (`resolveQuoteStyle`). Weitere Felder (buchtyp,
+/// buch_kontext …) werden ignoriert.
+private struct BookSettingsDTO: Decodable {
+    let language: String?
+    let region: String?
 }
 
 /// Body für `POST /languagetool/check` (Server-Vertrag, siehe

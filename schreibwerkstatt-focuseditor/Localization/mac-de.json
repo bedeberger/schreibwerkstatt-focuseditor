@@ -207,6 +207,8 @@
   "toolbar.openPage": "Seite öffnen",
   "toolbar.closePage": "Seite schließen",
   "toolbar.closePageHelp": "Seite schließen — zur ruhigen Leerfläche",
+  "toolbar.normalizeQuotes": "Anführungszeichen",
+  "toolbar.normalizeQuotesHelp": "Anführungszeichen auf den Buch-Stil ziehen (de-CH «», de-DE „“)",
   "toolbar.appearance": "Darstellung",
   "toolbar.appearanceHelp": "Darstellung wählen (Hell / Dunkel / System)",
   "toolbar.focusControl": "Fokus-Stufe",

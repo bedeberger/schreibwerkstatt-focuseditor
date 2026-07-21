@@ -207,6 +207,8 @@
   "toolbar.openPage": "Open page",
   "toolbar.closePage": "Close page",
   "toolbar.closePageHelp": "Close page — return to the calm canvas",
+  "toolbar.normalizeQuotes": "Quotation marks",
+  "toolbar.normalizeQuotesHelp": "Normalize quotation marks to the book style (de-CH «», de-DE „“)",
   "toolbar.appearance": "Appearance",
   "toolbar.appearanceHelp": "Choose appearance (Light / Dark / System)",
   "toolbar.focusControl": "Focus level",

@@ -40,6 +40,7 @@
 //    • openPage     { pageId, html?, baseUpdatedAt? } (nativer Picker öffnet Seite)
 //    • closePage    {}                               (offene Seite schliessen → ruhige Leerfläche; Buchwechsel oder Toolbar)
 //    • focusGranularity { granularity }              (Fokus-Stufe live umgeschaltet)
+//    • normalizeQuotes { language, region }          (Anführungszeichen der offenen Seite auf den Buch-Stil ziehen; Toolbar-Aktion)
 //
 //  Erweiterung: Braucht der Editor eine neue Root-Methode, wird sie ZUERST hier
 //  und in der JS-Facade (focusHost-Vertrag) ergänzt und in CLAUDE.md dokumentiert.
@@ -529,6 +530,32 @@ final class EditorBridge: NSObject, WKScriptMessageHandlerWithReply, EditorCoord
                 contentWorld: .page)
         } catch {
             log.error("applyFormat(\(command, privacy: .public)) fehlgeschlagen: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// Normalisiert die typografischen Anführungszeichen der offenen Seite auf
+    /// den Buch-Stil (`normalizeQuotes`-Event; Toolbar-Aktion). Der Quote-Stil
+    /// hängt an der Buch-Locale (de-CH → «», de-DE → „" …), die der Swift-Kern
+    /// serverseitig aus `/booksettings/:id` liest — der modulinterne `fetch` im
+    /// gebündelten `quote-normalize.js` liefe in der lokalen WebView (swk-app://)
+    /// ins Leere. Der Glue nutzt darum nur die fetch-freien Exports
+    /// (`resolveQuoteStyle` + `normalizeQuotes`) und sichert danach local-first.
+    /// Buch aus UserDefaults (wie die `activeBook`-Op); ohne Server-Antwort fällt
+    /// der Glue auf de/CH zurück. No-op ohne WebView; Fehler nur geloggt (rein
+    /// textverändernd, der Autosave holt den Stand ohnehin nach).
+    func normalizeQuotes() async {
+        guard let webView else { return }
+        let bid = UserDefaults.standard.integer(forKey: Self.activeBookKey)
+        let locale = await bookQuoteLocale(bookId: bid == 0 ? nil : bid)
+        do {
+            _ = try await webView.callAsyncJavaScript(
+                "window.__focusBridge._receive('normalizeQuotes', { language, region });",
+                arguments: ["language": locale.language ?? "de",
+                            "region": locale.region ?? "CH"],
+                in: nil,
+                contentWorld: .page)
+        } catch {
+            log.error("normalizeQuotes fehlgeschlagen: \(error.localizedDescription, privacy: .public)")
         }
     }
 

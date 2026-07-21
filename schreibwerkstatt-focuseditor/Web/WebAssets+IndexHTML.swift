@@ -493,6 +493,35 @@ extension WebAssets {
                 } catch (e) { console.error('[focus-bridge] format', e); }
               });
 
+              // ── Anführungszeichen normalisieren (Swift → JS) ────────────────
+              // Zieht die typografischen Anführungszeichen der offenen Seite auf
+              // den Buch-Stil (de-CH → «», de-DE → „" …). Nutzt die fetch-freien
+              // Primitive des gebündelten quote-normalize.js (resolveQuoteStyle +
+              // normalizeQuotes); die Buch-Locale kommt aus Swift (Server), weil
+              // der modulinterne fetch('/booksettings/…') in der lokalen WebView
+              // ins Leere liefe. normalizeQuotes mutiert direkt das DOM (kein
+              // input-Event) → danach synthetisch ein input feuern (markiert
+              // dirty, treibt Autosave + Stats) und sofort local-first sichern.
+              // Fehlt das Modul (älteres gecachtes Bundle), wird still degradiert.
+              fb.on('normalizeQuotes', async (p) => {
+                if (!currentPageId) return;   // keine echte Seite offen
+                try {
+                  const content = activeContent();
+                  if (!content) return;
+                  const mod = await import('./js/editor/shared/quote-normalize.js');
+                  if (!mod || typeof mod.normalizeQuotes !== 'function'
+                      || typeof mod.resolveQuoteStyle !== 'function') return;
+                  const style = mod.resolveQuoteStyle(
+                    (p && p.language) || 'de', (p && p.region) || 'CH');
+                  mod.normalizeQuotes(content, style);
+                  content.dispatchEvent(new InputEvent('input', { bubbles: true }));
+                  try { await window.__standalone.save(); } catch (_) {}
+                  try { window.__countStats && window.__countStats(); } catch (_) {}
+                } catch (e) {
+                  fb.log?.('Anführungszeichen: ' + (e && e.message ? e.message : e), 'info');
+                }
+              });
+
               // Nativer Picker → andere Seite öffnen (vorher aktuellen Stand sichern).
               fb.on('openPage', (p) => {
                 if (!p || p.pageId == null) return;

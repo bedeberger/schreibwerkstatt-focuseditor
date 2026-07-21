@@ -290,6 +290,17 @@ final class LibraryStore: ObservableObject {
         }
     }
 
+    /// Normalisiert die typografischen Anführungszeichen der offenen Seite auf
+    /// den Buch-Stil (Toolbar-Aktion). No-op ohne offene Seite. Die eigentliche
+    /// Normalisierung läuft in der WebView (gebündeltes `quote-normalize.js` aus
+    /// dem Hauptrepo, kein Fork); die Buch-Locale (→ Quote-Stil) holt der
+    /// Swift-Kern serverseitig. Local-first — der Glue sichert direkt nach der
+    /// Änderung.
+    func normalizeQuotes() {
+        guard openPageId != nil else { return }
+        Task { await bridge.normalizeQuotes() }
+    }
+
     /// Bittet die View, den Seiten-Picker einzublenden (Menü-/Toolbar-Einstieg
     /// „Seite öffnen"). Reines Event-Signal über `pickerOpenRequest`, das
     /// [ContentView](../ContentView.swift) beobachtet — der Menübefehl im

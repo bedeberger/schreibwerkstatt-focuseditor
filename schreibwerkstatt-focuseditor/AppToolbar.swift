@@ -103,9 +103,19 @@ struct AppToolbar: View {
                 toolbarUI.pickerOpen.toggle()
             }
 
-            // Seite schliessen — nur sichtbar, wenn eine Seite offen ist. Schliesst
-            // die Seite (lokal gesichert) und öffnet den Picker für die nächste Wahl.
+            // Seiten-bezogene Aktionen — nur sichtbar, wenn eine Seite offen ist.
             if library.openPageId != nil {
+                // Anführungszeichen normalisieren: zieht gerade/gemischte Quotes
+                // der offenen Seite auf den Buch-Stil (de-CH → «», de-DE → „" …).
+                // Häufig gebraucht → direkt in der Leiste statt im Überlauf.
+                ToolbarIconButton(systemName: "quote.opening",
+                                  help: t("toolbar.normalizeQuotesHelp"),
+                                  accessibilityLabel: t("toolbar.normalizeQuotes")) {
+                    library.normalizeQuotes()
+                }
+
+                // Seite schliessen — sichert lokal und öffnet den Picker für die
+                // nächste Wahl.
                 ToolbarIconButton(systemName: "xmark",
                                   help: t("toolbar.closePageHelp"),
                                   accessibilityLabel: t("toolbar.closePage")) {
