@@ -669,14 +669,21 @@ extension WebAssets {
                     // ungültig → Deklaration fällt weg, das Editor-Padding
                     // (2rem) greift: full-bleed wie bisher.
                     '  padding-inline: max(2rem, calc((100% - var(--sw-measure, 0px)) / 2)) !important;',
-                    // Tail-Puffer: die SSoT trägt unten 45 vh, damit der aktive
-                    // Absatz auf der Typewriter-Linie (Mitte) stehen kann. Beim
-                    // reinen Blättern endete der Scroll damit auf einer halb
-                    // leeren Seite. 22 vh ist der Kompromiss ohne JS: das Ende
-                    // zeigt Text, und die letzte Zeile bleibt beim Tippen
-                    // komfortabel über der Unterkante. Native Momentum bleibt
-                    // unangetastet (kein wheel-preventDefault).
-                    '  padding-bottom: calc(var(--focus-vh, 100vh) * 0.22) !important;',
+                    // BEWUSST KEIN padding-bottom-Override: die SSoT trägt unten
+                    // 45 vh (focus-mode.css), und der Typewriter BRAUCHT das.
+                    // Anker 0.5 + Dead-Zone 0.08 → die Schreibzeile ruht bei
+                    // ~58 % der Containerhöhe, unter ihr müssen also ~42 vh
+                    // scrollbar bleiben, damit auch die LETZTE Zeile dort
+                    // ankommt. Ein kürzerer Tail (hier stand mal 22 vh, um am
+                    // Seitenende keine halb leere Fläche zu zeigen) klemmt den
+                    // Scroll: die letzten Absätze erreichen die Schreiblinie
+                    // nie („man kommt nur bis zum zweitletzten"), der Typewriter
+                    // zieht am Ende nicht mehr nach — und der geklemmte
+                    // `scrollBy` feuert kein `scroll`-Event, wodurch der
+                    // SSoT-Counter `expectedScroll` (typewriter.js) leakt und
+                    // danach echte User-Scrolls als „eigener Scroll" verwirft
+                    // (Spotlight bleibt beim Blättern stehen). Der Leerraum am
+                    // Seitenende ist der Preis und Typewriter-üblich.
                     // Schreib-Caret in Marken-Gold — ein dezenter Identitäts-
                     // Akzent genau dort, wo geschrieben wird. Ein Ton, der auf
                     // hellem wie dunklem Papier trägt (kein Theme-Switch nötig).
