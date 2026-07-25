@@ -83,6 +83,7 @@ struct ConflictResolutionView: View {
         case .failed:
             VStack(spacing: 10) {
                 Image(systemName: "wifi.slash").foregroundStyle(BrandColor.muted)
+                    .accessibilityHidden(true)
                 Text(t("conflict.loadFailed"))
                     .font(BrandFont.sans(12))
                     .foregroundStyle(BrandColor.muted)
@@ -115,6 +116,7 @@ struct ConflictResolutionView: View {
                 .foregroundStyle(BrandColor.subtle)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 8)
+                .accessibilityAddTraits(.isHeader)
             Divider()
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 6) {
@@ -142,6 +144,11 @@ struct ConflictResolutionView: View {
                                     Rectangle().fill(tint).frame(width: 2.5)
                                 }
                             }
+                            // „Geändert" wird sonst NUR über Farbe/Balken
+                            // transportiert — für VoiceOver explizit ansagen.
+                            .accessibilityLabel(p.changed
+                                                ? t("conflict.a11y.changed", ["text": p.text])
+                                                : p.text)
                     }
                 }
                 .padding(12)

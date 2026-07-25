@@ -58,6 +58,10 @@ extension EditorBridge {
             "spellcheck.popover.add_to_dict": t("spell.popover.addToDict"),
             "spellcheck.popover.no_suggestions": t("spell.popover.noSuggestions"),
             "spellcheck.popover.rule_info": t("spell.popover.ruleInfo"),
+            // Popover-Close-Button (×): sichtbar bleibt das Glyph, dieser String
+            // trägt nur aria-label/Tooltip. Ohne den Key stünde im Tooltip der
+            // rohe Key (Controller-Fallback `I18N[k] || k`).
+            "spellcheck.popover.close": t("spell.popover.close"),
             "spellcheck.status.active": t("spell.status.active"),
             "spellcheck.status.disabled": t("spell.status.disabled"),
             "spellcheck.status.error": t("spell.status.error"),

@@ -161,6 +161,7 @@
   "spell.popover.addToDict": "Add to dictionary",
   "spell.popover.noSuggestions": "No suggestions",
   "spell.popover.ruleInfo": "Rule info",
+  "spell.popover.close": "Close",
   "spell.status.active": "LanguageTool active",
   "spell.status.disabled": "LanguageTool disabled",
   "spell.status.error": "LanguageTool error",
@@ -207,6 +208,9 @@
   "toolbar.openPage": "Open page",
   "toolbar.closePage": "Close page",
   "toolbar.closePageHelp": "Close page — return to the calm canvas",
+  "toolbar.synonyms": "Synonyms",
+  "toolbar.synonymsHelp": "Synonyms for the word at the cursor (⌘⇧S)",
+  "contextmenu.synonyms": "Suggest synonyms",
   "toolbar.normalizeQuotes": "Quotation marks",
   "toolbar.normalizeQuotesHelp": "Normalize quotation marks to the book style (de-CH «», de-DE „“)",
   "toolbar.appearance": "Appearance",
@@ -322,5 +326,13 @@
   "auth.err.networkGeneric": "No connection to the server.",
   "auth.err.serverWithCode": "Server error ({status}): {code}",
   "auth.err.server": "Server error ({status}).",
-  "auth.err.decoding": "Unexpected server response."
+  "auth.err.decoding": "Unexpected server response.",
+
+  "picker.a11y.dialog": "Open page",
+  "picker.a11y.searchHint": "Typing filters the pages; arrow keys select, return opens.",
+  "picker.a11y.matchCount.one": "{n} match",
+  "picker.a11y.matchCount.other": "{n} matches",
+  "picker.a11y.openHint": "Opens the page in the editor",
+  "content.a11y.loading": "Loading …",
+  "conflict.a11y.changed": "Changed: {text}"
 }

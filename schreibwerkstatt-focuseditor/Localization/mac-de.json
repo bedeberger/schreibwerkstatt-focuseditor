@@ -161,6 +161,7 @@
   "spell.popover.addToDict": "Zum Wörterbuch",
   "spell.popover.noSuggestions": "Keine Vorschläge",
   "spell.popover.ruleInfo": "Regel-Info",
+  "spell.popover.close": "Schliessen",
   "spell.status.active": "LanguageTool aktiv",
   "spell.status.disabled": "LanguageTool deaktiviert",
   "spell.status.error": "LanguageTool-Fehler",
@@ -207,6 +208,9 @@
   "toolbar.openPage": "Seite öffnen",
   "toolbar.closePage": "Seite schließen",
   "toolbar.closePageHelp": "Seite schließen — zur ruhigen Leerfläche",
+  "toolbar.synonyms": "Synonyme",
+  "toolbar.synonymsHelp": "Synonyme für das Wort unter dem Cursor (⌘⇧S)",
+  "contextmenu.synonyms": "Synonyme vorschlagen",
   "toolbar.normalizeQuotes": "Anführungszeichen",
   "toolbar.normalizeQuotesHelp": "Anführungszeichen auf den Buch-Stil ziehen (de-CH «», de-DE „“)",
   "toolbar.appearance": "Darstellung",
@@ -322,5 +326,13 @@
   "auth.err.networkGeneric": "Keine Verbindung zum Server.",
   "auth.err.serverWithCode": "Serverfehler ({status}): {code}",
   "auth.err.server": "Serverfehler ({status}).",
-  "auth.err.decoding": "Unerwartete Server-Antwort."
+  "auth.err.decoding": "Unerwartete Server-Antwort.",
+
+  "picker.a11y.dialog": "Seite öffnen",
+  "picker.a11y.searchHint": "Tippen filtert die Seiten; Pfeiltasten wählen, Eingabetaste öffnet.",
+  "picker.a11y.matchCount.one": "{n} Treffer",
+  "picker.a11y.matchCount.other": "{n} Treffer",
+  "picker.a11y.openHint": "Öffnet die Seite im Editor",
+  "content.a11y.loading": "Wird geladen …",
+  "conflict.a11y.changed": "Geändert: {text}"
 }

@@ -113,6 +113,9 @@ struct LoginView: View {
                                 .textFieldStyle(.roundedBorder)
                                 .disableAutocorrection(true)
                                 .font(BrandFont.sans(13))
+                                // Die Beschriftung steht als eigener Text darüber
+                                // (kein `Label`) → für VoiceOver explizit binden.
+                                .accessibilityLabel(t("login.serverAddress"))
                         }
 
                         field(title: t("login.deviceToken")) {
@@ -120,6 +123,7 @@ struct LoginView: View {
                                 .textFieldStyle(.roundedBorder)
                                 .font(BrandFont.sans(13))
                                 .onSubmit { submit() }
+                                .accessibilityLabel(t("login.deviceToken"))
                         }
                     }
 
@@ -135,6 +139,7 @@ struct LoginView: View {
                             if isBusy {
                                 ProgressView()
                                     .controlSize(.small)
+                                    .accessibilityHidden(true)   // Text sagt „prüfe …"
                             }
                             Text(isBusy ? t("login.checking") : t("login.signIn"))
                                 .font(BrandFont.sans(14, weight: .medium))

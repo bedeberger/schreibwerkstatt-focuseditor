@@ -57,6 +57,14 @@ extension WebAssets {
         \(links)
           <style>
             html, body { margin: 0; height: 100%; background: var(--color-bg, #faf7f2); color: var(--color-text, #1f1c18); }
+            /* Dokument selbst darf NIE scrollen. Der Editor ist ein
+               `position: fixed`-Overlay; ein (auch nur minimal) gescrolltes
+               Dokument darunter zieht Darstellung und Maus-Hit-Test von fixed-
+               Elementen auseinander (Vorschlag sichtbar hier, klickbar dort).
+               Gescrollt wird ausschliesslich .focus-editor__content. Im Web-SPA
+               macht das `body.focus-mode { overflow: hidden }`, das im
+               Standalone-Mount nicht gesetzt wird — darum hier. */
+            html, body { overflow: hidden; overscroll-behavior: none; }
             #mount { height: 100vh; display: flex; flex-direction: column; }
             #boot-status { font: 13px/1.5 -apple-system, system-ui, sans-serif; padding: 24px; }
             .err { color: #c62828; }
@@ -85,6 +93,29 @@ extension WebAssets {
                cursor:none auf .focus-editor__content) gewinnt weiterhin. */
             .focus-editor.is-active { cursor: text; }
             .focus-editor.is-active .focus-editor__topbar { cursor: default; }
+            /* Popover/Menüs sind UI, keine Schreibfläche — der Zeiger muss dort
+               IMMER sichtbar und normal sein. Sie hängen als Kind IN
+               .focus-editor__content (das Popover reitet absichtlich im
+               Scroll-Layer mit), darum trafen sie zwei Cursor-Regeln:
+                 • unser `cursor: text` von oben (I-Beam über UI),
+                 • die Auto-Hide-Regel des Editors
+                   (`.focus-cursor-hidden .focus-editor__content *` → cursor:none).
+               Letztere greift 2 s nach der letzten Mausbewegung wieder
+               (focus/card.js `showCursor` bewaffnet den Timer unbedingt neu) —
+               also genau, während man die Vorschläge liest: der Zeiger
+               verschwand über der Popover-Fläche und tauchte erst über einem
+               Vorschlag-Chip wieder auf („Cursor nach unten verrutscht").
+               Unlayered + höhere Spezifität → gewinnt gegen beide (Editor-CSS
+               liegt in @layer components). Override-Schicht statt Fork; der
+               Fix gehört zusätzlich ins Hauptrepo (gleiche Wirkung im Web-SPA). */
+            .focus-editor.is-active :is(.lt-popover, .synonym-menu, .synonym-picker, .figur-lookup),
+            .focus-editor.is-active :is(.lt-popover, .synonym-menu, .synonym-picker, .figur-lookup) * {
+              cursor: default;
+            }
+            .focus-editor.is-active :is(.lt-popover, .synonym-menu, .synonym-picker, .figur-lookup)
+              :is(button, a, [role="button"], [role="option"]) {
+              cursor: pointer;
+            }
             /* Ruhige Leerfläche, wenn keine Seite offen ist (geschlossen / Boot
                ohne Seite). Liegt über der geleerten Schreibfläche und nimmt ihr
                jede Ablenkung: ein sanfter Verlauf in der Markenfläche + ein
@@ -617,8 +648,35 @@ extension WebAssets {
                     '  font-size: var(--sw-font-size, 19px) !important;',
                     '  line-height: var(--sw-line-height, 1.7) !important;',
                     '  font-family: var(--sw-font-family, ui-serif, Georgia, serif) !important;',
-                    '  max-width: var(--sw-measure, none) !important;',
-                    '  margin-inline: auto !important;',
+                    // Der Scroller füllt die GANZE Fläche; die Spaltenbreite
+                    // (measure) macht das Padding, nicht max-width.
+                    // Grund: .focus-editor__content ist selbst der Scroller
+                    // (focus-mode.css: overflow-y:auto). Mit `max-width:60ch;
+                    // margin:0 auto` gehörten die breiten Leerränder
+                    // links/rechts zum NICHT scrollbaren Eltern-Container —
+                    // das Mausrad dort traf keinen Scroller (html/body sind
+                    // overflow:hidden), das Scrollen „ging nur manchmal",
+                    // nämlich nur mit Zeiger über der Textspalte. Padding statt
+                    // max-width: gleiche Zeilenlänge, aber die ganze Fläche
+                    // scrollt (Klick ins Padding fängt der SSoT-mousedown-
+                    // Handler weiterhin ab → kein Caret-Sprung).
+                    // border-box nötig, weil die Bundle-CSS keinen globalen
+                    // Reset mitbringt (sonst width:100% + Padding = Überlauf).
+                    '  box-sizing: border-box !important;',
+                    '  max-width: none !important;',
+                    '  margin-inline: 0 !important;',
+                    // `--sw-measure: none` (Spaltenbreite aus) macht das calc()
+                    // ungültig → Deklaration fällt weg, das Editor-Padding
+                    // (2rem) greift: full-bleed wie bisher.
+                    '  padding-inline: max(2rem, calc((100% - var(--sw-measure, 0px)) / 2)) !important;',
+                    // Tail-Puffer: die SSoT trägt unten 45 vh, damit der aktive
+                    // Absatz auf der Typewriter-Linie (Mitte) stehen kann. Beim
+                    // reinen Blättern endete der Scroll damit auf einer halb
+                    // leeren Seite. 22 vh ist der Kompromiss ohne JS: das Ende
+                    // zeigt Text, und die letzte Zeile bleibt beim Tippen
+                    // komfortabel über der Unterkante. Native Momentum bleibt
+                    // unangetastet (kein wheel-preventDefault).
+                    '  padding-bottom: calc(var(--focus-vh, 100vh) * 0.22) !important;',
                     // Schreib-Caret in Marken-Gold — ein dezenter Identitäts-
                     // Akzent genau dort, wo geschrieben wird. Ein Ton, der auf
                     // hellem wie dunklem Papier trägt (kein Theme-Switch nötig).
@@ -816,6 +874,68 @@ extension WebAssets {
                     });
                     ctl.attach();
                     window.__synonyms = ctl;
+
+                    // ── Synonyme aus Toolbar/Kontextmenü auslösen (Swift → JS) ─
+                    // Der Controller (SSoT, kein Fork) kennt nur seinen Hotkey
+                    // ⌘⇧S auf dem Editor-Root — er exportiert keinen
+                    // programmatischen Trigger. Statt ihn zu forken feuern wir
+                    // genau dieses Tastenereignis synthetisch: der Controller
+                    // erledigt dann seine eigene Wort-/Selektions-Logik
+                    // (Auswahl oder Caret-Wort) unverändert. Der Klick in der
+                    // Titelleiste nimmt der WebView den Fokus — Swift gibt ihn
+                    // vorher zurück, hier zusätzlich der Editor-Fokus, damit die
+                    // Selektion/der Caret wieder lebt.
+                    //
+                    // Kommt ein Punkt mit (Rechtsklick-Kontextmenü), wird der
+                    // Caret vorher dorthin gesetzt: der Rechtsklick verschiebt
+                    // ihn im contenteditable nicht zuverlässig, sonst käme das
+                    // Synonym zum zuletzt bearbeiteten Wort statt zum
+                    // angeklickten. Eine bestehende Auswahl, in die hinein
+                    // geklickt wurde, bleibt unangetastet.
+                    function caretToPoint(x, y) {
+                      const sel = window.getSelection();
+                      if (!sel) return;
+                      if (sel.rangeCount > 0 && !sel.isCollapsed) {
+                        const rects = sel.getRangeAt(0).getClientRects();
+                        for (const rc of rects) {
+                          if (x >= rc.left && x <= rc.right && y >= rc.top && y <= rc.bottom) return;
+                        }
+                      }
+                      let r = null;
+                      if (document.caretRangeFromPoint) {
+                        r = document.caretRangeFromPoint(x, y);
+                      } else if (document.caretPositionFromPoint) {
+                        const p = document.caretPositionFromPoint(x, y);
+                        if (p && p.offsetNode) {
+                          r = document.createRange();
+                          r.setStart(p.offsetNode, p.offset);
+                          r.collapse(true);
+                        }
+                      }
+                      if (!r || !root.contains(r.startContainer)) return;
+                      sel.removeAllRanges();
+                      sel.addRange(r);
+                    }
+
+                    fb.on('synonyms', (p) => {
+                      try {
+                        // Bewusst `root` (nicht activeContent()) — genau das
+                        // Element, auf dem der Controller lauscht und gegen das
+                        // er die Selektion prüft.
+                        if (document.activeElement !== root) root.focus?.();
+                        if (p && typeof p.x === 'number' && typeof p.y === 'number') {
+                          caretToPoint(p.x, p.y);
+                        }
+                        root.dispatchEvent(new KeyboardEvent('keydown', {
+                          key: 's', code: 'KeyS',
+                          metaKey: true, shiftKey: true,
+                          bubbles: true, cancelable: true,
+                        }));
+                      } catch (e) {
+                        fb.log?.('Synonyme-Trigger: ' + (e && e.message ? e.message : e), 'info');
+                      }
+                    });
+
                     fb.log?.('Synonyme aktiv');
                   }
                 }

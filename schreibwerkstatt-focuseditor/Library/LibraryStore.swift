@@ -72,6 +72,9 @@ final class LibraryStore: ObservableObject {
     private let content: ContentAPI
     private let store: any LocalStore
     private let bridge: EditorBridge
+    /// Persistenz des aktiven Buchs — injizierbar, damit die Tests eine eigene
+    /// Suite verwenden (produktiv immer `.standard`).
+    private let defaults: UserDefaults
     private let log = Logger(subsystem: "ch.schreibwerkstatt.focuseditor", category: "library")
 
     /// Aktives Buch ist server-spezifisch (eine Buch-ID gilt nur am Server, der
@@ -83,14 +86,15 @@ final class LibraryStore: ObservableObject {
     private var defaultsKey: String { Self.bookDefaultsKey() }
     private static let legacyDefaultsKey = "library.activeBookId"
 
-    init(content: ContentAPI, store: any LocalStore, bridge: EditorBridge) {
+    init(content: ContentAPI, store: any LocalStore, bridge: EditorBridge, defaults: UserDefaults = .standard) {
         self.content = content
         self.store = store
         self.bridge = bridge
+        self.defaults = defaults
         // Alt-Key (global) einmalig in den Namespace des aktuellen Servers ziehen.
-        Self.migrateLegacyBookKeyIfNeeded()
+        Self.migrateLegacyBookKeyIfNeeded(defaults)
         // Aktives Buch wiederherstellen (0 = nicht gesetzt).
-        let saved = UserDefaults.standard.integer(forKey: Self.bookDefaultsKey())
+        let saved = defaults.integer(forKey: Self.bookDefaultsKey())
         self.activeBookId = saved == 0 ? nil : saved
         // Offene Seite vom Editor übernehmen (per Picker geöffnet oder beim Boot
         // wiederhergestellt) — hält die Toolbar-Anzeige aktuell.
@@ -183,7 +187,7 @@ final class LibraryStore: ObservableObject {
         guard id != activeBookId else { return }
         let isSwitch = activeBookId != nil
         activeBookId = id
-        UserDefaults.standard.set(id, forKey: defaultsKey)
+        defaults.set(id, forKey: defaultsKey)
         guard isSwitch else {
             Task { await refreshPages() }
             return
@@ -301,6 +305,15 @@ final class LibraryStore: ObservableObject {
         Task { await bridge.normalizeQuotes() }
     }
 
+    /// Öffnet die Synonym-Hilfe für das Wort unter Auswahl/Caret (Toolbar-
+    /// Aktion) — der klickbare Zwilling zu ⌘⇧S, für alle, die den Hotkey nicht
+    /// kennen. No-op ohne offene Seite. Die Auswahl-Logik und das Menü liefert
+    /// der gebündelte Synonym-Controller aus dem Hauptrepo (kein Fork).
+    func openSynonyms() {
+        guard openPageId != nil else { return }
+        Task { await bridge.openSynonyms() }
+    }
+
     /// Bittet die View, den Seiten-Picker einzublenden (Menü-/Toolbar-Einstieg
     /// „Seite öffnen"). Reines Event-Signal über `pickerOpenRequest`, das
     /// [ContentView](../ContentView.swift) beobachtet — der Menübefehl im
@@ -334,7 +347,7 @@ final class LibraryStore: ObservableObject {
         openPageDirty = false
         lastError = nil
         saveError = nil
-        let saved = UserDefaults.standard.integer(forKey: defaultsKey)
+        let saved = defaults.integer(forKey: defaultsKey)
         activeBookId = saved == 0 ? nil : saved
         Task { await loadBooks() }
     }
@@ -342,8 +355,7 @@ final class LibraryStore: ObservableObject {
     /// Einmal-Migration: den globalen Alt-Key in den Namespace des aktuell
     /// konfigurierten Servers übertragen, falls dort noch nichts steht. Danach den
     /// Alt-Key entfernen, damit er nicht erneut auf einen anderen Server „leakt".
-    private static func migrateLegacyBookKeyIfNeeded() {
-        let defaults = UserDefaults.standard
+    private static func migrateLegacyBookKeyIfNeeded(_ defaults: UserDefaults) {
         let legacy = defaults.integer(forKey: legacyDefaultsKey)
         guard legacy != 0 else { return }
         let targetKey = bookDefaultsKey()

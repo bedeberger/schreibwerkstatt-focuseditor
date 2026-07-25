@@ -559,6 +559,35 @@ final class EditorBridge: NSObject, WKScriptMessageHandlerWithReply, EditorCoord
         }
     }
 
+    /// Öffnet die Synonym-Hilfe für das Wort unter Auswahl/Caret (`synonyms`-
+    /// Event; Toolbar-Knopf und Kontextmenü-Eintrag). Fachlich identisch zu ⌘⇧S
+    /// im Editor — der Glue feuert genau dieses Tastenereignis synthetisch am
+    /// Editor-Root, damit die Wort-/Selektions-Logik des gebündelten Controllers
+    /// (SSoT, kein Fork) unverändert greift. Der Klick in der Titelleiste nimmt
+    /// der WebView den Fokus → vorher wieder zum First Responder machen, sonst
+    /// steht kein Caret/keine Auswahl mehr zur Verfügung.
+    ///
+    /// `point` (CSS-Viewport-Koordinaten) kommt vom Kontextmenü: der Rechtsklick
+    /// setzt in einem contenteditable nicht zuverlässig den Caret, darum bestimmt
+    /// der Glue das Wort über `caretRangeFromPoint`. Ohne Punkt (Toolbar) gilt
+    /// die bestehende Auswahl bzw. der Caret. No-op ohne WebView; rein UI-öffnend
+    /// (kein Datenverlust-Risiko) → Fehler nur geloggt.
+    func openSynonyms(at point: CGPoint? = nil) async {
+        guard let webView else { return }
+        webView.window?.makeFirstResponder(webView)
+        var payload: [String: Any] = [:]
+        if let point { payload = ["x": Double(point.x), "y": Double(point.y)] }
+        do {
+            _ = try await webView.callAsyncJavaScript(
+                "window.__focusBridge._receive('synonyms', payload);",
+                arguments: ["payload": payload],
+                in: nil,
+                contentWorld: .page)
+        } catch {
+            log.error("openSynonyms fehlgeschlagen: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
     /// Persistiert den offenen Draft sofort (`_flushSave`) und WARTET darauf —
     /// für ⌘S, das vor dem manuellen Sync den aktuellen Stand sichern soll
     /// (der Editor-Autosave läuft entprellt). Awaitable im Gegensatz zum

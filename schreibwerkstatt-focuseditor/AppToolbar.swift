@@ -52,6 +52,10 @@ struct AppToolbar: View {
     /// Hover-Zustand des Überlauf-Menüs (Material-Highlight).
     @State private var overflowHover = false
 
+    /// Synonym-Hilfe lokal an/aus (Einstellungen → Schreiben) — steuert die
+    /// Sichtbarkeit des Synonym-Knopfs, damit kein wirkungsloses Icon steht.
+    @AppStorage(SynonymPrefs.enabledKey) private var synonymsEnabled = true
+
     /// Gemessene Breite der Leiste — treibt das responsive Zusammenfalten des
     /// Breadcrumbs auf schmalen Fenstern (s. `showChapter`).
     @State private var toolbarWidth: CGFloat = 0
@@ -105,6 +109,18 @@ struct AppToolbar: View {
 
             // Seiten-bezogene Aktionen — nur sichtbar, wenn eine Seite offen ist.
             if library.openPageId != nil {
+                // Synonyme (⌘⇧S) als Klick-Einstieg: der Hotkey ist nicht
+                // sichtbar, der Knopf schon. Nur wenn die Synonym-Hilfe lokal
+                // aktiv ist (Einstellungen → Schreiben) — sonst wäre der Klick
+                // wirkungslos.
+                if synonymsEnabled {
+                    ToolbarIconButton(systemName: "text.book.closed",
+                                      help: t("toolbar.synonymsHelp"),
+                                      accessibilityLabel: t("toolbar.synonyms")) {
+                        library.openSynonyms()
+                    }
+                }
+
                 // Anführungszeichen normalisieren: zieht gerade/gemischte Quotes
                 // der offenen Seite auf den Buch-Stil (de-CH → «», de-DE → „" …).
                 // Häufig gebraucht → direkt in der Leiste statt im Überlauf.

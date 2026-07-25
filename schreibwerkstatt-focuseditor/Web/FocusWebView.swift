@@ -14,6 +14,7 @@
 //  Die Bridge-Facade wird at-document-start in beide Fälle injiziert.
 //
 
+import AppKit
 import SwiftUI
 import WebKit
 
@@ -52,7 +53,18 @@ struct FocusWebView: NSViewRepresentable {
             config.setURLSchemeHandler(handler, forURLScheme: AppScheme.scheme)
         }
 
-        let webView = WKWebView(frame: .zero, configuration: config)
+        // Subklasse statt WKWebView: sie hängt dem nativen Kontextmenü der
+        // Schreibfläche den Synonym-Eintrag voran (Rechtsklick-Zwilling zu ⌘⇧S
+        // und zum Toolbar-Knopf). Der Klickpunkt geht mit an die Bridge, damit
+        // der Glue das Wort unter der Maus bestimmt — der Rechtsklick setzt in
+        // einem contenteditable nicht zuverlässig den Caret.
+        let webView = FocusEditorWebView(frame: .zero, configuration: config)
+        webView.isSynonymsAvailable = { [bridge] in
+            SynonymPrefs.localEnabled && bridge.openPageId != nil
+        }
+        webView.onSynonyms = { [bridge] point in
+            Task { await bridge.openSynonyms(at: point) }
+        }
         Self.makeTransparent(webView)
         webView.navigationDelegate = context.coordinator
         #if DEBUG
@@ -103,16 +115,31 @@ struct FocusWebView: NSViewRepresentable {
         var schemeHandler: AppSchemeHandler?
 
         // HARTE REGEL: keine externen Navigationen. Nur lokale Schemes erlauben.
+        //
+        // Ausnahme für vom Nutzer angeklickte http(s)-Links (z. B. „Regel-Info"
+        // im LanguageTool-Popover, `<a target="_blank">`): die Navigation wird in
+        // der WebView weiter abgelehnt, die URL aber an den Standard-Browser
+        // übergeben. Ohne das reagiert der Link gar nicht — `target="_blank"`
+        // bräuchte zusätzlich einen WKUIDelegate, und `.cancel` erstickt ihn ohnehin.
         func webView(_ webView: WKWebView,
                      decidePolicyFor navigationAction: WKNavigationAction,
                      decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-            let scheme = navigationAction.request.url?.scheme?.lowercased()
+            let url = navigationAction.request.url
+            let scheme = url?.scheme?.lowercased()
             if scheme == AppScheme.scheme || scheme == "file" || scheme == "about" || scheme == nil {
                 decisionHandler(.allow)
-            } else {
-                // http(s)/mailto/… gehören nicht in die Editor-WebView.
-                decisionHandler(.cancel)
+                return
             }
+            decisionHandler(.cancel)
+            // http(s)/mailto/… gehören nicht in die Editor-WebView.
+            guard let url, scheme == "http" || scheme == "https" else { return }
+            // Nur echte Nutzer-Links: angeklickt oder als neues Fenster
+            // angefordert (`target="_blank"` → targetFrame == nil, WebKit meldet
+            // das je nach Fall als .linkActivated oder .other). Keine
+            // Auto-Navigation aus dem Dokument heraus.
+            let isNewWindow = navigationAction.targetFrame == nil
+            guard navigationAction.navigationType == .linkActivated || isNewWindow else { return }
+            NSWorkspace.shared.open(url)
         }
     }
 }

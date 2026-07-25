@@ -7,8 +7,12 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		61DB000000000000000000C3 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = 61DB000000000000000000C2 /* GRDB */; };
 		61DB000000000000000000A3 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = 61DB000000000000000000A2 /* GRDB */; };
 		61DB000000000000000000B3 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 61DB000000000000000000B2 /* Sparkle */; };
+		7E0000000000000000000070 /* WritingTimeTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E0000000000000000000060 /* WritingTimeTracker.swift */; };
+		7E0000000000000000000071 /* LibraryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E0000000000000000000061 /* LibraryStore.swift */; };
+		7E0000000000000000000072 /* GRDBLocalStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E0000000000000000000062 /* GRDBLocalStore.swift */; };
 		7E0000000000000000000010 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E0000000000000000000020 /* APIClient.swift */; };
 		7E0000000000000000000011 /* AuthError.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E0000000000000000000021 /* AuthError.swift */; };
 		7E0000000000000000000012 /* ServerConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E0000000000000000000022 /* ServerConfig.swift */; };
@@ -50,6 +54,9 @@
 /* Begin PBXFileReference section */
 		61EA813C2FDE904700FBD31B /* Focuseditor.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Focuseditor.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		7E0000000000000000000002 /* schreibwerkstatt-focuseditorTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "schreibwerkstatt-focuseditorTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+		7E0000000000000000000060 /* WritingTimeTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = WritingTimeTracker.swift; path = "schreibwerkstatt-focuseditor/Writing/WritingTimeTracker.swift"; sourceTree = SOURCE_ROOT; };
+		7E0000000000000000000061 /* LibraryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LibraryStore.swift; path = "schreibwerkstatt-focuseditor/Library/LibraryStore.swift"; sourceTree = SOURCE_ROOT; };
+		7E0000000000000000000062 /* GRDBLocalStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = GRDBLocalStore.swift; path = "schreibwerkstatt-focuseditor/Store/GRDBLocalStore.swift"; sourceTree = SOURCE_ROOT; };
 		7E0000000000000000000020 /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = APIClient.swift; path = "schreibwerkstatt-focuseditor/Auth/APIClient.swift"; sourceTree = SOURCE_ROOT; };
 		7E0000000000000000000021 /* AuthError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AuthError.swift; path = "schreibwerkstatt-focuseditor/Auth/AuthError.swift"; sourceTree = SOURCE_ROOT; };
 		7E0000000000000000000022 /* ServerConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ServerConfig.swift; path = "schreibwerkstatt-focuseditor/Auth/ServerConfig.swift"; sourceTree = SOURCE_ROOT; };
@@ -106,6 +113,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				61DB000000000000000000C3 /* GRDB in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -205,6 +213,7 @@
 			);
 			name = "schreibwerkstatt-focuseditorTests";
 			packageProductDependencies = (
+				61DB000000000000000000C2 /* GRDB */,
 			);
 			productName = "schreibwerkstatt-focuseditorTests";
 			productReference = 7E0000000000000000000002 /* schreibwerkstatt-focuseditorTests.xctest */;
@@ -284,6 +293,9 @@
 			buildActionMask = 2147483647;
 			files = (
 				7E0000000000000000000010 /* APIClient.swift in Sources */,
+				7E0000000000000000000070 /* WritingTimeTracker.swift in Sources */,
+				7E0000000000000000000071 /* LibraryStore.swift in Sources */,
+				7E0000000000000000000072 /* GRDBLocalStore.swift in Sources */,
 				7E0000000000000000000011 /* AuthError.swift in Sources */,
 				7E0000000000000000000012 /* ServerConfig.swift in Sources */,
 				7E0000000000000000000013 /* DeviceToken.swift in Sources */,
@@ -606,6 +618,11 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		61DB000000000000000000C2 /* GRDB */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 61DB000000000000000000A1 /* XCRemoteSwiftPackageReference "GRDB" */;
+			productName = GRDB;
+		};
 		61DB000000000000000000A2 /* GRDB */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = 61DB000000000000000000A1 /* XCRemoteSwiftPackageReference "GRDB" */;

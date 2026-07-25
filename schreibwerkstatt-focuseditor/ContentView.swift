@@ -43,6 +43,7 @@ private struct LoadingView: View {
             BrandColor.bg.ignoresSafeArea()
             ProgressView()
                 .controlSize(.large)
+                .accessibilityLabel(t("content.a11y.loading"))
         }
         .frame(minWidth: 520, minHeight: 420)
     }
@@ -176,6 +177,7 @@ private struct EmptyEditorView: View {
                 Image(systemName: "book.closed")
                     .font(.system(size: 30, weight: .light))
                     .foregroundStyle(BrandColor.faint)
+                    .accessibilityHidden(true)   // dekorativ; der Text sagt es
 
                 VStack(spacing: 5) {
                     if let book = library.activeBookName {
@@ -189,6 +191,8 @@ private struct EmptyEditorView: View {
                         .font(BrandFont.sans(13))
                         .foregroundStyle(BrandColor.faint)
                 }
+                // Buchname + Zustand als EIN Satz vorlesen statt als Fragmente.
+                .accessibilityElement(children: .combine)
 
                 VStack(spacing: 10) {
                     if let last = library.lastOpenPageRow {
@@ -230,6 +234,7 @@ private struct NoBooksView: View {
                 Image(systemName: "books.vertical")
                     .font(.system(size: 30, weight: .light))
                     .foregroundStyle(BrandColor.faint)
+                    .accessibilityHidden(true)
                 VStack(spacing: 5) {
                     Text(t("empty.noBooksTitle"))
                         .font(BrandFont.serif(17))
@@ -239,6 +244,7 @@ private struct NoBooksView: View {
                         .foregroundStyle(BrandColor.faint)
                         .multilineTextAlignment(.center)
                 }
+                .accessibilityElement(children: .combine)
                 EmptyStateButton(title: t("content.retry"), prominent: true, action: reload)
                     .frame(maxWidth: 240)
             }
@@ -272,6 +278,8 @@ private struct SaveErrorBanner: View {
                     .foregroundStyle(.white.opacity(0.85))
                     .lineLimit(2)
             }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("\(t("save.failedTitle")): \(message)")
             Spacer(minLength: 8)
             Button(action: dismiss) {
                 Image(systemName: "xmark")
@@ -355,6 +363,7 @@ private struct BundleLoadingView: View {
             BrandColor.bg.ignoresSafeArea()
             VStack(spacing: 14) {
                 ProgressView().controlSize(.large)
+                    .accessibilityHidden(true)   // der Text daneben trägt die Aussage
                 Text(t("content.loadingEditor"))
                     .font(BrandFont.sans(13))
                     .foregroundStyle(BrandColor.muted)
@@ -372,6 +381,7 @@ private struct BookSwitchLoadingView: View {
             BrandColor.bg.ignoresSafeArea()
             VStack(spacing: 14) {
                 ProgressView().controlSize(.large)
+                    .accessibilityHidden(true)
                 Text(t("library.switchingBook"))
                     .font(BrandFont.sans(13))
                     .foregroundStyle(BrandColor.muted)
@@ -394,6 +404,7 @@ private struct BundleUnavailableView: View {
                 Image(systemName: "wifi.slash")
                     .font(.system(size: 32))
                     .foregroundStyle(BrandColor.muted)
+                    .accessibilityHidden(true)
                 Text(t("content.editorUnavailableTitle"))
                     .font(BrandFont.serif(18))
                 Text(message)

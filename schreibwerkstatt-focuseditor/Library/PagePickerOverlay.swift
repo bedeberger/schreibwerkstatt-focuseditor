@@ -136,6 +136,7 @@ struct PagePickerOverlay: View {
             Color.black.opacity(0.25)
                 .ignoresSafeArea()
                 .onTapGesture { close() }
+                .accessibilityHidden(true)   // rein dekorativ (⎋ schliesst ebenfalls)
 
             VStack(spacing: 0) {
                 searchField
@@ -156,6 +157,11 @@ struct PagePickerOverlay: View {
                     .strokeBorder(BrandColor.muted.opacity(0.2))
             )
             .shadow(radius: 30, y: 8)
+            // Modal: VoiceOver soll nicht in den Editor dahinter wandern, solange
+            // der Picker offen ist.
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel(t("picker.a11y.dialog"))
+            .accessibilityAddTraits(.isModal)
         }
         .onExitCommand { close() }               // ⎋
         .onAppear {
@@ -214,12 +220,16 @@ struct PagePickerOverlay: View {
                 .onSubmit(openSelected)         // ⏎ (Fallback; Monitor fängt i. d. R. ab)
                 // Text-Cursor nur hier — übersteuert das `.default` des Overlays.
                 .pointerStyle(.horizontalText)
+                .accessibilityLabel(t("picker.searchPage"))
+                .accessibilityHint(t("picker.a11y.searchHint"))
 
             if !library.pages.isEmpty {
                 Text("\(filtered.count)")
                     .font(BrandFont.sans(11))
                     .monospacedDigit()
                     .foregroundStyle(BrandColor.muted)
+                    // Nackte Zahl wäre ohne Kontext vorgelesen.
+                    .accessibilityLabel(tn(filtered.count, "picker.a11y.matchCount"))
             }
         }
         .padding(.horizontal, 14)
@@ -371,6 +381,11 @@ struct PagePickerOverlay: View {
             // dekorativ (kein Button) → für Klicks transparent schalten, damit sie
             // an den darunterliegenden Zeilen-Button durchgehen.
             .allowsHitTesting(false)
+            // Für VoiceOver eine echte Überschrift (Rotor-Navigation über die
+            // Kapitel), statt der aufgesplitteten Breadcrumb-Fragmente.
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(path.joined(separator: " › "))
+            .accessibilityAddTraits(.isHeader)
     }
 
     /// Baut den Breadcrumb-`Text` aus dem Kapitelpfad: Trennzeichen „›" und
@@ -444,6 +459,31 @@ struct PagePickerOverlay: View {
             .background(isSelected ? BrandColor.primary.opacity(0.14) : Color.clear)
         }
         .buttonStyle(.plain)
+        // Eine Zeile = EIN VoiceOver-Element. Sonst liest der Screenreader Name,
+        // Badge und Relativ-Zeit als drei zusammenhanglose Fragmente vor.
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(rowLabel(row))
+        .accessibilityHint(t("picker.a11y.openHint"))
+        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+    }
+
+    /// Vorlese-Text einer Zeile: Seitenname, Kapitelpfad, Zustand („geöffnet" /
+    /// Volltext-Treffer) und die letzte Änderung — in dieser Reihenfolge, damit
+    /// das Wichtigste zuerst kommt.
+    private func rowLabel(_ row: PagePickerRow) -> String {
+        var parts = [row.name.isEmpty ? t("picker.untitled") : row.name]
+        if !row.chapterPath.isEmpty {
+            parts.append(row.chapterPath.joined(separator: " › "))
+        }
+        if row.id == library.openPageId {
+            parts.append(t("picker.openBadge"))
+        } else if isContentOnlyMatch(row) {
+            parts.append(t("picker.textMatch"))
+        }
+        if let updated = row.updatedAt {
+            parts.append(Self.relative(updated))
+        }
+        return parts.joined(separator: ", ")
     }
 
     /// Passt die Zeile NUR über ihren Inhalt (Volltext), nicht über Name oder

@@ -29,9 +29,20 @@
 //  (oder Server-Rückwechsel) wird sie geladen und gesendet. Inhalte/Outbox sind
 //  nie betroffen; ein verlorener Ping kostet höchstens ein paar Sekunden Statistik.
 //
+//  Beim Beenden (`NSApplication.willTerminate`) wird das laufende Segment noch
+//  abgeschlossen: `⌘Q` liefert keinen verlässlichen Scene-Phasen-Wechsel mehr, die
+//  seit dem letzten Heartbeat gezählten Sekunden (bis zu 15 s) gingen sonst
+//  verloren. `captureSegment` schreibt sie in `pending` → `didSet` persistiert
+//  synchron, der nächste Start sendet sie.
+//
+//  Testbarkeit: Uhr (`now`) und `UserDefaults` sind injizierbar, und der
+//  Heartbeat-Rumpf steckt in `heartbeatTick()` — so lässt sich die Idle-/Deckel-
+//  Arithmetik ohne echtes Warten prüfen (WritingTimeTrackerTests).
+//
 
 import Foundation
 import Combine
+import AppKit
 import os
 
 @MainActor
@@ -39,6 +50,13 @@ final class WritingTimeTracker: ObservableObject {
     private let api: APIClient
     /// Nur melden, wenn angemeldet (sonst 401). Spiegelt `SyncEngine.shouldSync`.
     private let isSignedIn: () -> Bool
+    /// Uhr — injizierbar, damit Tests die Idle-/Deckel-Arithmetik ohne echtes
+    /// Warten durchspielen können. Produktiv immer `Date.init`.
+    private let now: () -> Date
+    /// Persistenz-Backend (injizierbar → hermetische Tests, produktiv `.standard`).
+    private let defaults: UserDefaults
+    /// Beobachter für `willTerminate` (im `deinit` wieder abgemeldet).
+    private var terminateObserver: NSObjectProtocol?
     private let log = Logger(subsystem: "ch.schreibwerkstatt.focuseditor", category: "writing-time")
 
     /// Heartbeat-Kadenz — wie die Web-Seite (15 s).
@@ -98,28 +116,62 @@ final class WritingTimeTracker: ObservableObject {
 
     private var heartbeat: Task<Void, Never>?
 
-    init(api: APIClient, isSignedIn: @escaping () -> Bool) {
+    init(api: APIClient,
+         isSignedIn: @escaping () -> Bool,
+         now: @escaping () -> Date = Date.init,
+         defaults: UserDefaults = .standard,
+         observeTermination: Bool = true) {
         self.api = api
         self.isSignedIn = isSignedIn
+        self.now = now
+        self.defaults = defaults
         // Puffer des aktuell konfigurierten Servers aus einer früheren Sitzung
         // laden. Initialer Set im Init → didSet feuert nicht (kein Rück-Schreiben).
         self.slug = ServerNamespace.currentSlug
-        self.pending = Self.loadPersisted(slug: self.slug)
+        self.pending = Self.loadPersisted(slug: self.slug, defaults: defaults)
         loadToday()
+        if observeTermination { observeTerminate() }
+    }
+
+    deinit {
+        if let terminateObserver {
+            NotificationCenter.default.removeObserver(terminateObserver)
+        }
+    }
+
+    /// Beim App-Beenden das laufende Segment noch gutschreiben. `⌘Q` beendet den
+    /// Prozess, ohne dass zuverlässig ein Scene-Phasen-Wechsel (`setActive(false)`)
+    /// durchkommt — ohne diesen Hook verfielen die seit dem letzten Heartbeat
+    /// gezählten Sekunden. Senden geht hier nicht mehr (async), aber `pending`
+    /// wird über `didSet` synchron persistiert; der nächste Start flusht.
+    private func observeTerminate() {
+        terminateObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.willTerminateNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.captureSegment(continueCounting: false)
+                self.stopHeartbeat()
+            }
+        }
     }
 
     /// Koppelt den Tracker an den LibraryStore: jede Änderung am „wo schreibt der
     /// Nutzer"-Kontext (aktives Buch / offene Seite) bewertet das Zählen neu.
     func attach(to library: LibraryStore) {
         library.onWritingContextChange = { [weak self] bookId, hasOpenPage in
-            guard let self else { return }
-            self.activeBookId = bookId
-            self.hasOpenPage = hasOpenPage
-            self.reevaluate()
+            self?.updateContext(bookId: bookId, hasOpenPage: hasOpenPage)
         }
         // Anfangszustand übernehmen (der Callback feuert nur bei Änderungen).
-        activeBookId = library.activeBookId
-        hasOpenPage = library.openPageId != nil
+        updateContext(bookId: library.activeBookId, hasOpenPage: library.openPageId != nil)
+    }
+
+    /// Der „wo schreibt der Nutzer"-Kontext (aktives Buch + offene Seite). Vom
+    /// `LibraryStore`-Callback getrieben; als eigener Einstieg geführt, damit die
+    /// Zähl-Logik ohne LibraryStore testbar bleibt.
+    func updateContext(bookId: Int?, hasOpenPage: Bool) {
+        activeBookId = bookId
+        self.hasOpenPage = hasOpenPage
         reevaluate()
     }
 
@@ -146,7 +198,7 @@ final class WritingTimeTracker: ObservableObject {
         segmentBookId = nil
         lastActivityAt = nil
         slug = ServerNamespace.currentSlug
-        pending = Self.loadPersisted(slug: slug)
+        pending = Self.loadPersisted(slug: slug, defaults: defaults)
         loadToday()
     }
 
@@ -163,16 +215,20 @@ final class WritingTimeTracker: ObservableObject {
     /// setzt `lastActivityAt` ohnehin sofort).
     private var isIdle: Bool {
         guard let last = lastActivityAt else { return false }
-        return Date().timeIntervalSince(last) > idleThreshold
+        return now().timeIntervalSince(last) > idleThreshold
     }
+
+    /// Aktuell gepufferte, noch nicht bestätigte Sekunden je Buch — Lesezugriff
+    /// für die Tests (produktiv liest niemand mit).
+    var pendingSeconds: [Int: Int] { pending }
 
     /// Vom `bridge.onActivity`-Hook bei jeder `reportStats`-Meldung gerufen
     /// (debounced bei `input` → echtes Tippen). Setzt die Idle-Uhr zurück und
     /// nimmt ein idle-pausiertes Segment wieder auf (Kontext zählt, Segment ruht).
     func notifyActivity() {
-        lastActivityAt = Date()
+        lastActivityAt = now()
         if shouldCount, segmentStart == nil, let book = activeBookId {
-            segmentStart = Date()
+            segmentStart = now()
             segmentBookId = book
             startHeartbeat()
         }
@@ -186,15 +242,15 @@ final class WritingTimeTracker: ObservableObject {
                 // Frischer Start (Seite geöffnet / Fenster aktiviert / Login, oder
                 // Aufwachen aus Idle-Pause): zählt als Aktivität, damit die Idle-Uhr
                 // nicht sofort wieder abläuft.
-                lastActivityAt = Date()
-                segmentStart = Date()
+                lastActivityAt = now()
+                segmentStart = now()
                 segmentBookId = book
                 startHeartbeat()
             } else if segmentBookId != book {
                 // Buchwechsel bei laufendem Zählen → bisherige Zeit dem alten Buch
                 // gutschreiben, dann frisch fürs neue Buch weiterzählen.
                 captureSegment(continueCounting: false)
-                segmentStart = Date()
+                segmentStart = now()
                 segmentBookId = book
             }
         } else if segmentStart != nil {
@@ -210,7 +266,7 @@ final class WritingTimeTracker: ObservableObject {
     /// `false`: das Segment endet.
     private func captureSegment(continueCounting: Bool) {
         guard let start = segmentStart, let book = segmentBookId else { return }
-        let now = Date()
+        let now = self.now()
         // Idle-Deckel: anrechenbar nur bis `letzte Aktivität + idleThreshold`.
         // Eine längere Tipp-Pause (Idle) wird so nicht mitgezählt — auch wenn der
         // Heartbeat sie erst beim nächsten Tick bemerkt, bindet der Deckel hier.
@@ -236,7 +292,7 @@ final class WritingTimeTracker: ObservableObject {
     /// Schreibt die angerechneten Sekunden der Tages-Summe gut (für die UI). Beim
     /// Tageswechsel wird zuvor auf 0 zurückgesetzt.
     private func creditToday(_ seconds: Int) {
-        let today = Self.dayStamp()
+        let today = Self.dayStamp(now())
         if today != todayStamp {
             todayStamp = today
             todaySeconds = 0
@@ -254,19 +310,32 @@ final class WritingTimeTracker: ObservableObject {
             while !Task.isCancelled {
                 try? await Task.sleep(for: self.heartbeatInterval)
                 if Task.isCancelled { break }
-                if self.isIdle {
-                    // Idle: das Reststück bis zur Deadline gutschreiben (greift im
-                    // Deckel von captureSegment), Segment schließen und pausieren.
-                    // `notifyActivity()` nimmt es beim nächsten Tippen wieder auf.
-                    self.captureSegment(continueCounting: false)
-                    self.stopHeartbeat()
-                    await self.flushPending()
-                    break
-                }
-                self.captureSegment(continueCounting: true)
-                await self.flushPending()
+                if await self.heartbeatTick() == .paused { break }
             }
         }
+    }
+
+    /// Ergebnis eines Heartbeat-Ticks: läuft das Segment weiter, oder wurde es
+    /// (idle) pausiert? Steuert das Verlassen der Heartbeat-Schleife.
+    enum TickResult: Equatable { case counting, paused }
+
+    /// EIN Heartbeat-Schritt — Rumpf der Schleife, ohne das Warten. Getrennt
+    /// geführt, damit Tests ihn mit einer gestellten Uhr direkt treiben können
+    /// (kein 15-s-Sleep im Test).
+    @discardableResult
+    func heartbeatTick() async -> TickResult {
+        if isIdle {
+            // Idle: das Reststück bis zur Deadline gutschreiben (greift im
+            // Deckel von captureSegment), Segment schließen und pausieren.
+            // `notifyActivity()` nimmt es beim nächsten Tippen wieder auf.
+            captureSegment(continueCounting: false)
+            stopHeartbeat()
+            await flushPending()
+            return .paused
+        }
+        captureSegment(continueCounting: true)
+        await flushPending()
+        return .counting
     }
 
     private func stopHeartbeat() {
@@ -313,19 +382,19 @@ final class WritingTimeTracker: ObservableObject {
     private func persistPending() {
         let key = Self.pendingKeyPrefix + slug
         if pending.isEmpty {
-            UserDefaults.standard.removeObject(forKey: key)
+            defaults.removeObject(forKey: key)
         } else {
             // UserDefaults verlangt String-Keys → Buch-ID als String ablegen.
             let encoded = Dictionary(uniqueKeysWithValues: pending.map { (String($0.key), $0.value) })
-            UserDefaults.standard.set(encoded, forKey: key)
+            defaults.set(encoded, forKey: key)
         }
     }
 
     /// Liest den persistierten Puffer eines Servers zurück (defensiv: nur positive
     /// Sekunden, nur ganzzahlige Buch-IDs — Fremdformate werden verworfen).
-    private static func loadPersisted(slug: String) -> [Int: Int] {
+    private static func loadPersisted(slug: String, defaults: UserDefaults) -> [Int: Int] {
         let key = pendingKeyPrefix + slug
-        guard let raw = UserDefaults.standard.dictionary(forKey: key) as? [String: Int] else { return [:] }
+        guard let raw = defaults.dictionary(forKey: key) as? [String: Int] else { return [:] }
         var out: [Int: Int] = [:]
         for (k, v) in raw where v > 0 {
             if let id = Int(k) { out[id] = v }
@@ -352,14 +421,14 @@ final class WritingTimeTracker: ObservableObject {
     /// Persistiert die Tages-Summe (Tag + Sekunden) unter dem aktuellen Server-Slug.
     private func persistToday() {
         let key = Self.todayKeyPrefix + slug
-        UserDefaults.standard.set(["day": todayStamp, "seconds": todaySeconds], forKey: key)
+        defaults.set(["day": todayStamp, "seconds": todaySeconds], forKey: key)
     }
 
     /// Lädt die Tages-Summe des aktuellen Servers zurück — aber nur, wenn sie zum
     /// heutigen Kalendertag gehört; sonst frisch bei 0 beginnen (Tageswechsel).
     private func loadToday() {
-        let today = Self.dayStamp()
-        let raw = UserDefaults.standard.dictionary(forKey: Self.todayKeyPrefix + slug)
+        let today = Self.dayStamp(now())
+        let raw = defaults.dictionary(forKey: Self.todayKeyPrefix + slug)
         if let raw, raw["day"] as? String == today, let secs = raw["seconds"] as? Int, secs > 0 {
             todayStamp = today
             todaySeconds = secs
