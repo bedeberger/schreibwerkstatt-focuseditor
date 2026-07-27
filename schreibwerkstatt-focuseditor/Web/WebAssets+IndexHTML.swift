@@ -669,22 +669,37 @@ extension WebAssets {
                     // ungültig → Deklaration fällt weg, das Editor-Padding
                     // (2rem) greift: full-bleed wie bisher.
                     '  padding-inline: max(2rem, calc((100% - var(--sw-measure, 0px)) / 2)) !important;',
-                    // BEWUSST KEIN padding-bottom-Override: die SSoT trägt unten
-                    // `calc(100vh - --focus-vh * 0.5)` (focus-mode.css, Desktop
-                    // also 50 vh), und der Typewriter BRAUCHT das. Die
-                    // Schreibzeile ruht auf der Mitte des sichtbaren Bereichs,
-                    // unter ihr müssen genau die verbleibenden ~50 vh scrollbar
-                    // bleiben, damit auch die LETZTE Zeile dort
-                    // ankommt. Ein kürzerer Tail (hier stand mal 22 vh, um am
-                    // Seitenende keine halb leere Fläche zu zeigen) klemmt den
-                    // Scroll: die letzten Absätze erreichen die Schreiblinie
-                    // nie („man kommt nur bis zum zweitletzten"), der Typewriter
-                    // zieht am Ende nicht mehr nach — und der geklemmte
-                    // `scrollBy` feuert kein `scroll`-Event, wodurch der
-                    // SSoT-Counter `expectedScroll` (typewriter.js) leakt und
-                    // danach echte User-Scrolls als „eigener Scroll" verwirft
-                    // (Spotlight bleibt beim Blättern stehen). Der Leerraum am
-                    // Seitenende ist der Preis und Typewriter-üblich.
+                    // Tail-Puffer: die SSoT rechnet unten
+                    // `calc(100vh - --focus-vh * --focus-anchor)` (focus-mode.css,
+                    // Desktop also 50 vh) — der Typewriter BRAUCHT diese Strecke,
+                    // damit auch die LETZTE Zeile die Schreiblinie erreicht (ein
+                    // kürzerer Tail klemmte den Scroll: „man kommt nur bis zum
+                    // zweitletzten Absatz", und der geklemmte `scrollBy` liess den
+                    // SSoT-Counter `expectedScroll` leaken → Spotlight blieb beim
+                    // Blättern stehen). Kopf + Tail summieren sich damit auf exakt
+                    // die Höhe der Schreibfläche (100 vh) — und genau das ist in
+                    // WebKit der Bug: erreicht `padding-top + padding-bottom` die
+                    // `clientHeight` des Scrollers, lässt sich in einem
+                    // contenteditable KEIN Wort mehr auswählen. Die Selektion
+                    // springt vom Klickpunkt bis zum Absatzende (gemessen in
+                    // WebKit 26.5: Doppelklick liefert anchorOffset 39 →
+                    // focusOffset 134 = Absatzende; ein Zieh-Select bleibt leer).
+                    // Dieselbe Ursache traf die Live-Zählung: `innerText` der
+                    // Schreibfläche kam als "\\n" (Länge 1) zurück, obwohl
+                    // `textContent` 156 Zeichen hatte → Toolbar zeigte konstant
+                    // „1 Zeichen" (Gegenprobe unten in `renderedText`).
+                    // Bei Summe `clientHeight - 1px` funktioniert alles; Chromium
+                    // ist nicht betroffen. Darum hier 4 px kürzen: die Summe
+                    // bleibt unter der Schreibflächen-Höhe (in dieser Schale ist
+                    // sie identisch mit `100vh` — die Schreibfläche liegt
+                    // `fixed; inset: 0`, es gibt keine Topbar), und die letzte
+                    // Zeile ruht 4 px über dem Anker statt genau darauf (unter der
+                    // Typewriter-Dead-Zone, also unsichtbar).
+                    // Gehört mittelfristig ins Hauptrepo (dort trifft es Safari
+                    // und iOS ebenso, und die SPA-Schreibfläche ist wegen der
+                    // Topbar noch kürzer als 100 vh); danach kann diese
+                    // Deklaration wieder weg.
+                    '  padding-bottom: calc(100vh - var(--focus-vh, 100vh) * var(--focus-anchor, 0.5) - 4px) !important;',
                     // Schreib-Caret in Marken-Gold — ein dezenter Identitäts-
                     // Akzent genau dort, wo geschrieben wird. Ein Ton, der auf
                     // hellem wie dunklem Papier trägt (kein Theme-Switch nötig).
@@ -739,12 +754,38 @@ extension WebAssets {
                 // Textlänge des letzten Zähllaufs (textContent, NICHT innerText):
                 // billiges Änderungs-Gate ohne Layout-Reflow.
                 let lastTcLen = -1;
+                // Gerenderter Text der Schreibfläche. `innerText` ist die richtige
+                // Metrik (kennt Block-Grenzen; `textContent` klebt Absätze ohne
+                // Leerzeichen zusammen und würde Wörter verschmelzen) — WebKit
+                // liefert sie aber GENAU DANN kaputt, wenn `padding-top +
+                // padding-bottom` die `clientHeight` des Scrollers erreicht:
+                // dieselbe Rendered-Text-/VisiblePosition-Machinerie, die dann
+                // auch die Wortselektion bricht (s. padding-bottom-Kommentar
+                // oben). Gemessen in WebKit 26.5: innerText == "\\n" (Länge 1)
+                // bei 156 Zeichen textContent — die Toolbar zeigte konstant
+                // „1 Zeichen". Weil "\\n" truthy ist, griff der alte
+                // `|| textContent`-Fallback nicht. Darum hier explizit auf
+                // leeren Rendered-Text prüfen und die Blöcke einzeln aus
+                // textContent zusammensetzen (Wortgrenzen bleiben erhalten).
+                function renderedText(root) {
+                  const it = root.innerText || '';
+                  if (it.trim().length > 0) return it;
+                  const tc = root.textContent || '';
+                  if (tc.trim().length === 0) return tc;   // wirklich leere Seite
+                  const sel = 'p, h1, h2, h3, h4, h5, h6, li, blockquote, pre';
+                  const parts = [];
+                  root.querySelectorAll(sel).forEach(function (b) {
+                    // Nur Blatt-Blöcke, sonst zählt verschachtelter Text doppelt.
+                    if (!b.querySelector(sel)) parts.push(b.textContent || '');
+                  });
+                  return parts.length ? parts.join('\\n') : tc;
+                }
                 function countAndReport() {
                   const root = document.querySelector('.focus-editor__content');
                   // textContent.length zuerst greifen (kein Reflow) und merken,
                   // damit das Gate unten dieselbe Metrik vergleicht.
                   lastTcLen = root && root.textContent ? root.textContent.length : 0;
-                  const text = root ? (root.innerText || root.textContent || '') : '';
+                  const text = root ? renderedText(root) : '';
                   const trimmed = text.trim();
                   const words = trimmed ? trimmed.split(/\\s+/).length : 0;
                   const chars = text.replace(/\\u00a0/g, ' ').length;
