@@ -191,7 +191,7 @@ Ein Tick macht Push, dann Pull, dann gedrosselt Delete-Reconcile (`reconcileInte
 
 `resolveConflict` holt frisches Server-HTML (`GET /content/pages/:id`) und ruft `editor.merge3(base:local:server:)` (in der WebView, `block-merge.js`):
 
-- `base` = `serverBaseHtml` aus `SyncState` (Merge-Ancestor), `local` = Outbox-HTML, `server` = frisch geholt.
+- `base` = Merge-Ancestor aus dem LocalStore (`store.serverBaseHtml(id:)`, Spalte `page.serverBaseHtml`), `local` = Outbox-HTML, `server` = frisch geholt.
 - `conflictCount == 0` → gemergtes HTML mit neuer Basis erneut pushen (still), Store mergen, offene Seite reloaden.
 - `conflictCount > 0` → echter Konflikt: `recordConflict(...)` (→ `@Published conflicts`). Die Toolbar (`SyncStatusLabel`) zeigt sie und öffnet pro Seite die **`ConflictResolutionView`** ([Conflict/](schreibwerkstatt-focuseditor/Conflict/)): ein Sheet, das lokalen + frischen Server-Stand (`SyncEngine.conflictContents`) **nebeneinander** mit absatzweisem Diff (`ConflictDiff`, pure `CollectionDifference`) zeigt — informierte Wahl „mein Stand"/„Server-Stand" statt blindem Dropdown. Die Auflösung selbst macht weiter `resolveConflict(pageId:keepLocal:)`.
 - Netzfehler beim Merge-Fetch setzt **keinen** klebrigen Konflikt — Eintrag bleibt in der Outbox, nächster Tick versucht erneut.
@@ -213,7 +213,9 @@ Cursor-Stagnation und leere Antworten brechen die Schleife (Endlos-Schutz).
 
 ### SyncState — persistente Koordinaten
 
-[SyncState.swift](schreibwerkstatt-focuseditor/Sync/SyncState.swift): `bookIds`, `cursors[bookId]`, `serverBaseISO[pageId]` (exakter ISO-String für `expected_updated_at`), `serverBaseHtml[pageId]` (Merge-Ancestor). JSON-Snapshot in Application Support, geschrieben auf einer `ioQueue` (blockiert MainActor nicht). Decoder ist tolerant gegen fehlende Keys (Rückwärtskompatibilität).
+[SyncState.swift](schreibwerkstatt-focuseditor/Sync/SyncState.swift): `bookIds`, `cursors[bookId]`, `serverBaseISO[pageId]` (exakter ISO-String für `expected_updated_at`). JSON-Snapshot in Application Support, geschrieben auf einer `ioQueue` (blockiert MainActor nicht). Decoder ist tolerant gegen fehlende Keys (Rückwärtskompatibilität).
+
+**Kein HTML im Snapshot.** `mutate` kodiert immer den GANZEN Snapshot neu, und der Pull schreibt pro Buch pro Tick den (oft unveränderten) Cursor zurück. Solange der Merge-Ancestor hier als `serverBaseHtml[pageId]` lag, hiess das: 3096 Seiten × volles HTML = 20 MB, alle ~5 s neu kodiert und geschrieben (~50 % CPU-Spitzen, ~4 MB/s SSD-Dauerlast — messbar als zähes Tippen). Der Ancestor lebt darum als Spalte `page.serverBaseHtml` im LocalStore (Row-Update statt Voll-Rewrite); `legacyServerBaseHtml` liest Alt-Snapshots nur noch ein, `encode(to:)` schreibt es nie zurück, und `SyncEngine.migrateLegacyAncestors()` zieht die Werte einmalig um. Zusätzlich schreibt `persist()` nur bei echter Änderung (`SyncState: Equatable`) — der No-op-Tick löst keinen Write mehr aus. Gemessen danach: 115 KB Snapshot, 0,3 % CPU im Leerlauf. **Regel: nichts Inhaltsgrosses in den `SyncState` legen** — Seiten-Inhalte gehören in den LocalStore.
 
 [SyncModels.swift](schreibwerkstatt-focuseditor/Sync/SyncModels.swift): DTOs (`BookDTO`, `SyncPageDTO`, `SyncCursorDTO`, `BookSyncResponse`, `PushRequest/Response`, `ConflictBody`) + `ISOTime` (ISO↔Epoch-ms, tolerant gegen Millis/plain).
 

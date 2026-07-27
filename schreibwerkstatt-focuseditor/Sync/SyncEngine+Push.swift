@@ -26,11 +26,9 @@ extension SyncEngine {
             // erneut als Konflikt zu erfassen. (Prävention: WebAssets.savePage
             // speichert 'default' gar nicht mehr.)
             if entry.pageId == Self.placeholderPageId {
+                // `deletePage` nimmt den Merge-Ancestor als Spalte der Seite mit weg.
                 try await store.deletePage(id: entry.pageId)
-                stateStore.mutate {
-                    $0.serverBaseISO[entry.pageId] = nil
-                    $0.serverBaseHtml[entry.pageId] = nil
-                }
+                stateStore.mutate { $0.serverBaseISO[entry.pageId] = nil }
                 clearConflict(pageId: entry.pageId)
                 log.info("Platzhalter-Seite '\(entry.pageId, privacy: .public)' getilgt (kein echter Datensatz)")
                 continue
@@ -83,9 +81,10 @@ extension SyncEngine {
                     queuedAt: entry.queuedAt,
                     serverUpdatedAtMillis: ISOTime.millis(resp.updated_at) ?? entry.queuedAt)
                 if quittiert {
+                    // Merge-Ancestor = gerade gepushtes HTML (nun der Server-Stand).
+                    try? await store.setServerBaseHtml(entry.html, id: entry.pageId)
                     stateStore.mutate {
                         $0.serverBaseISO[entry.pageId] = resp.updated_at   // exakte Server-ISO
-                        $0.serverBaseHtml[entry.pageId] = entry.html       // Merge-Ancestor
                     }
                     // Erfolgreicher Push → eine etwaige Lock-Backoff-Frist aufheben.
                     lockedUntil[entry.pageId] = nil
@@ -169,7 +168,9 @@ extension SyncEngine {
         }
 
         let serverHtml = serverPage.html ?? ""
-        let base = stateStore.state.serverBaseHtml[pid]
+        // Merge-Ancestor der Seite (Spalte im Store; `nil` = keiner bekannt → der
+        // Merge kann nur 2-Wege und landet in der Konflikt-UI).
+        let base = try? await store.serverBaseHtml(id: pid)
 
         let outcome: MergeOutcome
         do {
@@ -226,10 +227,8 @@ extension SyncEngine {
                 return
             }
             autoMergeRe409[pid] = nil   // erfolgreich konvergiert → Re-Zähler zurücksetzen
-            stateStore.mutate {
-                $0.serverBaseISO[pid] = resp.updated_at
-                $0.serverBaseHtml[pid] = outcome.merged
-            }
+            try? await store.setServerBaseHtml(outcome.merged, id: pid)
+            stateStore.mutate { $0.serverBaseISO[pid] = resp.updated_at }
             clearConflict(pageId: pid)
             // Offene, saubere Seite still mit dem Merge-Ergebnis aktualisieren.
             if editor.openPageId == pid, !editor.isDirty(pid) {

@@ -97,6 +97,22 @@ final class GRDBLocalStore: LocalStore {
                 )
                 """)
         }
+        m.registerMigration("v4_page_serverBaseHtml") { db in
+            // Merge-Ancestor (Server-HTML der letzten Basis) je Seite. Lag früher als
+            // `serverBaseHtml`-Dictionary im `SyncState`-JSON — dort kodierte jede
+            // Mutation den GANZEN Snapshot neu (gemessen: 20 MB alle ~5 s, weil der
+            // Poll-Tick pro Buch den Cursor zurückschreibt). Als Spalte an der Seite
+            // ist es ein Row-Update statt eines Voll-Rewrites.
+            //
+            // BEWUSST NICHT in `StoredPage` aufgenommen: der Record schreibt per
+            // `save`/`update` nur seine eigenen Spalten, diese bleibt dabei
+            // unangetastet — sonst würde jeder Pull-/Save-Write den Ancestor
+            // mitschleppen (und beim Pull mit dem neuen Server-HTML überschreiben,
+            // bevor der Merge ihn braucht).
+            try db.alter(table: "page") { t in
+                t.add(column: "serverBaseHtml", .text)
+            }
+        }
         return m
     }
 
@@ -288,6 +304,23 @@ final class GRDBLocalStore: LocalStore {
                               baseUpdatedAt: serverUpdatedAtMillis)
         try page.save(db)
         try upsertSearchIndex(db, id: id, html: html, pageName: page.pageName)
+    }
+
+    func serverBaseHtml(id: String) async throws -> String? {
+        try await dbQueue.read { db in
+            // NULL-Spalte → `fetchOne` liefert nil (kein Ancestor bekannt).
+            try String.fetchOne(db, sql: "SELECT serverBaseHtml FROM page WHERE id = ?",
+                                arguments: [id])
+        }
+    }
+
+    func setServerBaseHtml(_ html: String?, id: String) async throws {
+        try await dbQueue.write { db in
+            // Reines Spalten-Update: HTML/Stempel/Outbox der Seite bleiben unberührt.
+            // Unbekannte Seite → 0 Zeilen betroffen (No-op, s. Protokoll).
+            try db.execute(sql: "UPDATE page SET serverBaseHtml = ? WHERE id = ?",
+                           arguments: [html, id])
+        }
     }
 
     func deletePage(id: String) async throws {

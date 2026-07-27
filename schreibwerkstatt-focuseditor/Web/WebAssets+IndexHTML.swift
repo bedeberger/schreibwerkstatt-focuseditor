@@ -670,10 +670,11 @@ extension WebAssets {
                     // (2rem) greift: full-bleed wie bisher.
                     '  padding-inline: max(2rem, calc((100% - var(--sw-measure, 0px)) / 2)) !important;',
                     // BEWUSST KEIN padding-bottom-Override: die SSoT trägt unten
-                    // 45 vh (focus-mode.css), und der Typewriter BRAUCHT das.
-                    // Anker 0.5 + Dead-Zone 0.08 → die Schreibzeile ruht bei
-                    // ~58 % der Containerhöhe, unter ihr müssen also ~42 vh
-                    // scrollbar bleiben, damit auch die LETZTE Zeile dort
+                    // `calc(100vh - --focus-vh * 0.5)` (focus-mode.css, Desktop
+                    // also 50 vh), und der Typewriter BRAUCHT das. Die
+                    // Schreibzeile ruht auf der Mitte des sichtbaren Bereichs,
+                    // unter ihr müssen genau die verbleibenden ~50 vh scrollbar
+                    // bleiben, damit auch die LETZTE Zeile dort
                     // ankommt. Ein kürzerer Tail (hier stand mal 22 vh, um am
                     // Seitenende keine halb leere Fläche zu zeigen) klemmt den
                     // Scroll: die letzten Absätze erreichen die Schreiblinie

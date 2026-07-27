@@ -97,6 +97,21 @@ protocol LocalStore: AnyObject {
     @discardableResult
     func applyServerPageIfClean(id: String, html: String, pageName: String?, bookId: Int?, chapterId: Int?, serverUpdatedAtMillis: Double) async throws -> Bool
 
+    /// Merge-Ancestor der Seite: das Server-HTML der letzten bekannten Basis, also
+    /// der gemeinsame Vorfahr für den 3-Wege-Block-Merge bei 409. `nil`, solange
+    /// keiner bekannt ist (dann ist kein 3-Wege-Merge möglich → Konflikt-UI).
+    func serverBaseHtml(id: String) async throws -> String?
+
+    /// Setzt (oder löscht mit `nil`) den Merge-Ancestor der Seite. No-op, wenn die
+    /// Seite nicht im Spiegel liegt — der Ancestor hängt an der gespiegelten Seite
+    /// und wird mit ihr gelöscht.
+    ///
+    /// Bewusst ein EIGENER, schmaler Write: der Ancestor lag früher als
+    /// `serverBaseHtml`-Dictionary im `SyncState`-JSON. Dort kodierte JEDE Mutation
+    /// (auch das Zurückschreiben eines unveränderten Pull-Cursors, ~1× pro Buch pro
+    /// Tick) den kompletten Snapshot neu — gemessen 20 MB alle ~5 s bei 3096 Seiten.
+    func setServerBaseHtml(_ html: String?, id: String) async throws
+
     /// Entfernt eine Seite aus dem Spiegel (serverseitig gelöscht, Delete-Reconcile).
     /// Räumt einen evtl. vorhandenen Outbox-Eintrag mit weg. Der Aufrufer stellt
     /// sicher, dass keine ungepushte/ungespeicherte Änderung verloren geht.
@@ -177,6 +192,11 @@ nonisolated struct PageSummary: Codable, Equatable, Identifiable {
 final class InMemoryLocalStore: LocalStore {
     private var pages: [String: StoredPage] = [:]
     private var outbox: [OutboxEntry] = []
+    /// Merge-Ancestor je Seite. Bewusst NUR im Speicher: dieser Store ist der
+    /// Platzhalter, produktiv läuft `GRDBLocalStore` (dort hängt der Ancestor als
+    /// Spalte an der Seite). Verlust bei Neustart heisst nur, dass ein 409 in der
+    /// Konflikt-UI landet statt still zu mergen — kein Datenverlust.
+    private var ancestors: [String: String] = [:]
 
     private var snapshotURL: URL
 
@@ -193,6 +213,7 @@ final class InMemoryLocalStore: LocalStore {
         snapshotURL = AppSupport.serverDir().appendingPathComponent("localstore.json")
         pages = [:]
         outbox = []
+        ancestors = [:]
         loadSnapshot()
     }
 
@@ -306,9 +327,19 @@ final class InMemoryLocalStore: LocalStore {
                                baseUpdatedAt: serverUpdatedAtMillis)
     }
 
+    func serverBaseHtml(id: String) async throws -> String? {
+        ancestors[id]
+    }
+
+    func setServerBaseHtml(_ html: String?, id: String) async throws {
+        guard pages[id] != nil else { return }
+        ancestors[id] = html
+    }
+
     func deletePage(id: String) async throws {
         pages.removeValue(forKey: id)
         outbox.removeAll { $0.pageId == id }
+        ancestors.removeValue(forKey: id)
         persistSnapshot()
     }
 

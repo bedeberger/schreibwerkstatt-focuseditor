@@ -154,10 +154,11 @@ extension SyncEngine {
                 // Erst nach erfolgreicher Übernahme: ISO als Push-Basis + HTML als
                 // Merge-Ancestor mitführen (sonst stünde die Basis auf einem Stand,
                 // den der Store gar nicht übernommen hat).
-                stateStore.mutate {
-                    $0.serverBaseISO[pid] = serverUpdatedAt
-                    $0.serverBaseHtml[pid] = serverHtml
-                }
+                // Ancestor VOR der ISO-Basis setzen, damit die Basis nie auf einen
+                // Stand zeigt, zu dem der Ancestor noch fehlt (ein 409 dazwischen
+                // fiele sonst auf einen älteren Vorfahren zurück).
+                try? await store.setServerBaseHtml(serverHtml, id: pid)
+                stateStore.mutate { $0.serverBaseISO[pid] = serverUpdatedAt }
                 // Saubere, offene Seite still in der WebView neu laden (clean reload).
                 if isOpen {
                     await editor?.reloadPage(pageId: pid, html: serverHtml, baseUpdatedAt: ms)
@@ -265,11 +266,9 @@ extension SyncEngine {
                 continue
             }
 
+            // `deletePage` nimmt den Merge-Ancestor als Spalte der Seite mit weg.
             try await store.deletePage(id: pid)
-            stateStore.mutate {
-                $0.serverBaseISO[pid] = nil
-                $0.serverBaseHtml[pid] = nil
-            }
+            stateStore.mutate { $0.serverBaseISO[pid] = nil }
             log.info("Reconcile: lokale Seite \(pid, privacy: .public) entfernt (serverseitig gelöscht)")
         }
     }

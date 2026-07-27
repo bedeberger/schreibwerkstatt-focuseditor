@@ -17,15 +17,15 @@ final class SyncStateTests: XCTestCase {
         try JSONDecoder().decode(SyncState.self, from: Data(json.utf8))
     }
 
-    /// Alter Snapshot ohne `serverBaseHtml` (vor Einführung des 3-Wege-Merge):
-    /// darf NICHT scheitern, übrige Felder bleiben erhalten, neues Feld = leer.
+    /// Alter Snapshot ohne `serverBaseHtml`: darf NICHT scheitern, übrige Felder
+    /// bleiben erhalten, das Alt-Feld = leer.
     func testDecodesOldSnapshotWithoutServerBaseHtml() throws {
         let s = try decode(#"""
         { "bookIds": [1, 2], "serverBaseISO": { "5": "2026-06-14T10:00:00.000Z" } }
         """#)
         XCTAssertEqual(s.bookIds, [1, 2])
         XCTAssertEqual(s.serverBaseISO["5"], "2026-06-14T10:00:00.000Z")
-        XCTAssertTrue(s.serverBaseHtml.isEmpty, "fehlendes Feld → leer, nicht Decode-Fehler")
+        XCTAssertTrue(s.legacyServerBaseHtml.isEmpty, "fehlendes Feld → leer, nicht Decode-Fehler")
         XCTAssertTrue(s.cursors.isEmpty)
     }
 
@@ -35,7 +35,27 @@ final class SyncStateTests: XCTestCase {
         XCTAssertTrue(s.bookIds.isEmpty)
         XCTAssertTrue(s.cursors.isEmpty)
         XCTAssertTrue(s.serverBaseISO.isEmpty)
-        XCTAssertTrue(s.serverBaseHtml.isEmpty)
+        XCTAssertTrue(s.legacyServerBaseHtml.isEmpty)
+    }
+
+    /// Der Merge-Ancestor liegt seit Build 22 als Spalte `page.serverBaseHtml` im
+    /// Store, NICHT mehr im Snapshot. Alt-Snapshots müssen ihn noch hergeben
+    /// (`SyncEngine.migrateLegacyAncestors` zieht ihn um) — aber er darf NIE wieder
+    /// mitgeschrieben werden: genau das liess die Datei auf 20 MB wachsen, die bei
+    /// jeder Mutation komplett neu kodiert wurde (~50 % CPU alle ~5 s).
+    func testLegacyAncestorIsReadButNeverWrittenBack() throws {
+        let s = try decode(#"""
+        { "bookIds": [1], "serverBaseHtml": { "10": "<p data-bid=\"b1\">alt</p>" } }
+        """#)
+        XCTAssertEqual(s.legacyServerBaseHtml["10"], "<p data-bid=\"b1\">alt</p>",
+                       "Alt-Ancestor muss für die Migration lesbar bleiben")
+
+        let json = try XCTUnwrap(String(data: try JSONEncoder().encode(s), encoding: .utf8))
+        XCTAssertFalse(json.contains("serverBaseHtml"),
+                       "Ancestor-Dictionary darf nicht mehr in den Snapshot geschrieben werden")
+        XCTAssertFalse(json.contains("legacyServerBaseHtml"),
+                       "auch nicht unter dem internen Property-Namen")
+        XCTAssertTrue(json.contains("bookIds"), "übrige Felder werden weiterhin geschrieben")
     }
 
     /// Voller Roundtrip inkl. Int-gekeyter `cursors`-Map (Swift kodiert
@@ -45,7 +65,6 @@ final class SyncStateTests: XCTestCase {
         s.bookIds = [7]
         s.cursors = [7: SyncCursorDTO(since: "2026-06-14T09:00:00.000Z", since_id: 3)]
         s.serverBaseISO = ["10": "2026-06-14T10:00:00.000Z"]
-        s.serverBaseHtml = ["10": "<p data-bid=\"b1\">x</p>"]
 
         let data = try JSONEncoder().encode(s)
         let back = try JSONDecoder().decode(SyncState.self, from: data)
@@ -53,6 +72,5 @@ final class SyncStateTests: XCTestCase {
         XCTAssertEqual(back.bookIds, [7])
         XCTAssertEqual(back.cursors[7], SyncCursorDTO(since: "2026-06-14T09:00:00.000Z", since_id: 3))
         XCTAssertEqual(back.serverBaseISO["10"], "2026-06-14T10:00:00.000Z")
-        XCTAssertEqual(back.serverBaseHtml["10"], "<p data-bid=\"b1\">x</p>")
     }
 }

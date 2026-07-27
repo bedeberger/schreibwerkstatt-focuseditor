@@ -21,6 +21,8 @@ import XCTest
 private final class FakeLocalStore: LocalStore {
     var pages: [String: StoredPage] = [:]
     var outbox: [String: OutboxEntry] = [:]
+    /// Merge-Ancestor je Seite (früher `SyncState.serverBaseHtml`).
+    var ancestors: [String: String] = [:]
     /// Monoton hochgezählter „Server-Stempel“ (Epoch-ms-Ersatz) für deterministische
     /// `updatedAt`-Werte ohne Uhr.
     private var clock: Double = 1000
@@ -92,7 +94,14 @@ private final class FakeLocalStore: LocalStore {
         return true
     }
 
-    func deletePage(id: String) async throws { pages[id] = nil; outbox[id] = nil }
+    func serverBaseHtml(id: String) async throws -> String? { ancestors[id] }
+
+    func setServerBaseHtml(_ html: String?, id: String) async throws {
+        guard pages[id] != nil else { return }
+        ancestors[id] = html
+    }
+
+    func deletePage(id: String) async throws { pages[id] = nil; outbox[id] = nil; ancestors[id] = nil }
 
     func pageIdsWithoutBook() async throws -> [String] {
         pages.values.filter { $0.bookId == nil }.map(\.id)

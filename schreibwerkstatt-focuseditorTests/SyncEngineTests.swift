@@ -72,6 +72,8 @@ private final class StubRouter: @unchecked Sendable {
 private final class FakeStore: LocalStore {
     var pages: [String: StoredPage] = [:]
     var outbox: [String: OutboxEntry] = [:]
+    /// Merge-Ancestor je Seite (früher `SyncState.serverBaseHtml`).
+    var ancestors: [String: String] = [:]
     private var clock: Double = 1000
     private func tick() -> Double { clock += 1; return clock }
 
@@ -136,7 +138,15 @@ private final class FakeStore: LocalStore {
         return true
     }
 
-    func deletePage(id: String) async throws { pages[id] = nil; outbox[id] = nil }
+    func serverBaseHtml(id: String) async throws -> String? { ancestors[id] }
+
+    func setServerBaseHtml(_ html: String?, id: String) async throws {
+        // Wie die echten Stores: der Ancestor hängt an der gespiegelten Seite.
+        guard pages[id] != nil else { return }
+        ancestors[id] = html
+    }
+
+    func deletePage(id: String) async throws { pages[id] = nil; outbox[id] = nil; ancestors[id] = nil }
     func pageIdsWithoutBook() async throws -> [String] { pages.values.filter { $0.bookId == nil }.map(\.id) }
     func assignBook(pageId: String, bookId: Int, chapterId: Int?) async throws {
         guard var p = pages[pageId] else { return }
@@ -233,7 +243,8 @@ final class SyncEngineTests: XCTestCase {
         let pending = try await store.pendingOutbox()
         XCTAssertTrue(pending.isEmpty, "Outbox sollte nach 200 geleert sein")
         XCTAssertEqual(engine.stateStore.state.serverBaseISO["5"], newer, "Basis auf Server-ISO vorgerückt")
-        XCTAssertEqual(engine.stateStore.state.serverBaseHtml["5"], "<p>local</p>", "Merge-Ancestor = gepushtes HTML")
+        let ancestor = try await store.serverBaseHtml(id: "5")
+        XCTAssertEqual(ancestor, "<p>local</p>", "Merge-Ancestor = gepushtes HTML (jetzt im Store, nicht im SyncState)")
         XCTAssertTrue(engine.conflicts.isEmpty)
     }
 
@@ -296,10 +307,8 @@ final class SyncEngineTests: XCTestCase {
         let editor = FakeEditor()
         editor.mergeResult = MergeOutcome(merged: "<p>merged</p>", conflictCount: 0)
         let engine = makeEngine(store: store, editor: editor)
-        engine.stateStore.mutate {
-            $0.serverBaseISO["5"] = base
-            $0.serverBaseHtml["5"] = "<p>ancestor</p>"
-        }
+        engine.stateStore.mutate { $0.serverBaseISO["5"] = base }
+        store.ancestors["5"] = "<p>ancestor</p>"
         let merged = "2026-01-03T00:00:00.000Z"
         router.on("PUT", "/content/pages/5", [
             push(409, #"{"error_code":"PAGE_CONFLICT","server_updated_at":"\#(newer)"}"#),
@@ -512,10 +521,8 @@ final class SyncEngineTests: XCTestCase {
         // Während der Merge rechnet, tippt + speichert der Nutzer erneut.
         editor.onMerge = { _ = try? await store.save(id: "5", html: "<p>local-2</p>", baseUpdatedAt: nil) }
         let engine = makeEngine(store: store, editor: editor)
-        engine.stateStore.mutate {
-            $0.serverBaseISO["5"] = base
-            $0.serverBaseHtml["5"] = "<p>anc</p>"
-        }
+        engine.stateStore.mutate { $0.serverBaseISO["5"] = base }
+        store.ancestors["5"] = "<p>anc</p>"
         let merged = "2026-01-03T00:00:00.000Z"
         router.on("PUT", "/content/pages/5", [
             push(409, #"{"error_code":"PAGE_CONFLICT","server_updated_at":"\#(newer)"}"#),

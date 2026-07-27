@@ -21,16 +21,13 @@ private let syncStateLog = Logger(subsystem: "ch.schreibwerkstatt.focuseditor", 
 // `nonisolated`, weil der Snapshot off-main (auf der `ioQueue`) encodiert wird —
 // unter der MainActor-Default-Isolation des Targets wäre die Codable-Conformance
 // sonst MainActor-isoliert und off-main nicht nutzbar (wie StoredPage/OutboxEntry).
-nonisolated struct SyncState: Codable, Sendable {
+nonisolated struct SyncState: Codable, Sendable, Equatable {
     /// Bekannte Buch-IDs (Server `id`).
     var bookIds: [Int] = []
     /// Pull-Cursor je Buch-ID.
     var cursors: [Int: SyncCursorDTO] = [:]
     /// Exakte Server-ISO-Basis je Seiten-ID (String-Key = Store-Seiten-ID).
     var serverBaseISO: [String: String] = [:]
-    /// Server-HTML der letzten Basis je Seite — gemeinsamer Vorfahr (Ancestor)
-    /// für den 3-Wege-Block-Merge bei 409.
-    var serverBaseHtml: [String: String] = [:]
     /// Offene, noch nicht aufgelöste 409-Konflikte. MIT persistiert (statt rein
     /// in-memory), damit ein App-Neustart die Konflikt-Markierung NICHT verliert:
     /// sonst würde die betroffene Seite beim nächsten Start blind neu gepusht,
@@ -38,7 +35,27 @@ nonisolated struct SyncState: Codable, Sendable {
     /// Merge-Roundtrips je Start). Spiegelt `SyncEngine.Conflict`.
     var conflicts: [PersistedConflict] = []
 
+    /// NUR zum Einlesen alter Snapshots: bis Build 21 lag der Merge-Ancestor (das
+    /// volle Server-HTML JEDER je gepullten Seite) unter dem Key `serverBaseHtml`
+    /// hier im JSON. Gemessen waren das 3096 Seiten / 19 MB — 97 % der Datei —, und
+    /// weil `mutate` immer den GANZEN Snapshot neu kodiert und der Poll-Tick pro
+    /// Buch den (unveränderten) Cursor zurückschreibt, wurden alle ~5 s ~20 MB
+    /// kodiert und geschrieben (~50 % CPU-Spitzen, ~4 MB/s Dauerlast auf die SSD).
+    ///
+    /// Der Ancestor lebt jetzt als Spalte `page.serverBaseHtml` in SQLite
+    /// (Row-Update statt Voll-Rewrite). Dieses Feld wird **nicht mehr encodiert**;
+    /// `SyncEngine.migrateLegacyAncestors()` schiebt die Altwerte einmalig in den
+    /// Store und leert es — der darauf folgende Snapshot schreibt die 19 MB
+    /// endgültig weg.
+    var legacyServerBaseHtml: [String: String] = [:]
+
     init() {}
+
+    enum CodingKeys: String, CodingKey {
+        case bookIds, cursors, serverBaseISO, conflicts
+        /// Alt-Key des ausgezogenen Ancestor-Dictionaries (nur Lesen, s. o.).
+        case legacyServerBaseHtml = "serverBaseHtml"
+    }
 
     // Tolerant gegen fehlende Keys (ältere Snapshots ohne `serverBaseHtml`/
     // `conflicts`), damit ein neues Feld nicht den ganzen Sync-Zustand verwirft.
@@ -47,8 +64,20 @@ nonisolated struct SyncState: Codable, Sendable {
         bookIds = try c.decodeIfPresent([Int].self, forKey: .bookIds) ?? []
         cursors = try c.decodeIfPresent([Int: SyncCursorDTO].self, forKey: .cursors) ?? [:]
         serverBaseISO = try c.decodeIfPresent([String: String].self, forKey: .serverBaseISO) ?? [:]
-        serverBaseHtml = try c.decodeIfPresent([String: String].self, forKey: .serverBaseHtml) ?? [:]
         conflicts = try c.decodeIfPresent([PersistedConflict].self, forKey: .conflicts) ?? []
+        legacyServerBaseHtml = try c.decodeIfPresent([String: String].self,
+                                                     forKey: .legacyServerBaseHtml) ?? [:]
+    }
+
+    /// Explizit (statt synthetisiert), damit `legacyServerBaseHtml` NICHT wieder
+    /// mitgeschrieben wird — sonst käme die 19-MB-Last mit dem ersten Snapshot
+    /// zurück.
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(bookIds, forKey: .bookIds)
+        try c.encode(cursors, forKey: .cursors)
+        try c.encode(serverBaseISO, forKey: .serverBaseISO)
+        try c.encode(conflicts, forKey: .conflicts)
     }
 }
 
@@ -76,6 +105,10 @@ final class SyncStateStore {
     private(set) var state: SyncState
     /// Serielle I/O-Queue: encode + atomic write off-main, in Aufruf-Reihenfolge.
     private let ioQueue = DispatchQueue(label: "ch.schreibwerkstatt.focuseditor.syncstate.io")
+    /// Zuletzt zum Schreiben abgeschickter Stand — Grundlage der Änderungs-
+    /// Erkennung in `persist()`. `nil` = noch nichts geschrieben (erster Write
+    /// läuft unbedingt, auch nach einem korrupten/fehlenden Snapshot).
+    private var lastPersisted: SyncState?
 
     init(filename: String = "syncstate.json") {
         self.filename = filename
@@ -115,6 +148,9 @@ final class SyncStateStore {
         AppSupport.migrateLegacyFileIfNeeded(named: filename)
         url = AppSupport.serverDir().appendingPathComponent(filename)
         state = Self.loadState(from: url)
+        // Anderer Server = andere Datei → die Änderungs-Erkennung darf nicht mit
+        // dem Stand des alten Servers vergleichen.
+        lastPersisted = nil
     }
 
     /// Mutiert den Zustand (MainActor) und stößt einen Background-Snapshot an.
@@ -134,6 +170,13 @@ final class SyncStateStore {
     /// Reicht eine Wert-Kopie (COW, Sendable) an die I/O-Queue; encode + write
     /// passieren dort, nicht auf dem MainActor.
     private func persist() {
+        // Änderungs-Erkennung: der Pull schreibt den Cursor JEDES Buchs bei JEDEM
+        // Tick zurück (`$0.cursors[bookId] = resp.cursor`), auch wenn er sich nicht
+        // bewegt hat — bei 9 Büchern also ~9 Snapshots pro Poll-Tick, für nichts.
+        // Ist der Zustand identisch zum letzten Write, hier abbrechen.
+        if let lastPersisted, lastPersisted == state { return }
+        lastPersisted = state
+
         let snapshot = state
         let url = self.url
         ioQueue.async {

@@ -166,6 +166,32 @@ final class SyncEngine: ObservableObject {
             }
         }
         reachability.start()
+        Task { await migrateLegacyAncestors() }
+    }
+
+    /// Einmal-Migration: schiebt die Merge-Ancestor aus dem alten
+    /// `SyncState.serverBaseHtml`-Dictionary in die Store-Spalte
+    /// `page.serverBaseHtml` und leert das Alt-Feld.
+    ///
+    /// Warum überhaupt migrieren statt einfach zu verwerfen: ohne Ancestor kann ein
+    /// 409 nur noch in der Konflikt-UI landen statt still zu mergen. Die Werte sind
+    /// da — sie einmal umzuziehen kostet einen Durchlauf, sie wegzuwerfen kostet den
+    /// Nutzer bei jedem Parallel-Edit ein Modal.
+    ///
+    /// Der abschliessende `mutate` leert das Feld; weil `encode(to:)` es nicht mehr
+    /// schreibt, schrumpft der Snapshot damit dauerhaft (gemessen 20 MB → ~0,7 MB).
+    func migrateLegacyAncestors() async {
+        let legacy = stateStore.state.legacyServerBaseHtml
+        guard !legacy.isEmpty else { return }
+        log.notice("Migriere \(legacy.count, privacy: .public) Merge-Ancestor aus dem SyncState-Snapshot in den Store")
+        for (pid, html) in legacy {
+            // Best-effort: eine inzwischen gelöschte Seite ist ein No-op (der
+            // Ancestor hängt an der Zeile), ein Schreibfehler kostet nur den
+            // stillen Auto-Merge dieser einen Seite.
+            try? await store.setServerBaseHtml(html, id: pid)
+        }
+        stateStore.mutate { $0.legacyServerBaseHtml = [:] }
+        log.info("Merge-Ancestor-Migration abgeschlossen — Snapshot ohne HTML-Ballast")
     }
 
     func stop() {
@@ -196,6 +222,8 @@ final class SyncEngine: ObservableObject {
     func reloadForCurrentServer() {
         stopPolling()
         stateStore.reloadForCurrentServer()
+        // Der Snapshot des Zielservers kann noch Alt-Ancestor tragen.
+        Task { await migrateLegacyAncestors() }
         // Konflikte des NEUEN Servers aus dessen persistiertem Zustand laden
         // (nicht blind leeren — ein offener Konflikt am Zielserver bleibt sichtbar).
         restoreConflicts()
@@ -315,10 +343,8 @@ final class SyncEngine: ObservableObject {
                                                                serverUpdatedAtMillis: ms)) ?? false
         guard applied else { return }
         // ISO als Push-Basis + HTML als Merge-Ancestor mitführen (wie `pullBook`).
-        stateStore.mutate {
-            $0.serverBaseISO[pid] = serverUpdatedAt
-            $0.serverBaseHtml[pid] = html
-        }
+        try? await store.setServerBaseHtml(html, id: pid)
+        stateStore.mutate { $0.serverBaseISO[pid] = serverUpdatedAt }
         // Ist die Seite (weiterhin) sauber offen, still in der WebView neu laden.
         if editor?.openPageId == pid {
             await editor?.reloadPage(pageId: pid, html: html, baseUpdatedAt: ms)
@@ -527,10 +553,8 @@ final class SyncEngine: ObservableObject {
             guard let entry else {
                 // Kein lokaler Outbox-Stand mehr (z. B. zwischenzeitlich quittiert)
                 // → nichts zu erzwingen, nur Basis auf den Server stellen.
-                stateStore.mutate {
-                    $0.serverBaseISO[pid] = serverPage.updated_at
-                    $0.serverBaseHtml[pid] = serverPage.html ?? ""
-                }
+                try? await store.setServerBaseHtml(serverPage.html ?? "", id: pid)
+                stateStore.mutate { $0.serverBaseISO[pid] = serverPage.updated_at }
                 clearConflict(pageId: pid)
                 return
             }
@@ -546,10 +570,8 @@ final class SyncEngine: ObservableObject {
                 // andere Basis und wird beim nächsten Tick regulär gepusht).
                 let quittiert = (try? await store.markPushed(id: pid, queuedAt: entry.queuedAt, serverUpdatedAtMillis: ms)) ?? false
                 if quittiert {
-                    stateStore.mutate {
-                        $0.serverBaseISO[pid] = resp.updated_at
-                        $0.serverBaseHtml[pid] = entry.html
-                    }
+                    try? await store.setServerBaseHtml(entry.html, id: pid)
+                    stateStore.mutate { $0.serverBaseISO[pid] = resp.updated_at }
                 }
                 clearConflict(pageId: pid)
                 lastError = nil
@@ -582,10 +604,8 @@ final class SyncEngine: ObservableObject {
                 log.error("Konflikt-Auflösung \(pid, privacy: .public): Server-Stand lokal übernehmen fehlgeschlagen: \(self.lastError ?? "?", privacy: .public)")
                 return
             }
-            stateStore.mutate {
-                $0.serverBaseISO[pid] = serverPage.updated_at
-                $0.serverBaseHtml[pid] = serverHtml
-            }
+            try? await store.setServerBaseHtml(serverHtml, id: pid)
+            stateStore.mutate { $0.serverBaseISO[pid] = serverPage.updated_at }
             clearConflict(pageId: pid)
             lastError = nil
             // Offene Seite mit dem übernommenen Server-Stand neu laden (Nutzer hat
