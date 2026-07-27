@@ -291,23 +291,106 @@ extension WebAssets {
                 sel.addRange(range);
               }
 
-              // Caret in den Sichtbereich holen (langer Inhalt: End-Caret liegt
-              // sonst evtl. unter dem Fold — focus() scrollt nicht zuverlässig zur
-              // collapsed Range).
-              function scrollCaretIntoView() {
+              // Typewriter-Geometrie aus dem OTA-Bundle (SSoT) — dieselben
+              // Funktionen, mit denen die Engine beim Tippen scrollt. Lazy und
+              // gecacht; fehlt das Modul (älteres Bundle), degradiert das
+              // Anker-Ziehen still (try/catch wie bei Spellcheck/Synonymen).
+              let twModPromise = null;
+              function typewriterModule() {
+                if (!twModPromise) {
+                  twModPromise = import('./js/editor/focus/typewriter.js').catch(() => null);
+                }
+                return twModPromise;
+              }
+
+              // Rect der Caret-Zeile, mit Block-Fallback. Der Schreib-Slot am
+              // Seitenende ist regelmässig ein LEERER `<p><br></p>` — dort liefert
+              // `getCaretRect` null (keine Textknoten, collapsed Range). Dann zählt
+              // das Block-Rect; bei einem Ein-Zeilen-Absatz sind beide deckungs-
+              // gleich (dieselbe Wahl trifft die SSoT in scrollEntryTargetToAnchor).
+              function caretLineRect(tw, content) {
+                const direct = tw.getCaretRect(content);
+                if (direct) return direct;
                 try {
                   const sel = document.getSelection();
-                  if (!sel || sel.rangeCount === 0) return;
-                  const r = sel.getRangeAt(0);
-                  const el = r.startContainer.nodeType === 1
-                    ? r.startContainer : r.startContainer.parentElement;
-                  if (!el) return;
-                  const rect = el.getBoundingClientRect();
-                  const vh = window.innerHeight || document.documentElement.clientHeight;
-                  if (rect.top < 0 || rect.bottom > vh) {
-                    el.scrollIntoView({ block: 'center', behavior: 'auto' });
-                  }
+                  if (!sel || sel.rangeCount === 0) return null;
+                  const n = sel.getRangeAt(0).startContainer;
+                  const el = n.nodeType === 1 ? n : n.parentElement;
+                  const block = el && el.closest
+                    ? el.closest('p, h1, h2, h3, h4, h5, h6, blockquote, li, pre')
+                    : null;
+                  return (block || el) ? (block || el).getBoundingClientRect() : null;
+                } catch (_) { return null; }
+              }
+
+              // Schreibzeile auf die Schreiblinie (Typewriter-Anker) ziehen.
+              //
+              // Der frühere Weg — `scrollIntoView({block:'center'})`, und das nur
+              // falls der Caret ausserhalb des Viewports liegt — war doppelt falsch:
+              //  1) `content.focus()` OHNE `preventScroll` lässt WebKit die Auswahl
+              //     selbst „aufdecken", und zwar UNTEN-ausgerichtet. Danach liegt die
+              //     Zeile knapp im Viewport → die Bedingung greift nicht mehr, die
+              //     Zentrierung blieb aus. Gemessen: Seite öffnet mit scrollTop 5014
+              //     statt 5479 (max 5499), letzter Absatz klebt bei 934–967 px in
+              //     einem 971-px-Fenster statt auf der Linie bei ~485 px — knapp eine
+              //     halbe Bildschirmhöhe Scrollweg blieb unbenutzt („man kommt nicht
+              //     bis zum letzten Absatz").
+              //  2) „Mitte der Scroll-Box" ist nicht der Anker: der Typewriter hält
+              //     die Zeile auf `--focus-anchor` (Default 0.5, konfigurierbar).
+              //     Zwei Geometrien für dieselbe Linie driften auseinander.
+              // Darum jetzt exakt die SSoT-Geometrie (`typewriterScroll`, Schwelle 0)
+              // — dieselbe Strecke, die die Engine beim Tippen fährt.
+              async function anchorCaretLine(threshold) {
+                const tw = await typewriterModule();
+                const content = activeContent();
+                if (!tw || !content) return;
+                try {
+                  const rect = caretLineRect(tw, content);
+                  // `undefined` als Anker → die SSoT normalisiert auf den Default
+                  // (0.5); ein eigener Wert wäre eine zweite Wahrheit neben
+                  // `--focus-anchor`.
+                  if (rect) tw.typewriterScroll(content, rect, null, threshold || 0, undefined);
                 } catch (_) {}
+              }
+
+              // Anker-Ziehen, solange sich das Layout noch setzt. Beim Öffnen ist es
+              // ~1 s lang in Bewegung: Typografie-Override (font-size/line-height),
+              // Webfont-Ladung und `--focus-vh` (Fenster-/Toolbar-Geometrie steht
+              // erst nach dem ersten Layout — gemessen bei ~720 ms von 976 auf
+              // 971 px). Ein einzelner Schuss beim Öffnen landet darum auf einer
+              // Höhe, die es gleich danach nicht mehr gibt (oder wird am dann noch
+              // kürzeren Scroll-Ende geklemmt). Schwelle 2 px: steht das Layout,
+              // sind die Wiederholungen No-ops. Jede echte Nutzer-Aktion (Rad,
+              // Klick, Taste) bricht ab — nachgezogen wird nur ungefragt, solange
+              // niemand selbst navigiert.
+              let anchorToken = 0;
+              let anchorAbort = null;
+              function anchorCaretWhileSettling() {
+                const token = ++anchorToken;
+                // Lauf-Ende räumt die Abbruch-Listener ab (ein AbortController pro
+                // Lauf, der vorige wird beendet) — sonst sammelte jeder
+                // Seitenwechsel drei nie gefeuerte Listener an.
+                anchorAbort?.abort();
+                const ctl = new AbortController();
+                anchorAbort = ctl;
+                const stop = () => { if (anchorToken === token) anchorToken++; ctl.abort(); };
+                const opts = { capture: true, passive: true, signal: ctl.signal };
+                window.addEventListener('wheel', stop, opts);
+                window.addEventListener('pointerdown', stop, opts);
+                window.addEventListener('keydown', stop, { capture: true, signal: ctl.signal });
+                // Erster Zug SYNCHRON (nicht über setTimeout): das Setzen der
+                // Auswahl lässt WebKit die Zeile selbst aufdecken — unten-
+                // ausgerichtet. Ein Task später wäre dieser falsche Stand schon
+                // einmal gemalt (gemessen: ein Frame mit dem letzten Absatz am
+                // unteren Rand). Weil das Typewriter-Modul vorgeladen ist, läuft
+                // das `await` nur bis zum Microtask-Checkpoint — also vor dem Paint.
+                anchorCaretLine(0);
+                const delays = [60, 150, 400, 800, 1400];
+                delays.forEach((ms, i) => setTimeout(() => {
+                  if (anchorToken !== token) return;
+                  anchorCaretLine(2);
+                  if (i === delays.length - 1) ctl.abort();   // Fenster zu
+                }, ms));
               }
 
               // Schreibfläche fokussieren + Caret platzieren. Wartet (gestaffelte
@@ -325,11 +408,17 @@ extension WebAssets {
                     return;
                   }
                   try {
-                    content.focus();
+                    // `preventScroll` ist Pflicht: ohne das deckt WebKit die
+                    // Auswahl selbst auf — UNTEN-ausgerichtet, also eine halbe
+                    // Bildschirmhöhe unter der Schreiblinie (dieselbe Ausrichtung
+                    // überschrieb die korrekte Einstiegs-Position der Engine,
+                    // `_focusInstall` fokussiert deshalb ebenfalls mit
+                    // preventScroll). Positioniert wird danach über den Anker.
+                    content.focus({ preventScroll: true });
                     if (caretOffset == null || !placeCaretAtOffset(content, caretOffset)) {
                       placeCaretAtEnd(content);
                     }
-                    scrollCaretIntoView();
+                    anchorCaretWhileSettling();
                   } catch (_) {}
                 };
                 requestAnimationFrame(tick);
@@ -435,6 +524,12 @@ extension WebAssets {
                 if (eb && Number.isFinite(Number(eb.autosaveMs))) autosaveMs = Number(eb.autosaveMs);
               } catch (_) {}
 
+              // Typewriter-Geometrie vorladen (fire-and-forget): das erste
+              // Anker-Ziehen beim Öffnen muss VOR dem ersten Paint fahren, sonst
+              // blitzt der von WebKit unten-ausgerichtete Stand auf. Mit
+              // aufgelöstem Modul-Promise bleibt das `await` ein Microtask.
+              typewriterModule();
+
               const mountOpts = { mount: document.getElementById('mount'), bridge };
               if (autosaveMs != null) mountOpts.autosaveMs = autosaveMs;
               window.__standalone = await mountStandaloneFocus(mountOpts);
@@ -519,7 +614,10 @@ extension WebAssets {
                 if (!cmd) return;
                 try {
                   const content = activeContent();
-                  if (content) content.focus();
+                  // preventScroll: der Fokus-Rückholer darf die Ansicht nicht
+                  // verschieben (WebKit deckt die Auswahl sonst unten-ausgerichtet
+                  // auf — ein Sprung mitten im Formatieren).
+                  if (content) content.focus({ preventScroll: true });
                   document.execCommand(cmd, false, null);
                 } catch (e) { console.error('[focus-bridge] format', e); }
               });
