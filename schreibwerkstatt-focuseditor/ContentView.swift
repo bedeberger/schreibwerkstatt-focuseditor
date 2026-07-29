@@ -63,6 +63,17 @@ private struct EditorHostView: View {
     /// Geteilter UI-Zustand mit der (im Titelleisten-Accessory gehosteten)
     /// Toolbar: Seiten-Picker-Sichtbarkeit + zu prüfender Konflikt.
     @EnvironmentObject private var toolbarUI: ToolbarUIState
+    /// Serverseitiges Seiten-Lektorat — treibt das Ergebnis-Banner (der Start
+    /// liegt in der Toolbar).
+    @EnvironmentObject private var lektorat: LektoratJobStore
+
+    /// Steht ein terminales Lektorats-Ergebnis (Befund oder Fehler) zur Anzeige?
+    private var isLektoratBannerVisible: Bool {
+        switch lektorat.phase {
+        case .done, .failed: return true
+        case .idle, .preparing, .running: return false
+        }
+    }
 
     var body: some View {
         Group {
@@ -140,6 +151,17 @@ private struct EditorHostView: View {
                     .frame(maxHeight: .infinity, alignment: .top)
             }
 
+            // Ergebnis des serverseitigen Lektorats (Anzahl Beanstandungen bzw.
+            // Fehlermeldung) — erscheint, sobald der Job terminal ist, und bleibt
+            // bis der Nutzer ihn schliesst. Liegt unter dem Save-Fehler-Banner,
+            // falls beide gleichzeitig stehen (der Save-Fehler wiegt schwerer).
+            if isLektoratBannerVisible {
+                LektoratResultBanner()
+                    .padding(.top, library.saveError == nil ? 0 : 64)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .frame(maxHeight: .infinity, alignment: .top)
+            }
+
             // Buchwechsel: zentrierter Lade-Donut über der leeren WebView, bis
             // die Seiten des neuen Buchs geladen sind und der Picker wieder öffnet.
             if library.isSwitchingBook {
@@ -149,6 +171,7 @@ private struct EditorHostView: View {
         }
         .animation(.easeOut(duration: 0.18), value: library.saveError)
         .animation(.easeOut(duration: 0.18), value: library.booksLoaded)
+        .animation(.easeOut(duration: 0.18), value: isLektoratBannerVisible)
         // Toolbar-Accessory nur zeigen, solange der Editor sichtbar ist (sonst
         // stünde im Login-/Ladezustand ein leerer Streifen in der Titelleiste).
         .onAppear { windowChrome.setToolbarVisible(true) }

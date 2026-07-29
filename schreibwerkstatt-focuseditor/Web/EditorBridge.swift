@@ -83,6 +83,40 @@ final class EditorBridge: NSObject, WKScriptMessageHandlerWithReply, EditorCoord
         UserDefaults.standard.set(map, forKey: lastOpenByBookKey)
     }
 
+    /// UserDefaults-Key für die HISTORIE der zuletzt geöffneten Seiten pro Buch —
+    /// pro Server-Namespace, Wert ein `[String(bookId): [String(pageId)]]`-Dict in
+    /// MRU-Reihenfolge (Index 0 = zuletzt geöffnet). Speist die Gruppe „Zuletzt
+    /// geöffnet" im Seiten-Picker. Bewusst GETRENNT von `lastOpenByBookKey`: der
+    /// Ein-Wert-Key treibt den Boot-Restore und soll seine Bedeutung behalten.
+    static var recentPagesByBookKey: String { "editor.recentPagesByBook.\(ServerNamespace.currentSlug)" }
+
+    /// Länge der Historie pro Buch = Grösse der Picker-Gruppe.
+    /// `nonisolated`, damit der Wert als Default-Argument (LibraryStore) auch aus
+    /// nonisolated Kontext lesbar ist — eine Konstante braucht keine Isolation.
+    nonisolated static let recentPagesLimit = 5
+
+    /// Zuletzt geöffnete Seiten des Buchs (gerätelokal, MRU; Index 0 = zuletzt).
+    /// `defaults` ist injizierbar (Tests); produktiv immer `.standard`.
+    static func recentPageIds(forBook bookId: Int, defaults: UserDefaults = .standard) -> [String] {
+        let map = defaults.dictionary(forKey: recentPagesByBookKey) as? [String: [String]]
+        return map?[String(bookId)] ?? []
+    }
+
+    /// Seite an die Spitze der Historie setzen (MRU, dedupliziert, auf
+    /// `recentPagesLimit` gekürzt). No-op, wenn sie schon vorne steht — `editorState`
+    /// feuert bei jedem Dirty-Wechsel, ein Defaults-Schreiben pro Tastendruck wäre
+    /// pure Verschwendung.
+    static func pushRecentPageId(_ pageId: String, forBook bookId: Int,
+                                 defaults: UserDefaults = .standard) {
+        var map = (defaults.dictionary(forKey: recentPagesByBookKey) as? [String: [String]]) ?? [:]
+        var list = map[String(bookId)] ?? []
+        guard list.first != pageId else { return }
+        list.removeAll { $0 == pageId }
+        list.insert(pageId, at: 0)
+        map[String(bookId)] = Array(list.prefix(recentPagesLimit))
+        defaults.set(map, forKey: recentPagesByBookKey)
+    }
+
     /// UserDefaults-Key des in der Toolbar gewählten Buchs — pro Server-Namespace,
     /// exakt wie in `LibraryStore` (dort die SSoT). Die Bridge liest ihn beim Boot,
     /// um die initiale Seitenauswahl auf dieses Buch zu beschränken (sonst lüde die
@@ -273,6 +307,9 @@ final class EditorBridge: NSObject, WKScriptMessageHandlerWithReply, EditorCoord
                 UserDefaults.standard.set(pageId, forKey: Self.lastOpenPageKey)
                 if let bookId = params["bookId"] as? Int {
                     Self.setLastOpenPageId(pageId, forBook: bookId)
+                    // Zusätzlich in die MRU-Historie (Gruppe „Zuletzt geöffnet"
+                    // im Picker); schreibt nur beim echten Seitenwechsel.
+                    Self.pushRecentPageId(pageId, forBook: bookId)
                 }
             }
             notifyDirty()

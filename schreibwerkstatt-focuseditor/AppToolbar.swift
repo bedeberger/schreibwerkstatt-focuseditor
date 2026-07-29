@@ -130,6 +130,11 @@ struct AppToolbar: View {
                     library.normalizeQuotes()
                 }
 
+                // Lektorat der offenen Seite serverseitig starten (KI-Job). Eigene
+                // View, weil der Knopf einen Zustand trägt (Spinner während des
+                // Laufs, Klick = Abbrechen) — anders als die zustandslosen Icons.
+                LektoratToolbarButton()
+
                 // Seite schliessen — sichert lokal und öffnet den Picker für die
                 // nächste Wahl.
                 ToolbarIconButton(systemName: "xmark",

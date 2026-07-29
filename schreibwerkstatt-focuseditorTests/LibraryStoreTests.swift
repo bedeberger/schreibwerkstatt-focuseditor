@@ -283,6 +283,44 @@ final class LibraryStoreTests: XCTestCase {
         XCTAssertNil(lib.saveError)
     }
 
+    // MARK: - Zuletzt geöffnete Seiten (Picker-Gruppe)
+
+    func testRecentPageRowsResolveAgainstActiveBookInMRUOrder() async throws {
+        routes.set("/content/books", json: #"[{"id":11,"name":"A","slug":"a"}]"#)
+        routes.set("/content/books/11/tree", json: treeJSON(topPageIds: [101, 102, 103]))
+        // Historie: 102 zuletzt, dann 101; 999 existiert nicht (mehr) im Buch.
+        EditorBridge.pushRecentPageId("101", forBook: 11, defaults: defaults)
+        EditorBridge.pushRecentPageId("999", forBook: 11, defaults: defaults)
+        EditorBridge.pushRecentPageId("102", forBook: 11, defaults: defaults)
+        // Andere Bücher dürfen nicht durchschlagen.
+        EditorBridge.pushRecentPageId("777", forBook: 12, defaults: defaults)
+
+        let lib = try makeStore()
+        await lib.loadBooks()
+        try await waitUntil { lib.pages.count == 3 }
+
+        XCTAssertEqual(lib.recentPageRows().map(\.id), [102, 101],
+                       "MRU-Reihenfolge, unbekannte Seiten fallen raus")
+        XCTAssertEqual(lib.recentPageRows(limit: 1).map(\.id), [102])
+    }
+
+    func testRecentHistoryDedupesAndCapsAtLimit() {
+        for id in 1...7 { EditorBridge.pushRecentPageId(String(id), forBook: 11, defaults: defaults) }
+        XCTAssertEqual(EditorBridge.recentPageIds(forBook: 11, defaults: defaults),
+                       ["7", "6", "5", "4", "3"], "jüngste zuerst, auf 5 gekürzt")
+
+        EditorBridge.pushRecentPageId("4", forBook: 11, defaults: defaults)
+        XCTAssertEqual(EditorBridge.recentPageIds(forBook: 11, defaults: defaults),
+                       ["4", "7", "6", "5", "3"], "erneutes Öffnen rückt vor, ohne Duplikat")
+
+        // Schon vorne → kein erneutes Schreiben (editorState feuert bei jedem
+        // Dirty-Wechsel); die Liste bleibt identisch.
+        EditorBridge.pushRecentPageId("4", forBook: 11, defaults: defaults)
+        XCTAssertEqual(EditorBridge.recentPageIds(forBook: 11, defaults: defaults),
+                       ["4", "7", "6", "5", "3"])
+        XCTAssertTrue(EditorBridge.recentPageIds(forBook: 12, defaults: defaults).isEmpty)
+    }
+
     // MARK: - Hilfen
 
     /// Pollt eine Bedingung auf dem MainActor (die Stores arbeiten mit

@@ -152,6 +152,20 @@ final class LibraryStore: ObservableObject {
         return pages.first { $0.id == id }
     }
 
+    /// Die zuletzt geöffneten Seiten des aktiven Buchs (gerätelokal, MRU-Reihenfolge)
+    /// — aufgelöst gegen die aktuelle Seitenliste, damit nie eine gelöschte oder
+    /// verschobene Seite eines anderen Buchs erscheint. Speist die Gruppe „Zuletzt
+    /// geöffnet" ganz oben im Seiten-Picker. Leer, solange nichts geöffnet wurde.
+    func recentPageRows(limit: Int = EditorBridge.recentPagesLimit) -> [PagePickerRow] {
+        guard let bookId = activeBookId else { return [] }
+        let ids = EditorBridge.recentPageIds(forBook: bookId, defaults: defaults)
+        let rows = ids.compactMap { raw -> PagePickerRow? in
+            guard let id = Int(raw) else { return nil }
+            return pages.first { $0.id == id }
+        }
+        return Array(rows.prefix(limit))
+    }
+
     // MARK: - Laden
 
     /// Bücherliste vom Server holen. Ohne aktives Buch wird das erste gewählt.

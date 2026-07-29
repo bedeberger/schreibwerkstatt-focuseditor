@@ -34,6 +34,9 @@ final class AppCore: ObservableObject {
     /// (`POST /history/writing-time`) — das native Pendant zum Schreibzeit-
     /// Heartbeat der Web-Plattform. Scene-Phase über `setActive(_:)`.
     let writingTime: WritingTimeTracker
+    /// Serverseitiges Seiten-Lektorat (`POST /jobs/check` + Poll) — Start über
+    /// den Toolbar-Knopf, Ergebnis als Banner über der Schreibfläche.
+    let lektorat: LektoratJobStore
 
     /// Server-Namespace, auf den die Stores aktuell zeigen. Erkennt einen Wechsel
     /// (Settings ODER URL-Edit im Login) gegen `ServerNamespace.currentSlug`.
@@ -89,6 +92,14 @@ final class AppCore: ObservableObject {
         bridge.onPageOpened = { [weak sync] pid in
             Task { await sync?.pullPage(pageId: pid) }
         }
+        // Lektorats-Job: der Server prüft den SERVER-Stand der Seite → vor dem
+        // Anlegen den offenen Draft sichern (Bridge) und pushen (Sync), sonst
+        // lektoriert er einen veralteten Text. Genau die ⌘S-Semantik, nur
+        // awaitbar — darum hier verdrahtet statt `syncManually()`.
+        self.lektorat = LektoratJobStore(api: auth.api) { [weak bridge, weak sync] in
+            await bridge?.flushDraftSave()
+            await sync?.syncNow(manual: true)
+        }
     }
 
     /// Server-Wechsel (in-place): den lokalen Spiegel, den Sync-Zustand und die
@@ -106,6 +117,9 @@ final class AppCore: ObservableObject {
         await sync.suspendForServerSwitch()
         // Schreibzeit-Puffer des alten Servers verwerfen (Buch-IDs gelten nur dort).
         writingTime.reset()
+        // Laufendes/abgeschlossenes Lektorat verwerfen: Job-ID und Deep-Link
+        // gelten nur am alten Server.
+        lektorat.reset()
         do {
             try await store.switchToCurrentServer()
         } catch {
