@@ -178,6 +178,14 @@ extension WebAssets {
             const fb = window.__focusBridge;
             try {
               if (!fb) throw new Error('window.__focusBridge fehlt (kein nativer Kontext)');
+              // Spellcheck-Nachzieh-Fn SEHR FRÜH der Facade unterlegen — noch
+              // VOR dem ersten await (standalone-Import). Die
+              // Funktionsdeklaration weiter unten ist im try-Block gehoisted,
+              // darum ist `initSpellcheckIfEnabled` hier bereits im Scope. So
+              // kann Swifts `pushDeferredSpellcheckInit` die Race gegen die
+              // lange Modul-Importphase nicht verlieren — sobald das Boot-
+              // Modul überhaupt läuft, hängt die FN an der Facade.
+              window.__focusBridge._trySpellcheckInit = initSpellcheckIfEnabled;
               const { mountStandaloneFocus } = await import('./js/editor/focus/standalone.js');
 
               // baseUpdatedAt je Seite mitführen (für den nächsten Push / 409-Basis).
@@ -190,6 +198,84 @@ extension WebAssets {
               // ungesynctes Buch), startet die App in der ruhigen Leerfläche
               // statt mit einer leeren Schreibfläche.
               let bootHadPage = false;
+
+              // ── Rechtschreibprüfung (LanguageTool) ──────────────────────────
+              // Wiederverwendet den unveränderten Editor-Controller aus dem
+              // Hauptrepo (kein Fork). Statt direktem fetch laufen Prüfung +
+              // Wörterbuch über die Bridge → Swift-Kern → Server-Proxy. Greift
+              // nur, wenn LT serverseitig aktiv ist UND das Bundle den Controller
+              // mitliefert; sonst still übersprungen (degradiert sauber, offline
+              // ohnehin kein Prüf-Roundtrip — kein Offline-Kern-Inhalt).
+              //
+              // Idempotent (`if (window.__spellcheck) return`): der Boot ruft
+              // sie einmal synchron auf; Swift drückt sie über die
+              // Facade-`_trySpellcheckInit` ein ZWEITES Mal nach, sobald der
+              // Server in der Sitzung erreichbar war — deckt die Offline-Boot-
+              // Lücke: ohne Konnektivität beim Start lief `spellcheckConfig`
+              // leer (`{enabled:false}`) zurück, der Controller wurde nie
+              // importiert/mounted, und nachher kam keine Konnektivität mehr.
+              // Der zweite Aufruf holt das nach; der erste bleibt No-op, falls
+              // der Boot schon attached hat. Funktionsdeklaration im try-Block
+              // ist gehoisted → die Zuweis ganz oben greift vor jeglichem await.
+              async function initSpellcheckIfEnabled() {
+                if (window.__spellcheck) return;   // schon attached → nichts tun
+                let cfg;
+                try {
+                  cfg = await fb.spellcheckConfig();
+                } catch (e) {
+                  fb.log?.('Spellcheck-Config nicht abrufbar: ' + (e && e.message ? e.message : e), 'info');
+                  return;
+                }
+                if (!cfg || !cfg.enabled) return;
+                try {
+                  const mod = await import('./js/cards/editor-spellcheck/controller.js');
+                  // Range-Mutation + Caret-Restore aus dem gebündelten Helper
+                  // (geteilt mit dem SPA-Dispatcher des Hauptrepos) — keine
+                  // Client-Kopie der Caret-Logik. Kommt per OTA-Bundle.
+                  const { applySpellcheckReplacement } = await import('./js/editor/shared/apply-replacement.js');
+                  const root = document.querySelector('.focus-editor__content');
+                  if (mod && typeof mod.createSpellcheckController === 'function' && root) {
+                    // Popover-/Status-Strings kommen lokalisiert (de/en) über
+                    // die Bridge (cfg.i18n, aus t()) — kein hartkodierter UI-
+                    // String. Fallback auf den rohen Key, falls der Controller
+                    // einen Key anfragt, den die Bridge (noch) nicht liefert.
+                    const I18N = (cfg && cfg.i18n) || {};
+                    const ctl = mod.createSpellcheckController({
+                      root,
+                      scrollContainer: root,            // .focus-editor__content ist Root UND Scroller
+                      getHtml: () => root.innerHTML,
+                      editorKind: 'focus',
+                      getBookLocale: () => 'auto',       // Server löst Locale via bookId auf
+                      getBookId: () => currentBookId,
+                      getPageId: () => currentPageId,
+                      isEnabled: () => true,
+                      getDebounceMs: () => Number(cfg.debounceMs) || 1500,
+                      i18n: (k) => I18N[k] || k,
+                      onApplyReplacement: (range, text) => applySpellcheckReplacement(range, text),
+                      // Transport über die Bridge (kein direkter fetch).
+                      checkText: async ({ text, language, bookId, pageId }) => {
+                        const res = await fb.languagetoolCheck({
+                          text, language, bookId,
+                          pageId: pageId == null ? null : String(pageId),
+                        });
+                        if (res && res.disabled) return { disabled: true };
+                        return { matches: (res && res.matches) || [] };
+                      },
+                      addWord: async ({ word, bookId, lang }) => {
+                        const res = await fb.dictionaryAdd({ word, bookId, lang });
+                        return !!(res && res.ok);
+                      },
+                    });
+                    ctl.attach();
+                    window.__spellcheck = ctl;
+                    fb.log?.('Rechtschreibprüfung aktiv');
+                  }
+                } catch (e) {
+                  fb.log?.('Rechtschreibung nicht verfügbar: ' + (e && e.message ? e.message : e), 'info');
+                }
+              }
+              // `_trySpellcheckInit` wurde ganz oben (vor dem ersten await)
+              // zugewiesen — siehe die Erläuterung dort.
 
               // Ruhige Leerfläche ein-/ausblenden (keine Seite offen).
               const showEmpty = () => document.body.classList.add('sw-no-page');
@@ -913,62 +999,13 @@ extension WebAssets {
                 setTimeout(countAndReport, 150);
               })();
 
-              // ── Rechtschreibprüfung (LanguageTool) ──────────────────────────
-              // Wiederverwendet den unveränderten Editor-Controller aus dem
-              // Hauptrepo (kein Fork). Statt direktem fetch laufen Prüfung +
-              // Wörterbuch über die Bridge → Swift-Kern → Server-Proxy. Greift
-              // nur, wenn LT serverseitig aktiv ist UND das Bundle den Controller
-              // mitliefert; sonst still übersprungen (degradiert sauber, offline
-              // ohnehin kein Prüf-Roundtrip — kein Offline-Kern-Inhalt).
-              try {
-                const cfg = await fb.spellcheckConfig();
-                if (cfg && cfg.enabled) {
-                  const mod = await import('./js/cards/editor-spellcheck/controller.js');
-                  // Range-Mutation + Caret-Restore aus dem gebündelten Helper
-                  // (geteilt mit dem SPA-Dispatcher des Hauptrepos) — keine
-                  // Client-Kopie der Caret-Logik. Kommt per OTA-Bundle.
-                  const { applySpellcheckReplacement } = await import('./js/editor/shared/apply-replacement.js');
-                  const root = document.querySelector('.focus-editor__content');
-                  if (mod && typeof mod.createSpellcheckController === 'function' && root) {
-                    // Popover-/Status-Strings kommen lokalisiert (de/en) über die
-                    // Bridge (cfg.i18n, aus t()) — kein hartkodierter UI-String.
-                    // Fallback auf den rohen Key, falls der Controller einen Key
-                    // anfragt, den die Bridge (noch) nicht liefert.
-                    const I18N = (cfg && cfg.i18n) || {};
-                    const ctl = mod.createSpellcheckController({
-                      root,
-                      scrollContainer: root,            // .focus-editor__content ist Root UND Scroller
-                      getHtml: () => root.innerHTML,
-                      editorKind: 'focus',
-                      getBookLocale: () => 'auto',      // Server löst Locale via bookId auf
-                      getBookId: () => currentBookId,
-                      getPageId: () => currentPageId,
-                      isEnabled: () => true,
-                      getDebounceMs: () => Number(cfg.debounceMs) || 1500,
-                      i18n: (k) => I18N[k] || k,
-                      onApplyReplacement: (range, text) => applySpellcheckReplacement(range, text),
-                      // Transport über die Bridge (kein direkter fetch).
-                      checkText: async ({ text, language, bookId, pageId }) => {
-                        const res = await fb.languagetoolCheck({
-                          text, language, bookId,
-                          pageId: pageId == null ? null : String(pageId),
-                        });
-                        if (res && res.disabled) return { disabled: true };
-                        return { matches: (res && res.matches) || [] };
-                      },
-                      addWord: async ({ word, bookId, lang }) => {
-                        const res = await fb.dictionaryAdd({ word, bookId, lang });
-                        return !!(res && res.ok);
-                      },
-                    });
-                    ctl.attach();
-                    window.__spellcheck = ctl;
-                    fb.log?.('Rechtschreibprüfung aktiv');
-                  }
-                }
-              } catch (e) {
-                fb.log?.('Rechtschreibprüfung nicht verfügbar: ' + (e && e.message ? e.message : e), 'info');
-              }
+              // ── Rechtschreibung initialer Mount ─────────────────────────────
+              // Die eigentliche Logik liegt in `initSpellcheckIfEnabled` (oben
+              // definiert + exposed), damit Swift sie nachträglich erneut
+              // anstossen kann (Offline-Boot-Lücke). Hier nur der erste,
+              // synchrone Boot-Versuch — schlägt er fehl (offline/serverseitig
+              // aus), mergt sich das beim nächsten Server-Kontakt automatisch.
+              await initSpellcheckIfEnabled();
 
               // ── Synonyme (Cmd+Shift+S) ──────────────────────────────────────
               // Wiederverwendet den Synonym-Controller aus dem Hauptrepo (kein

@@ -96,6 +96,17 @@ final class SyncEngine: ObservableObject {
     private let shouldSync: () -> Bool
     let log = Logger(subsystem: "ch.schreibwerkstatt.focuseditor", category: "sync")
 
+    /// Signal „Server in dieser Sitzung erreicht" — feuert am Ende JEDES
+    /// erfolgreichen `syncNow`-Durchlaufs (jede HTTP-Antwort, egal welcher
+    /// Status, beweist schon Erreichbarkeit). Treibt das verzögerte Nachziehen
+    /// der LanguageTool-Initialisierung (Boot war offline → Spellcheck nie
+    /// mounted; nachfolgende Konnektivität holt das nach). Bewusst einschüssig
+    /// pro Tick ohne eigenes Flag: die Empfänger (`AppCore` →
+    /// `bridge.pushDeferredSpellcheckInit`) sind idempotent (JS-Guard
+    /// `if (window.__spellcheck) return`; Swift-Flag `spellcheckDeferredDone`
+    /// verhindert Retry-Spam).
+    var onServerReached: (@MainActor () -> Void)?
+
     /// Aktive Poll-Periode aus dem gewählten Modus (`nil` = manuell, kein Loop).
     private var pollInterval: Duration? { isPaused ? nil : pollMode.interval }
     /// Soll der Auto-Poll laufen? (Aktives Fenster + Modus ≠ manuell + nicht pausiert.)
@@ -403,6 +414,10 @@ final class SyncEngine: ObservableObject {
             } else {
                 status = .idle
             }
+            // Server antwortet → Empfängerseitig idempotentes Hook feuern, das
+            // ggf. den Spellcheck-Controller nachträglich mountet (Offline-Boot-
+            // Lücke). Siehe `onServerReached`-Dokumentation oben.
+            if serverReachedThisRun { onServerReached?() }
         }
 
         do {

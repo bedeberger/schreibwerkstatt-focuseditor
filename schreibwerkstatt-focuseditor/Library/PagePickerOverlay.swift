@@ -174,6 +174,14 @@ struct PagePickerOverlay: View {
         groups = built
         matchCount = treeRows.count
         hasComputed = true
+        // Genau ein ERLEN Treffer → sogleich selektieren, sodass ⏎ direkt öffnet.
+        // Fängt auch den asynchronen Volltext-Pfad ab (`runContentSearch`), der kein
+        // nachfolgendes `selected = 0` aus `onChange(query)` erhält — dort bliebe
+        // der `scrollTarget` sonst nil, obwohl die Liste auf genau eine Zeile schrumpft.
+        if treeRows.count == 1, let firstKey = flat.first?.key {
+            selected = 0
+            scrollTarget = firstKey   // erstes Vorkommen (Recent-Kopie oder Baum-Zeile)
+        }
     }
 
     var body: some View {
@@ -316,9 +324,8 @@ struct PagePickerOverlay: View {
                                               // In der Zuletzt-Gruppe ohne Kapitel-Einzug —
                                               // die Zeilen stehen dort nicht im Baum.
                                               indent: group.isRecent ? 0 : entry.row.depth)
-                                        // Hover markiert die Zeile. Der Pfeil-Cursor kommt
-                                        // jetzt vom `.pointerStyle(.default)` am Overlay
-                                        // (zuverlässiger als das frühere `NSCursor.set()`).
+                                        // Hover markiert die Zeile. Der Zeigehand-Cursor
+                                        // kommt vom `.pointerStyle(.link)` an der Zeile.
                                         .onHover { hovering in
                                             guard hovering else { return }
                                             // Nur ECHTE Mausbewegung darf die Auswahl
@@ -404,6 +411,7 @@ struct PagePickerOverlay: View {
                     .buttonStyle(.plain)
                     .font(BrandFont.sans(11, weight: .semibold))
                     .foregroundStyle(BrandColor.primary)
+                    .pointerStyle(.link)
                     .padding(.top, 2)
             }
         }
@@ -530,6 +538,11 @@ struct PagePickerOverlay: View {
             .background(isSelected ? BrandColor.primary.opacity(0.14) : Color.clear)
         }
         .buttonStyle(.plain)
+        // Zeile ist ein klickbares Ziel → Zeigehand statt des Pfeil-Cursors, den das
+        // `.pointerStyle(.default)` am Overlay sonst ber allen Listenzeilen
+        // erzwingt (sichtbar „nicht sinnig" ber denButtons). View-gebunden wie die
+        // anderen klickbaren Ziele im Projekt (s. ContentView SwiftBar-Knopf).
+        .pointerStyle(.link)
         // Eine Zeile = EIN VoiceOver-Element. Sonst liest der Screenreader Name,
         // Badge und Relativ-Zeit als drei zusammenhanglose Fragmente vor.
         .accessibilityElement(children: .ignore)

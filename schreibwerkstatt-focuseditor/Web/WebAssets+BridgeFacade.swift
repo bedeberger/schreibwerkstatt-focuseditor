@@ -102,6 +102,14 @@ extension WebAssets {
           });
         },
 
+        // Verzögerter Spellcheck-Nachzieh-Versuch (Boot war offline ⇒
+        // LanguageTool nie mounted). Swift ruft diese Funktion über
+        // `pushDeferredSpellcheckInit` auf, sobald der Server in der
+        // Sitzung erreicht wurde. Platzhalter `null` — das Boot-Modul
+        // weist die echte Funktion SEHR früh zu (vor jeglichem await),
+        // damit der Aufruf ab dem ersten Boot-Zyklus klappt.
+        _trySpellcheckInit: null,
+
         // 3-Wege-Block-Merge über das gebündelte block-merge.js (ES-Modul,
         // dynamisch geladen). Von Swift via callAsyncJavaScript aufgerufen.
         // Wirft, wenn kein Bundle vorliegt (Dev-Harness) → Swift wertet das als Konflikt.

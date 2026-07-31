@@ -14,6 +14,8 @@
 //
 
 import Foundation
+import os
+import WebKit
 
 extension EditorBridge {
 
@@ -135,6 +137,54 @@ extension EditorBridge {
         let req = DictionaryAddRequest(word: word, bookId: bookId, lang: lang)
         let (status, _) = try await api.postExpectingJSON("/dictionary", body: req)
         return ["ok": (200...299).contains(status)]
+    }
+
+    // MARK: Verzögerter Spellcheck-Nachzieh-Versuch (Offline-Boot-Lücke)
+
+    /// Spricht `window.__focusBridge._trySpellcheckInit` an (Boot-Glue), die
+    /// idempotent ist (`if (window.__spellcheck) return`): importiert den
+    /// gebündelten Spellcheck-Controller + `apply-replacement`-Helper und
+    /// mountet ihn, falls der Server `/config` jetzt als enabled liefert —
+    /// und no-op falls der Boot das ohnehin schon hatte.
+    ///
+    /// Deckt die Lücke: startete die App OFFLINE, lief `spellcheckConfig` beim
+    /// Boot leer (`{enabled:false}`) zurück → der Controller wurde nie
+    /// importiert/mounted → die ganze Sitzung keine Rechtschreibprüfung, sobald
+    /// Konnektivität zurückkehrte. `SyncEngine.onServerReached` treibt diese
+    /// Methode, sobald der Server erneut antwortet (s. `AppCore`).
+    ///
+    /// Lief die JS-Fn noch nicht (Boot-Race, WebView/Dokument noch nicht
+    /// geladen), tut der Aufruf nichts und setzt `spellcheckDeferredDone`
+    /// NICHT — der nächste Sync-Tick versucht erneut. War die Fn verfügbar,
+    /// wurde gerufen → Flag gesetzt (kein Retry-Spam in jedem Tick). No-op
+    /// ohne WebView.
+    func pushDeferredSpellcheckInit() async {
+        guard let webView else { return }
+        guard !spellcheckDeferredDone else { return }
+        do {
+            // Expliziter Check statt `fn && fn()`-Trick: der `&&`-Ausdruck
+            // lieferte im Fehlerfall `null` (NSNull), im OK-Fall das Promise —
+            // beides truthy in JS, aber Swift muss eine klare Trennung haben
+            // („Fn noch null → nicht gesetzt, Tick wiederholen" vs „Fn
+            // gerufen, Flag setzen").
+            let result = try await webView.callAsyncJavaScript(
+                "const fn = window.__focusBridge && window.__focusBridge._trySpellcheckInit; if (typeof fn === 'function') { return fn(); } return null;",
+                in: nil,
+                contentWorld: .page)
+            // `null` (JS) → NSNull; `undefined` (JS) → nil. Beides bedeutet:
+            // die Boot-Fn war (noch) nicht registriert → nicht aufgerufen.
+            let invoked = !(result == nil || result is NSNull)
+            if invoked { spellcheckDeferredDone = true }
+        } catch {
+            log.error("pushDeferredSpellcheckInit fehlgeschlagen: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// Server-Wechsel: einmaligen Nachzieh-Versuch wieder freigeben, damit eine
+    /// ggf. abgewiesene Boot-Config (`enabled:false` am alten Server) am neuen
+    /// Server ungesperrt erneut probiert wird.
+    func resetSpellcheckDeferred() {
+        spellcheckDeferredDone = false
     }
 
     // MARK: Synonyme-Proxy

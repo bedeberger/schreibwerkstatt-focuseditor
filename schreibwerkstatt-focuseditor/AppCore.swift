@@ -86,6 +86,15 @@ final class AppCore: ObservableObject {
                               shouldSync: { auth.state == .signedIn })
         sync.editor = bridge   // SyncEngine ↔ Editor-Kopplung (schwach gehalten)
         self.sync = sync
+        // Offline-Boot-Lücke: startete die App ohne erreichbaren Server, lief
+        // `spellcheckConfig` beim Boot leer zurück → der Spellcheck-Controller
+        // wurde nie mounted. Sobald der Server im Sync-Tick antwortet, gibt
+        // die Bridge der WebView die Chance, die Initialisierung idempotent
+        // nachzuholen (`bridge.pushDeferredSpellcheckInit`).
+        sync.onServerReached = { [weak bridge] in
+            guard let bridge else { return }
+            Task { await bridge.pushDeferredSpellcheckInit() }
+        }
         // Beim Öffnen einer Seite gezielt deren frischen Server-Stand ziehen
         // („sicherheitshalber"), statt aufs Poll-Intervall zu warten. Best-effort
         // und still; respektiert den Datenverlust-Schutz (dirty/Outbox bleibt).
@@ -120,6 +129,12 @@ final class AppCore: ObservableObject {
         // Laufendes/abgeschlossenes Lektorat verwerfen: Job-ID und Deep-Link
         // gelten nur am alten Server.
         lektorat.reset()
+        // Verzögerten Spellcheck-Nachzieh-Versuch für den NEUEN Server
+        // freigeben (Boot-Config des alten Servers könnte `enabled:false`
+        // geliefert haben). Die JS-Seite bleibt idempotent (Guard
+        // `if (window.__spellcheck) return`); ein Re-Mount findet nur statt,
+        // wenn der neue Server enabled liefert UND noch nichts mounted ist.
+        bridge.resetSpellcheckDeferred()
         do {
             try await store.switchToCurrentServer()
         } catch {

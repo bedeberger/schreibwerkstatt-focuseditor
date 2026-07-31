@@ -130,7 +130,9 @@ final class EditorBridge: NSObject, WKScriptMessageHandlerWithReply, EditorCoord
     /// `private`), damit die Proxy-Methoden in `EditorBridge+Proxies.swift` (eigene
     /// Datei, hält EditorBridge.swift unter dem Größen-Limit) darauf zugreifen.
     let api: APIClient?
-    private let log = Logger(subsystem: "ch.schreibwerkstatt.focuseditor", category: "bridge")
+    /// Diagnose-Logger. `internal` aus demselben Grund wie `api`/`webView`:
+    /// die Proxy-Methoden in `EditorBridge+Proxies.swift` loggen ebenfalls.
+    let log = Logger(subsystem: "ch.schreibwerkstatt.focuseditor", category: "bridge")
 
     /// Zuletzt vom Server gelesene LanguageTool-Konfiguration (aus `/config`).
     /// Wird gecacht, damit ein Offline-Tick den letzten bekannten Stand behält
@@ -138,9 +140,21 @@ final class EditorBridge: NSObject, WKScriptMessageHandlerWithReply, EditorCoord
     /// Extension (s. `api`).
     var ltConfig: (enabled: Bool, debounceMs: Int)?
 
+    /// Hat der verzögerte Spellcheck-Nachzieh-Versuch in dieser Server-Sitzung
+    /// schon stattgefunden? Verhindert, dass jeder erfolgreiche Sync-Tick die
+    /// JS-Fn erneut anstösst, sobald sie einmal angeboten wurde. Sitzungs-
+    /// lokal; `resetSpellcheckDeferred()` gibt ihn für einen Serverwechsel
+    /// frei. `internal` für die Proxy-Extension.
+    internal var spellcheckDeferredDone = false
+
     /// WebView für den Swift→JS-Kanal (`callAsyncJavaScript`). Schwach: die
     /// View besitzt die Bridge (Handler-Registrierung), nicht umgekehrt.
-    private weak var webView: WKWebView?
+    /// `internal` (wie `api`): die Proxy-Methoden in
+    /// `EditorBridge+Proxies.swift` brauchen für den verzögerten
+    /// Spellcheck-Nachzieh-Versuch (Boot-Offline-Lücke) ebenfalls Zugriff
+    /// auf den Swift→JS-Kanal, sonst müsste die Methode hier stehen und die
+    /// Datei übers Größe-Limit treiben.
+    internal weak var webView: WKWebView?
 
     /// Lokal gewählte Fokus-Granularität (CSS-Klasse `focus-mode--<value>`).
     /// Vom `FocusController` gesetzt; Default aus UserDefaults, damit der

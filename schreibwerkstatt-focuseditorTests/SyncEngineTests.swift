@@ -579,6 +579,48 @@ final class SyncEngineTests: XCTestCase {
         XCTAssertEqual(engine.stateStore.state.cursors[1], SyncCursorDTO(since: newer, since_id: 7))
     }
 
+    // MARK: onServerReached-Hook (Spellcheck-Nachzug, Offline-Boot-Lücke)
+
+    /// Jeder erfolgreiche Sync-Tick feuert `onServerReached` — Empfänger
+    /// (`AppCore` → `bridge.pushDeferredSpellcheckInit`) sind idempotent, darum
+    /// bewusst KEIN one-shot-Guard in der SyncEngine. Erreicht der Server
+    /// (HTTP-Antwort aus Push ODER Pull), feuert der Hook.
+    func testOnServerReachedFiresOnSuccessfulSyncRun() async throws {
+        let store = FakeStore()
+        _ = try await store.save(id: "5", html: "<p>local</p>", baseUpdatedAt: nil)
+        let engine = makeEngine(store: store)
+        engine.stateStore.mutate { $0.serverBaseISO["5"] = base }
+        router.on("PUT", "/content/pages/5", [push(200, #"{"id":5,"updated_at":"\#(newer)"}"#)])
+        // pullDeltas: Buch-Liste ist leer → fetcht `/content/books`, empty-Stub.
+        router.on("GET", "/content/books", [push(200, "[]")])
+        var fires = 0
+        engine.onServerReached = { fires += 1 }
+
+        await engine.syncNow(manual: true)
+        XCTAssertEqual(fires, 1, "erfolgreicher Tick muss feuern (Push erreicht den Server)")
+
+        await engine.syncNow(manual: true)
+        XCTAssertEqual(fires, 2,
+                       "jeder erfolgreiche Tick feuert erneut — Empfänger sind idempotent, kein one-shot in der Engine")
+    }
+
+    /// Erreicht der Server NIE (Transport-Fehler auf JEDEM Roundtrip), darf
+    /// der Hook NICHT feuern — sonst triegl der Spellcheck-Nachzug gegen
+    /// einen toten Server.
+    func testOnServerReachedDoesNotFireWhenServerUnreachable() async throws {
+        let store = FakeStore()
+        let engine = makeEngine(store: store)   // leere Outbox → pushOutbox hat nichts zu tun
+        // KEINE Stubs → MockURLProtocol wirft URLError → APIClient wandelt in
+        // AuthError.network um → reachableSend lässt `serverReachedThisRun` auf false.
+        var fires = 0
+        engine.onServerReached = { fires += 1 }
+
+        do { try await engine.syncNow(manual: true) } catch { /* erwartet */ }
+        XCTAssertEqual(fires, 0, "Server nicht erreicht → Hook nicht feuern")
+        XCTAssertEqual(engine.status, .offline,
+                       "Status = offline (reachability nie gestartet → isOnline=false)")
+    }
+
     // MARK: Helfer
 
     /// Setzt die bekannten Buch-IDs und unterdrückt den `/content/books`-Refresh

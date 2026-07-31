@@ -246,6 +246,33 @@ final class EditorBridgeTests: XCTestCase {
         XCTAssertNotNil(dict["granularity"] as? String)
     }
 
+    // MARK: Verzögerter Spellcheck-Nachzug (Offline-Boot-Lücke)
+
+    /// Ohne verbundene WebView ist der Swift→JS-Kanal nicht verfügbar → die
+    /// Methode ist no-op. Wichtig: `spellcheckDeferredDone` bleibt false
+    /// (die Fn wurde ja nicht gerufen), damit der nächste Sync-Tick erneut
+    /// probiert. Verhindert, dass ein Boot-Race (WebView/Boot-Modul noch
+    /// nicht bereit) das Nachziehen permanent verpasst.
+    func testPushDeferredSpellcheckInitNoOpWithoutWebView() async throws {
+        let (bridge, _) = makeBridge()
+        XCTAssertFalse(bridge.spellcheckDeferredDone, "Flag Default false")
+        await bridge.pushDeferredSpellcheckInit()
+        XCTAssertFalse(bridge.spellcheckDeferredDone,
+                       "ohne WebView darf das Flag nicht gesetzt werden (nächster Tick retry)")
+    }
+
+    /// Server-Wechsel gibt den Sitzungs-Versuch wieder frei — Boot-Config
+    /// des alten Servers könnte `enabled:false` geliefert haben; der neue
+    /// Server bekommt einen frischen Versuch. Manuell-True setzen → reset →
+    /// wieder frei.
+    func testResetSpellcheckDeferredClearsFlag() async {
+        let (bridge, _) = makeBridge()
+        bridge.spellcheckDeferredDone = true
+        bridge.resetSpellcheckDeferred()
+        XCTAssertFalse(bridge.spellcheckDeferredDone,
+                       "resetSpellcheckDelayed muss das Flag wieder freigeben")
+    }
+
     // MARK: Unbekannte Op
 
     func testUnknownOpThrows() async throws {

@@ -310,6 +310,9 @@ private struct SaveErrorBanner: View {
                     .foregroundStyle(.white.opacity(0.9))
             }
             .buttonStyle(.plain)
+            // Zeigehand — stiltreu zum Lektorat-Banner-Schliesser, der ebenfalls
+            // als plain-Icon-Knopf über der WebView liegt.
+            .pointerStyle(.link)
             .accessibilityLabel(t("save.dismiss"))
         }
         .padding(.horizontal, 14)
