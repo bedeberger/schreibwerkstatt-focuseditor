@@ -13,6 +13,15 @@
 //  appcast.xml erzeugt + signiert `scripts/release-dmg.sh` (generate_appcast)
 //  und lädt es als „latest"-Asset hoch. Kein Server-Kontakt nötig.
 //
+//  NUR im DMG-Target: Die ganze Datei hängt an der Compilation Condition
+//  `SPARKLE`, die ausschließlich das Target „schreibwerkstatt-focuseditor"
+//  setzt. Im App-Store-Target („Focuseditor-MAS") kompiliert sie zu nichts —
+//  ein eigener Update-Mechanismus ist dort verboten, und die Sandbox-Exception
+//  für Sparkles Installer-XPC (mach-lookup) würde die Store-Validierung
+//  scheitern lassen. Updates übernimmt dort der App Store selbst.
+//
+
+#if SPARKLE
 
 import Foundation
 import Combine
@@ -47,3 +56,5 @@ final class UpdaterController: ObservableObject {
         controller.updater.checkForUpdates()
     }
 }
+
+#endif

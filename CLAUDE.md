@@ -174,7 +174,7 @@ schreibwerkstatt-focuseditor/        App-Sources (Swift)
   Writing/    WritingStatsStore (Live-Wortzahl/Lesezeit/Schreibziel/Tages-Delta) + WritingTimeTracker (Schreibzeit-Heartbeat → POST /history/writing-time)
   Conflict/   ConflictDiff (HTML→Absätze + absatzweiser Diff) + ConflictResolutionView (Nebeneinander-Sheet, informierte 409-Auflösung)
   Lektorat/   LektoratJobStore (Server-Lektorat der offenen Seite: POST /jobs/check + Poll) + LektoratToolbarButton/-ResultBanner
-  Update/     UpdaterController (Sparkle-Auto-Update; Config in Config/Info.plist + Config/Focuseditor.entitlements)
+  Update/     UpdaterController (Sparkle-Auto-Update, NUR im DMG-Target hinter `#if SPARKLE`; Config in Config/Info.plist + Config/Focuseditor.entitlements)
   Settings/   SettingsView (⌘, — 7 Tabs)
   Localization/  Zweisprachigkeit de/en: Localization.swift (t()/tn() + L10nStore + LocalizationController) + mac-de.json/mac-en.json (gebündelt) + I18nBundleStore (OTA-Override)
 ```
@@ -195,14 +195,54 @@ Der App-Sources-Ordner ist eine `PBXFileSystemSynchronizedRootGroup` (Xcode 16+)
 - **Datenverlust-Schutz vor allem.** Bei Auth-/Sync-Fehlern lokale Inhalte behalten; kein automatisches Verwerfen, kein Überschreiben ohne Merge.
 - **Tastaturkürzel-Hilfe pflegen.** Wird ein Tastaturkürzel neu hinzugefügt, geändert oder entfernt (Swift `.keyboardShortcut` **oder** ein Editor-Shortcut, der für den Nutzer im Client greift), muss es in der Hilfe-Liste [ShortcutsHelpView.swift](schreibwerkstatt-focuseditor/ShortcutsHelpView.swift) (Help-Menü → „Tastaturkürzel", ⌘?) im selben Schritt aktualisiert werden. Die Liste ist die Single Source of Truth für die Nutzer-Hilfe — nie veralten lassen.
 - **Lokalisierung (de/en) — kein hartkodierter UI-String.** Jeder nutzersichtbare Text läuft über `t("key")` (Plural: `tn(count, "baseKey")`) aus [Localization/Localization.swift](schreibwerkstatt-focuseditor/Localization/Localization.swift). Neue/geänderte Strings **immer** in **beide** gebündelten Kataloge [mac-de.json](schreibwerkstatt-focuseditor/Localization/mac-de.json) **und** [mac-en.json](schreibwerkstatt-focuseditor/Localization/mac-en.json) (Namespace `macclient.*`, flach, `{param}`-Platzhalter wie die Web-i18n). Fallback-Kette: `OTA[locale] → bundled[locale] → bundled["de"] → key`. Markennamen (z. B. „Schreibwerkstatt") bleiben literal. Die gebündelten Kataloge sind der Offline-Pflicht-Fallback; der Server-Override (`GET /content/macclient-i18n.json`, `I18nBundleStore`) ist optional und greift wie das Editor-Bundle erst beim **nächsten** Start. Die aktive Sprache: lokale Wahl (Settings → Allgemein) gewinnt; ohne lokale Wahl seedet `LocalizationController.seedFromServerIfNeeded()` aus dem Server-Profil (`/config` → `userSettings.locale`), sonst Systemsprache. Code-Kommentare auf Deutsch (wie Hauptrepo).
+- **Sparkle nur hinter `#if SPARKLE`.** Jeder Zugriff auf `UpdaterController` oder das Sparkle-Modul muss in `#if SPARKLE … #endif` stehen — die Condition setzt ausschließlich das DMG-Target. Ohne Guard bricht der App-Store-Build (s. „Zwei Distributionswege"), und ein Sparkle-Artefakt im Store-Bundle ist ein Ablehnungsgrund. Neue nutzersichtbare Update-UI braucht auch einen `#else`-Zweig, damit der Store-Build keine Lücke zeigt.
 - **Nach jeder Swift-Änderung builden.** Nach jeder Anpassung an Swift-Code den Build laufen lassen (s. „Build & Run") und Fehler/Warnings zurückmelden, bevor es weitergeht. Nicht ungeprüft mehrere Änderungen stapeln.
 - **Datei-Größe prüfen (Test).** Nach jeder Änderung an Swift-Quelldateien (neue Datei, Datei deutlich gewachsen) den Datei-Größen-Guard [SourceFileSizeTests.swift](schreibwerkstatt-focuseditorTests/SourceFileSizeTests.swift) laufen lassen (s. „Build & Run"). Er hält jede `.swift`-Datei unter **800 Zeilen** (Richtwert/Ziel eher 300–500). Schlägt er an → aufteilen (in Swift meist per `extension` über mehrere Dateien, Vorbild `SyncEngine[+Push/+Pull]`) **oder**, wenn die Größe bewusst gewollt ist (z. B. zusammenhängendes Template), mit Begründung in die `allowedOverLimit`-Allowlist im Test aufnehmen. Neue App-Dateien, die eine getestete Datei als Abhängigkeit braucht, müssen ins Test-Target (explizite Membership im pbxproj, s. [ARCHITECTURE.md](ARCHITECTURE.md) / `xctest`-Hinweis).
 
+## Zwei Distributionswege (DMG + App Store)
+
+Ein Quellcode, zwei Build-Rezepte. Beide Targets teilen dieselbe
+`PBXFileSystemSynchronizedRootGroup` — neue Swift-Dateien landen **automatisch**
+in beiden, es gibt keine zweite Codebasis und keinen Fork.
+
+| | `schreibwerkstatt-focuseditor` (DMG) | `Focuseditor-MAS` (App Store) |
+|---|---|---|
+| Sparkle | gelinkt, `SWIFT_ACTIVE_COMPILATION_CONDITIONS` enthält `SPARKLE` | **nicht** gelinkt, kein `SPARKLE` |
+| Info.plist | `Config/Info.plist` (mit `SU*`-Keys) | `Config/Info-MAS.plist` (ohne `SU*`) |
+| Entitlements | `Config/Focuseditor.entitlements` (mach-lookup-Exception für Sparkles Installer-XPC) | **keine Datei** — Xcode synthetisiert `app-sandbox` + `network.client` + `files.user-selected` aus den `ENABLE_*`-Settings |
+| Updates | Sparkle, Appcast als GitHub-„latest"-Asset | App Store |
+| Bundle-ID | identisch — Umsteiger behalten Keychain-Token, UserDefaults und den lokalen SQLite-Spiegel |
+
+**Warum getrennt:** Ein eigener Update-Mechanismus ist im App Store verboten, und
+`com.apple.security.temporary-exception.mach-lookup.global-name` (von Sparkles
+Installer-XPC gebraucht) wird für App-Store-Profile praktisch nicht mehr erteilt —
+der Store-Build würde schon an der Validierung scheitern.
+
+**Prüfen, dass der Store-Build sauber ist** (nach Änderungen an Sparkle-Code,
+Plists oder der Projektdatei):
+
+```bash
+APP=build/mas/Build/Products/Release/Focuseditor.app
+codesign -d --entitlements :- "$APP"   # nur app-sandbox / network.client / files.user-selected
+ls "$APP/Contents/Frameworks" "$APP/Contents/XPCServices"   # kein Sparkle, kein XPC
+plutil -p "$APP/Contents/Info.plist" | grep '"SU'           # leer
+```
+
+Der Demo-Zugang (`SWDemoHost`/`SWDemoDeviceToken`) bleibt im Store-Build bewusst
+drin: der App-Review braucht einen Ein-Klick-Zugang, weil der normale Login ein
+Device-Token per Copy-Paste verlangt.
+
+**Release:** ein Bump für beide Kanäle (dieselbe `Version.xcconfig`), danach
+`scripts/release-dmg.sh` für das DMG bzw. [scripts/archive-mas.sh](scripts/archive-mas.sh)
+für das App-Store-`.pkg`. Der Slash-Command `/release` wählt den Kanal
+(`dmg` | `appstore` | `beide`, Default `dmg`) — Details in [SIGNING.md](SIGNING.md)
+„App Store".
+
 ## Build & Run
 
-- Xcode-Projekt: `schreibwerkstatt-focuseditor.xcodeproj`. Target: macOS (SwiftUI-App-Lifecycle).
+- Xcode-Projekt: `schreibwerkstatt-focuseditor.xcodeproj`. **Zwei App-Targets** auf demselben Quellcode (s. „Zwei Distributionswege"): `schreibwerkstatt-focuseditor` (DMG, mit Sparkle) und `Focuseditor-MAS` (App Store, ohne Sparkle).
 - **Kein Bundle-Build-Step nötig** — das Editor-Build wird zur Laufzeit per OTA gezogen (s. „Editor-Bundle (OTA)"). Zum Testen muss der Server (Default `localhost:3737`) erreichbar und ein gültiges Device-Token eingeloggt sein.
-- Abhängigkeiten: GRDB (SQLite) *(integriert, SPM `groue/GRDB.swift`, `upToNextMajor` ab 7.11.0)*; Sparkle (Auto-Update, **integriert**, SPM `sparkle-project/Sparkle`, `upToNextMajor` ab 2.6.0 — gekapselt in [Update/UpdaterController.swift](schreibwerkstatt-focuseditor/Update/UpdaterController.swift); Appcast via GitHub-„latest"-Release-Asset, Schlüssel/Flow s. [SIGNING.md](SIGNING.md) „Auto-Update (Sparkle)"). ZIP-Entpacken bewusst **ohne** Dependency (`MiniZip.swift` + `Compression`-Framework, sandbox-tauglich).
+- Abhängigkeiten: GRDB (SQLite) *(integriert, SPM `groue/GRDB.swift`, `upToNextMajor` ab 7.11.0)*; Sparkle (Auto-Update, **integriert, aber nur im DMG-Target**, SPM `sparkle-project/Sparkle`, `upToNextMajor` ab 2.6.0 — gekapselt in [Update/UpdaterController.swift](schreibwerkstatt-focuseditor/Update/UpdaterController.swift); Appcast via GitHub-„latest"-Release-Asset, Schlüssel/Flow s. [SIGNING.md](SIGNING.md) „Auto-Update (Sparkle)"). ZIP-Entpacken bewusst **ohne** Dependency (`MiniZip.swift` + `Compression`-Framework, sandbox-tauglich).
 - **Build-Check nach jeder Swift-Änderung** (Pflicht, s. Harte Regeln):
 
   ```bash
@@ -210,6 +250,14 @@ Der App-Sources-Ordner ist eine `PBXFileSystemSynchronizedRootGroup` (Xcode 16+)
   ```
 
   Für kompakte Ausgabe `-quiet` anhängen. Verifiziert lauffähig am 2026-06-14 (`** BUILD SUCCEEDED **`).
+
+  **Beide Targets bauen**, sobald `#if SPARKLE`, die Info.plists oder die Projektdatei betroffen sind — der App-Store-Build fällt sonst unbemerkt aus (eigener `-derivedDataPath`, sonst überschreiben sich die gleichnamigen Produkte):
+
+  ```bash
+  xcodebuild -scheme Focuseditor-MAS -configuration Release -derivedDataPath build/mas build -quiet
+  ```
+
+  Verifiziert grün am 2026-08-01.
 - **Datei-Größen-Guard (Pflicht bei Source-Änderungen, s. Harte Regeln):**
 
   ```bash

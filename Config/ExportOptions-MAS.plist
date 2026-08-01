@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  ExportOptions-MAS.plist — Export-Rezept für `xcodebuild -exportArchive` beim
+  App-Store-Weg (scripts/archive-mas.sh). Ergebnis ist ein signiertes .pkg für
+  App Store Connect.
+
+  - method            app-store-connect = Mac-App-Store-Verteilung. Zieht die
+                      „Apple Distribution"- und „Mac Installer Distribution"-
+                      Zertifikate plus das Mac-App-Store-Provisioning-Profil.
+  - destination        export = nur exportieren. Der Upload passiert bewusst
+                      getrennt (Transporter/Organizer oder UPLOAD=1 im Skript),
+                      damit ein fehlgeschlagener Upload nicht das ganze Release
+                      abbricht.
+  - signingStyle       automatic = Xcode wählt Zertifikat + Profil selbst. Setzt
+                      voraus, dass die App ID im Developer-Portal registriert ist.
+  - uploadSymbols      dSYMs mitgeben (Crash-Reports in App Store Connect).
+
+  Der DMG-Weg nutzt das NICHT — der signiert und notarisiert direkt über
+  scripts/notarize.sh mit der Developer-ID-Identität.
+-->
+<plist version="1.0">
+<dict>
+	<key>method</key>
+	<string>app-store-connect</string>
+	<key>destination</key>
+	<string>export</string>
+	<key>teamID</key>
+	<string>TQA2JLKT87</string>
+	<key>signingStyle</key>
+	<string>automatic</string>
+	<key>uploadSymbols</key>
+	<true/>
+</dict>
+</plist>

@@ -1,7 +1,10 @@
-# Signieren & Notarisieren (Verteilung außerhalb App Store)
+# Signieren, Notarisieren & Verteilen
 
-Ziel: Die App läuft auf fremden Macs ohne Gatekeeper-Warnung. Dafür braucht es
-ein **Developer-ID-Zertifikat** + **Notarisierung** durch Apple.
+Zwei Kanäle, ein Quellcode: **DMG** (Direktdownload, dieses Dokument bis zum
+Abschnitt „Auto-Update") und **App Store** (Abschnitt „App Store" ganz unten).
+
+Ziel des DMG-Wegs: Die App läuft auf fremden Macs ohne Gatekeeper-Warnung. Dafür
+braucht es ein **Developer-ID-Zertifikat** + **Notarisierung** durch Apple.
 
 ## Schon vorbereitet (im Repo / Projekt)
 
@@ -130,8 +133,9 @@ hoch (`--wait`), heftet das Ticket ans Bundle (`stapler`) und prüft mit `spctl`
 
 ## Auto-Update (Sparkle)
 
+Nur der DMG-Weg — im App-Store-Target ist Sparkle nicht enthalten (s. unten).
 Die App bringt **Sparkle 2** mit (SPM, in den App-Code als `UpdaterController`
-gekapselt). Sie prüft automatisch im Hintergrund auf neue Versionen und bietet
+gekapselt, hinter `#if SPARKLE`). Sie prüft automatisch im Hintergrund auf neue Versionen und bietet
 einen manuellen Check (App-Menü „Nach Updates suchen…" + Settings → Konto).
 
 **Konfiguration (im Repo, einmalig erledigt):**
@@ -185,3 +189,64 @@ Pfad) und legt das GitHub-Release `v<VERSION>` mit `.dmg` + `appcast.xml` als
 > server-seitig weiter — Status mit `xcrun notarytool info <id>` prüfen und ab dem
 > Punkt manuell weiterfahren (App stapeln → DMG bauen/signieren → DMG notarisieren/
 > stapeln → `scripts/publish-github-release.sh <dmg>`), statt alles neu zu bauen.
+
+## App Store (Target `Focuseditor-MAS`)
+
+Der Store-Weg ist ein **zweites Target auf demselben Quellcode** — kein Fork, kein
+zweiter Ordner (Übersicht: [CLAUDE.md](CLAUDE.md) „Zwei Distributionswege"). Alles
+oben Beschriebene (Developer ID, Notarisierung, Sparkle, `release-dmg.sh`) gilt
+**nur** für das DMG-Target und bleibt unverändert bestehen; beide Kanäle laufen
+parallel weiter.
+
+**Warum überhaupt getrennt:** Ein eigener Update-Mechanismus ist im App Store
+verboten, und Sparkles Sandbox-Exception
+(`com.apple.security.temporary-exception.mach-lookup.global-name` für die
+Installer-XPC-Services) wird für App-Store-Profile praktisch nicht mehr erteilt —
+ein Store-Build mit Sparkle scheitert schon an der Validierung.
+
+**Was im MAS-Target anders ist:**
+- Sparkle ist nicht gelinkt; der Code hängt an der Compilation Condition `SPARKLE`,
+  die nur das DMG-Target setzt.
+- `Config/Info-MAS.plist` statt `Config/Info.plist` — ohne die `SU*`-Keys, dafür mit
+  `ITSAppUsesNonExemptEncryption=false` (erspart die Export-Compliance-Rückfrage).
+- **Kein** `CODE_SIGN_ENTITLEMENTS`: Xcode synthetisiert `app-sandbox`,
+  `network.client` und `files.user-selected` aus den `ENABLE_*`-Build-Settings.
+- Bundle-ID identisch zum DMG-Target — Umsteiger behalten Keychain-Token,
+  Einstellungen und den lokalen SQLite-Spiegel.
+- Notarisierung entfällt (macht Apple beim Store-Ingest selbst).
+
+**Build + Selbstkontrolle:**
+
+```bash
+xcodebuild -scheme Focuseditor-MAS -configuration Release \
+  -derivedDataPath build/mas build -quiet
+
+APP=build/mas/Build/Products/Release/Focuseditor.app
+codesign -d --entitlements :- "$APP"        # nur app-sandbox/network.client/user-selected
+ls "$APP/Contents/Frameworks" "$APP/Contents/XPCServices"   # beides existiert nicht
+plutil -p "$APP/Contents/Info.plist" | grep '"SU'           # leer
+```
+
+Eigener `-derivedDataPath`, weil beide Targets ein `Focuseditor.app` produzieren
+und sich sonst gegenseitig überschreiben.
+
+**Noch offen (Apple-Kontoarbeit, unabhängig vom Code):**
+1. App ID `David-Berger.schreibwerkstatt-focuseditor` im Developer-Portal
+   registrieren; Zertifikate „Apple Distribution" + „Mac Installer Distribution";
+   Provisioning-Profil *Mac App Store*.
+2. App-Record in App Store Connect. Das Paket baut dann
+   [scripts/archive-mas.sh](scripts/archive-mas.sh) (Archiv → Sanity-Check →
+   `.pkg`-Export nach `build/mas/export`, Rezept in
+   [Config/ExportOptions-MAS.plist](Config/ExportOptions-MAS.plist)); Upload via
+   Transporter oder Xcode-Organizer. Im Release-Workflow steckt das hinter
+   `/release appstore` bzw. `/release beide`.
+3. **Kontolöschung in-app** (Guideline 5.1.1(v)) — fehlt noch, wahrscheinlicher
+   Reject-Grund.
+4. Metadaten: Screenshots de/en, Beschreibung, Support-/Datenschutz-URL,
+   App-Privacy-Deklaration, Altersfreigabe.
+5. Review-Notes: Demo-Zugang erwähnen (der Knopf „Demo öffnen" ist im Store-Build
+   bewusst aktiv) und kurz erklären, dass das OTA-Editor-Bundle von WebKit
+   interpretierter Code ist (Guideline-2.5.2-Ausnahme), der den Funktionsumfang
+   nicht verändert.
+6. `MACOSX_DEPLOYMENT_TARGET` steht auf 26.5 — für den Store deutlich senken, sonst
+   ist die App für fast niemanden sichtbar.

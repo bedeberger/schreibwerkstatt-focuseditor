@@ -50,7 +50,11 @@ struct schreibwerkstatt_focuseditorApp: App {
     @StateObject private var typography = TypographyController()
     @StateObject private var writingStats = WritingStatsStore()
     @StateObject private var loc = LocalizationController()
+    // Sparkle nur im DMG-Target — im App-Store-Build (kein `SPARKLE`) übernimmt
+    // der Store die Updates, s. Update/UpdaterController.swift.
+    #if SPARKLE
     @StateObject private var updater = UpdaterController()
+    #endif
     /// Geteilter UI-Zustand zwischen Editor-Host und der im Titelleisten-Accessory
     /// gehosteten Toolbar (Seiten-Picker + Konflikt-Sheet).
     @StateObject private var toolbarUI = ToolbarUIState()
@@ -148,10 +152,12 @@ struct schreibwerkstatt_focuseditorApp: App {
                 Button(t("menu.about")) {
                     AboutPanel.show()
                 }
+                #if SPARKLE
                 Button(t("menu.checkForUpdates")) {
                     updater.checkForUpdates()
                 }
                 .disabled(!updater.canCheckForUpdates)
+                #endif
 
                 // Abmelden im App-Menü (Konto-Aktion) — bisher nur im Toolbar-
                 // Überlauf. Eigene Sektion, damit es nicht mit „Über …" verschmilzt.
@@ -256,7 +262,9 @@ struct schreibwerkstatt_focuseditorApp: App {
                 .environmentObject(typography)
                 .environmentObject(writingStats)
                 .environmentObject(loc)
+                #if SPARKLE
                 .environmentObject(updater)
+                #endif
         }
     }
 }

@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Info-MAS.plist — Info.plist-Zusatzschlüssel des App-Store-Targets
+  („Focuseditor-MAS"). Pendant zu Config/Info.plist, das der DMG-Weg nutzt.
+
+  Der ganze Unterschied: hier stehen KEINE SU*-Keys (SUFeedURL, SUPublicEDKey,
+  SUEnableInstallerLauncherService, SUEnableAutomaticChecks). Ein eigener
+  Update-Mechanismus ist im App Store verboten; Sparkle ist in diesem Target
+  weder gelinkt noch kompiliert (Compilation Condition SPARKLE fehlt), und die
+  Sandbox-Exception für seine Installer-XPC-Services entfällt damit ebenfalls
+  (dieses Target setzt bewusst kein CODE_SIGN_ENTITLEMENTS — Xcode
+  synthetisiert app-sandbox/network.client/files.user-selected aus den
+  ENABLE_*-Build-Settings).
+
+  Alles andere ist absichtlich identisch zu Config/Info.plist — wer dort einen
+  Schlüssel ergänzt, muss ihn hier mitziehen (Ausnahme eben die SU*-Keys):
+
+  - CFBundleLocalizations           Bundle-Sprachen für die OS-Standardmenüs.
+  - SWDemoHost / SWDemoDeviceToken  Demo-Zugang (Auth/DemoAccess.swift). Bleibt
+                                    im Store-Build bewusst drin: der App-Review
+                                    braucht einen Ein-Klick-Zugang, weil der
+                                    normale Login ein Device-Token per
+                                    Copy-Paste verlangt. Werte kommen aus der
+                                    gitignorierten Config/Demo.xcconfig.
+  - ITSAppUsesNonExemptEncryption   false = die App nutzt nur HTTPS/System-
+                                    Krypto. Erspart die Export-Compliance-
+                                    Rückfrage bei jedem Upload zu App Store
+                                    Connect.
+-->
+<plist version="1.0">
+<dict>
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>de</string>
+		<string>en</string>
+	</array>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<key>SWDemoHost</key>
+	<string>$(SW_DEMO_HOST)</string>
+	<key>SWDemoDeviceToken</key>
+	<string>$(SW_DEMO_TOKEN)</string>
+</dict>
+</plist>

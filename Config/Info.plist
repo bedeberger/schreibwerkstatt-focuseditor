@@ -3,6 +3,10 @@
 <!--
   Info.plist — nur die NICHT-generierbaren Sparkle-Keys.
 
+  Gilt für das DMG-Target „schreibwerkstatt-focuseditor". Das App-Store-Target
+  „Focuseditor-MAS" nutzt Config/Info-MAS.plist — identisch, aber ohne die
+  SU*-Keys. Neue Schlüssel hier IMMER auch dort ergänzen.
+
   Der Rest (CFBundle*, NSPrincipalClass, …) wird von Xcode über
   GENERATE_INFOPLIST_FILE=YES + die INFOPLIST_KEY_*-Build-Settings in diese
   Datei hineingemerged. Hier stehen ausschließlich Schlüssel, die Xcode nicht
@@ -36,6 +40,8 @@
 		<string>de</string>
 		<string>en</string>
 	</array>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>SUFeedURL</key>
 	<string>https://github.com/bedeberger/schreibwerkstatt-focuseditor/releases/latest/download/appcast.xml</string>
 	<key>SUPublicEDKey</key>

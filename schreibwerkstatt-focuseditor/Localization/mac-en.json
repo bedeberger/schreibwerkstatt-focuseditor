@@ -190,6 +190,7 @@
   "settings.account.appVersion": "Installed version",
   "settings.account.checkAppUpdate": "Check for Updates…",
   "settings.account.appUpdateHint": "The app checks for new versions automatically in the background and installs them after your confirmation. This button triggers an immediate check.",
+  "settings.account.appUpdateHintStore": "Updates for this app arrive through the App Store.",
   "settings.account.editorVersionSection": "Editor version",
   "settings.account.sourceCommit": "Source (commit)",
   "settings.account.checkUpdate": "Check for update",

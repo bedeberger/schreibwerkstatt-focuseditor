@@ -120,7 +120,10 @@ struct SpellcheckSettingsTab: View {
 struct AccountSettingsTab: View {
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var editorBundle: EditorBundleStore
+    // Nur im DMG-Target — im App-Store-Build gibt es keinen Sparkle-Updater.
+    #if SPARKLE
     @EnvironmentObject private var updater: UpdaterController
+    #endif
     @Environment(\.openURL) private var openURL
     @State private var showLogoutAlert = false
     @State private var showClearCacheAlert = false
@@ -142,11 +145,14 @@ struct AccountSettingsTab: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            // App-Update (Sparkle) — betrifft die native App selbst, getrennt
-            // vom Editor-Bundle (Content) weiter unten. Hintergrund-Checks laufen
-            // automatisch; dieser Button stösst eine manuelle Prüfung an.
+            // App-Update — betrifft die native App selbst, getrennt vom
+            // Editor-Bundle (Content) weiter unten. Im DMG-Target läuft das über
+            // Sparkle (Hintergrund-Checks automatisch, Knopf für sofortige
+            // Prüfung); im App-Store-Build bleibt nur die Versionsanzeige, weil
+            // dort der Store aktualisiert.
             Section(t("settings.account.appUpdateSection")) {
                 LabeledContent(t("settings.account.appVersion"), value: appVersion)
+                #if SPARKLE
                 HStack {
                     Spacer()
                     Button(t("settings.account.checkAppUpdate")) {
@@ -158,6 +164,12 @@ struct AccountSettingsTab: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                #else
+                Text(t("settings.account.appUpdateHintStore"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                #endif
             }
 
             Section(t("settings.account.editorVersionSection")) {

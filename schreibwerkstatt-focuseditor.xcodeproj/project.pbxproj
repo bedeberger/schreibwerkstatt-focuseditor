@@ -10,6 +10,7 @@
 		61DB000000000000000000C3 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = 61DB000000000000000000C2 /* GRDB */; };
 		61DB000000000000000000A3 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = 61DB000000000000000000A2 /* GRDB */; };
 		61DB000000000000000000B3 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 61DB000000000000000000B2 /* Sparkle */; };
+		7E0000000000000000000101 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = 7E0000000000000000000102 /* GRDB */; };
 		7E0000000000000000000070 /* WritingTimeTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E0000000000000000000060 /* WritingTimeTracker.swift */; };
 		7E0000000000000000000071 /* LibraryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E0000000000000000000061 /* LibraryStore.swift */; };
 		7E0000000000000000000072 /* GRDBLocalStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E0000000000000000000062 /* GRDBLocalStore.swift */; };
@@ -53,6 +54,7 @@
 
 /* Begin PBXFileReference section */
 		61EA813C2FDE904700FBD31B /* Focuseditor.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Focuseditor.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		7E0000000000000000000106 /* Focuseditor.app (MAS) */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Focuseditor.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		7E0000000000000000000002 /* schreibwerkstatt-focuseditorTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "schreibwerkstatt-focuseditorTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		7E0000000000000000000060 /* WritingTimeTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = WritingTimeTracker.swift; path = "schreibwerkstatt-focuseditor/Writing/WritingTimeTracker.swift"; sourceTree = SOURCE_ROOT; };
 		7E0000000000000000000061 /* LibraryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LibraryStore.swift; path = "schreibwerkstatt-focuseditor/Library/LibraryStore.swift"; sourceTree = SOURCE_ROOT; };
@@ -117,6 +119,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		7E0000000000000000000103 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7E0000000000000000000101 /* GRDB in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -163,6 +173,7 @@
 			isa = PBXGroup;
 			children = (
 				61EA813C2FDE904700FBD31B /* Focuseditor.app */,
+				7E0000000000000000000106 /* Focuseditor.app (MAS) */,
 				7E0000000000000000000002 /* schreibwerkstatt-focuseditorTests.xctest */,
 			);
 			name = Products;
@@ -219,6 +230,29 @@
 			productReference = 7E0000000000000000000002 /* schreibwerkstatt-focuseditorTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
+		7E000000000000000000010A /* Focuseditor-MAS */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 7E0000000000000000000109 /* Build configuration list for PBXNativeTarget "Focuseditor-MAS" */;
+			buildPhases = (
+				7E0000000000000000000104 /* Sources */,
+				7E0000000000000000000103 /* Frameworks */,
+				7E0000000000000000000105 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				61EA813E2FDE904700FBD31B /* schreibwerkstatt-focuseditor */,
+			);
+			name = "Focuseditor-MAS";
+			packageProductDependencies = (
+				7E0000000000000000000102 /* GRDB */,
+			);
+			productName = "Focuseditor-MAS";
+			productReference = 7E0000000000000000000106 /* Focuseditor.app (MAS) */;
+			productType = "com.apple.product-type.application";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -235,6 +269,9 @@
 					7E0000000000000000000001 = {
 						CreatedOnToolsVersion = 26.5;
 						TestTargetID = 61EA813B2FDE904700FBD31B;
+					};
+					7E000000000000000000010A = {
+						CreatedOnToolsVersion = 26.5;
 					};
 				};
 			};
@@ -259,6 +296,7 @@
 			targets = (
 				61EA813B2FDE904700FBD31B /* schreibwerkstatt-focuseditor */,
 				7E0000000000000000000001 /* schreibwerkstatt-focuseditorTests */,
+				7E000000000000000000010A /* Focuseditor-MAS */,
 			);
 		};
 /* End PBXProject section */
@@ -272,6 +310,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		7E0000000000000000000006 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7E0000000000000000000105 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -321,6 +366,13 @@
 				7E0000000000000000000058 /* ContentAPI.swift in Sources */,
 				7E0000000000000000000059 /* Reachability.swift in Sources */,
 				7E000000000000000000005A /* SyncPreferences.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		7E0000000000000000000104 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -491,7 +543,8 @@
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) SPARKLE";
+					SWIFT_VERSION = 5.0;
 			};
 			name = Debug;
 		};
@@ -530,7 +583,8 @@
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) SPARKLE";
+					SWIFT_VERSION = 5.0;
 			};
 			name = Release;
 		};
@@ -566,6 +620,82 @@
 			};
 			name = Release;
 		};
+		7E0000000000000000000107 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = TQA2JLKT87;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
+				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SELECTED_FILES = readonly;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Config/Info-MAS.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "Schreibwerkstatt Fokus";
+				INFOPLIST_KEY_CFBundleName = Focuseditor;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.books";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "David-Berger.schreibwerkstatt-focuseditor";
+				PRODUCT_MODULE_NAME = schreibwerkstatt_focuseditor;
+				PRODUCT_NAME = Focuseditor;
+				REGISTER_APP_GROUPS = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		7E0000000000000000000108 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
+				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = TQA2JLKT87;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES;
+				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SELECTED_FILES = readonly;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Config/Info-MAS.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "Schreibwerkstatt Fokus";
+				INFOPLIST_KEY_CFBundleName = Focuseditor;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.books";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "David-Berger.schreibwerkstatt-focuseditor";
+				PRODUCT_MODULE_NAME = schreibwerkstatt_focuseditor;
+				PRODUCT_NAME = Focuseditor;
+				REGISTER_APP_GROUPS = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -592,6 +722,15 @@
 			buildConfigurations = (
 				7E0000000000000000000008 /* Debug */,
 				7E0000000000000000000009 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		7E0000000000000000000109 /* Build configuration list for PBXNativeTarget "Focuseditor-MAS" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				7E0000000000000000000107 /* Debug */,
+				7E0000000000000000000108 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
@@ -632,6 +771,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 61DB000000000000000000B1 /* XCRemoteSwiftPackageReference "Sparkle" */;
 			productName = Sparkle;
+		};
+		7E0000000000000000000102 /* GRDB */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 61DB000000000000000000A1 /* XCRemoteSwiftPackageReference "GRDB" */;
+			productName = GRDB;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
