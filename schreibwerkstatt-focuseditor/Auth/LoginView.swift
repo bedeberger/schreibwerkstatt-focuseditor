@@ -151,6 +151,8 @@ struct LoginView: View {
                     .tint(BrandColor.primary)
                     .disabled(!canSubmit)
 
+                    demoSection
+
                     privacyDisclosure
                 }
                 .frame(maxWidth: 360, alignment: .leading)
@@ -215,6 +217,36 @@ struct LoginView: View {
         }
     }
 
+    /// Demo-Zugang — nur sichtbar, wenn ein Demo-Konto ins Binary gebacken ist
+    /// (`DemoAccess`, gespeist aus der gitignorierten Config/Demo.xcconfig).
+    /// Füllt Server + Token und meldet direkt an, damit Interessierte die App
+    /// ohne eigenes Konto und ohne Token-Copy-Paste ansehen können. Der Hinweis
+    /// sagt ehrlich, dass die Inhalte geteilt und wegwerfbar sind.
+    @ViewBuilder
+    private var demoSection: some View {
+        if DemoAccess.isAvailable {
+            VStack(alignment: .leading, spacing: 8) {
+                Divider()
+                    .padding(.bottom, 2)
+
+                Text(t("login.demoTitle"))
+                    .font(BrandFont.sans(12, weight: .medium))
+                    .foregroundStyle(BrandColor.text)
+
+                Button(t("login.demoButton")) { signInWithDemo() }
+                    .buttonStyle(.bordered)
+                    .tint(BrandColor.primary)
+                    .font(BrandFont.sans(13))
+                    .disabled(isBusy)
+
+                Text(t("login.demoNote", ["host": DemoAccess.displayHost ?? ""]))
+                    .font(BrandFont.sans(11))
+                    .foregroundStyle(BrandColor.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
     /// Datenschutz-Hinweis (in-app, keine externe URL) — beschreibt die
     /// Datenhaltung wahrheitsgemäss aus der Architektur: local-first, Token nur
     /// in der Keychain, keine Dritt-Übertragung. Eingeklappt, um das Formular
@@ -259,6 +291,19 @@ struct LoginView: View {
             await auth.signIn(serverURLString: serverURL, rawToken: token)
             if auth.state == .signedIn { token = "" }
         }
+    }
+
+    /// Anmeldung mit dem eingebackenen Demo-Konto. Setzt das Server-Feld sichtbar
+    /// auf die Demo-Instanz (der User soll sehen, wo er landet), lässt das
+    /// Token-Feld aber leer — das Demo-Token geht direkt an den `AuthStore` und
+    /// von dort in die Keychain, nicht durch ein UI-Feld.
+    private func signInWithDemo() {
+        guard !isBusy,
+              let demoURL = DemoAccess.serverURLString,
+              let demoToken = DemoAccess.token else { return }
+        serverURL = demoURL
+        token = ""
+        Task { await auth.signIn(serverURLString: demoURL, rawToken: demoToken) }
     }
 }
 

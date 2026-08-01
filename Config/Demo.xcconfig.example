@@ -1,0 +1,23 @@
+// Vorlage für Config/Demo.xcconfig — kopieren und mit echten Werten füllen:
+//   cp Config/Demo.xcconfig.example Config/Demo.xcconfig
+//
+// Config/Demo.xcconfig ist in .gitignore (enthält ein Device-Token; dieses Repo
+// ist public). Diese .example bleibt im Repo, damit das Setup reproduzierbar ist.
+//
+// Wirkung: Version.xcconfig zieht die Datei per `#include?` (optional) ein, die
+// Werte landen über Config/Info.plist ($(SW_DEMO_HOST)/$(SW_DEMO_TOKEN)) im
+// App-Binary und schalten im Login den Knopf „Demo öffnen" frei
+// (Auth/DemoAccess.swift). Fehlt die Datei, ist der Knopf einfach nicht da —
+// der Build läuft unverändert (so bauen Fremd-Clones ohne Demo-Zugang).
+//
+// Die Werte stehen in scripts/demo.env; Doku in SIGNING.md → „Demo-Instanz".
+//
+// WICHTIG: Ein Token im Binary ist auslesbar (`strings Focuseditor.app/…`).
+// Hier gehört ausschliesslich ein Wegwerf-Demo-Konto hinein, nie ein
+// persönliches Token.
+//
+// Achtung xcconfig-Syntax: `//` beginnt einen Kommentar → beim Host KEIN
+// Schema (`https://`) angeben, das setzt `DemoAccess` selbst davor.
+
+SW_DEMO_HOST = demo.example.tld
+SW_DEMO_TOKEN = swd_0000000000000000000000000000000000000000000000000000000000000000

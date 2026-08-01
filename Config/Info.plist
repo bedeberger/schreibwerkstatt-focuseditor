@@ -15,6 +15,12 @@
   - SUEnableInstallerLauncherService  Pflicht für sandboxed Apps (Installer-XPC).
   - SUEnableAutomaticChecks       automatische Hintergrund-Prüfung erlaubt.
 
+  SWDemoHost / SWDemoDeviceToken — Demo-Zugang, den `Auth/DemoAccess.swift` liest
+  (Knopf „Demo öffnen" im Login). Die Werte kommen aus den Build-Settings
+  SW_DEMO_HOST/SW_DEMO_TOKEN, die Version.xcconfig per `#include?` aus der
+  gitignorierten Config/Demo.xcconfig zieht. Ohne diese Datei bleiben die Keys
+  leer (bzw. unexpandiert) und der Demo-Knopf ist aus — kein Build-Fehler.
+
   CFBundleLocalizations — deklariert die unterstützten Sprachen auf BUNDLE-Ebene.
   Steuert NICHT unsere `t()`-Lokalisierung (die läuft über die JSON-Kataloge),
   sondern sagt macOS/AppKit, in welchen Sprachen es seine OS-gelieferten
@@ -38,5 +44,9 @@
 	<true/>
 	<key>SUEnableAutomaticChecks</key>
 	<true/>
+	<key>SWDemoHost</key>
+	<string>$(SW_DEMO_HOST)</string>
+	<key>SWDemoDeviceToken</key>
+	<string>$(SW_DEMO_TOKEN)</string>
 </dict>
 </plist>

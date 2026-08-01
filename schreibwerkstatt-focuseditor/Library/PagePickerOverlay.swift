@@ -539,8 +539,8 @@ struct PagePickerOverlay: View {
         }
         .buttonStyle(.plain)
         // Zeile ist ein klickbares Ziel → Zeigehand statt des Pfeil-Cursors, den das
-        // `.pointerStyle(.default)` am Overlay sonst ber allen Listenzeilen
-        // erzwingt (sichtbar „nicht sinnig" ber denButtons). View-gebunden wie die
+        // `.pointerStyle(.default)` am Overlay sonst über allen Listenzeilen
+        // erzwingt (sichtbar „nicht sinnig" über den Buttons). View-gebunden wie die
         // anderen klickbaren Ziele im Projekt (s. ContentView SwiftBar-Knopf).
         .pointerStyle(.link)
         // Eine Zeile = EIN VoiceOver-Element. Sonst liest der Screenreader Name,

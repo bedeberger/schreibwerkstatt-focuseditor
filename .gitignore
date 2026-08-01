@@ -10,5 +10,9 @@ build/
 scripts/release.env
 *.p8
 
+# Zugangsdaten der Demo-Instanz (Secrets — NIE committen, Repo ist public)
+scripts/demo.env
+Config/Demo.xcconfig
+
 # Release-Log (Ausgabe von scripts/release-dmg.sh, s. SIGNING.md)
 release.log

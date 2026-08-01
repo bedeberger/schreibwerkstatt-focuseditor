@@ -44,6 +44,62 @@ ist zusätzlich per `*.p8` in `.gitignore` geschützt.
    `~/.appstoreconnect/` laden → Key-ID + Issuer-ID notieren.
 3. `cp scripts/release.env.example scripts/release.env` und Werte eintragen.
 
+### Demo-Instanz (Smoke-Test + Demo-Login)
+
+Zugang zur öffentlichen Demo-Instanz `demo.schreibwerkstatt.app` steht in
+**`scripts/demo.env`** (ebenfalls in `.gitignore`; Vorlage:
+[scripts/demo.env.example](scripts/demo.env.example)): `DEMO_BASE_URL`,
+`DEMO_EMAIL`, `DEMO_PASSWORD`, `DEMO_DEVICE_TOKEN` (Bearer `swd_…`, Scopes
+`content:read,content:write`).
+
+Zweck: das notarisierte `.dmg` vor der Veröffentlichung gegen einen echten
+Server durchprobieren (Server-URL in Settings → Allgemein auf `DEMO_BASE_URL`,
+Login per `DEMO_DEVICE_TOKEN`), Screenshots/Doku, und als weitergebbarer
+Demo-Login. Inhalte sind wegwerfbar, keine Produktivdaten.
+
+```bash
+set -a; . scripts/demo.env; set +a
+# Token prüfen (200 = gültig):
+curl -s -o /dev/null -w '%{http_code}\n' \
+  -H "Authorization: Bearer $DEMO_DEVICE_TOKEN" "$DEMO_BASE_URL/me/device-tokens"
+```
+
+Das Klartext-Token gehört **nie** in getrackte Dateien — insbesondere nicht in
+`schreibwerkstatt-focuseditor.xcodeproj/xcshareddata/xcschemes/…` (`SW_E2E_TOKEN`);
+dieses Repo ist public.
+
+#### Demo-Knopf im Login (ins Binary gebacken)
+
+Der Login zeigt unter dem Anmelde-Knopf **„Demo öffnen"**, wenn ein Demo-Zugang
+einkompiliert ist — damit Interessierte die App ohne eigenes Konto und ohne
+Token-Copy-Paste ansehen können. Die Kette:
+
+```
+Config/Demo.xcconfig  (gitignored, Werte aus scripts/demo.env)
+  -> Build-Settings SW_DEMO_HOST / SW_DEMO_TOKEN   (Version.xcconfig: #include?)
+  -> Config/Info.plist  SWDemoHost / SWDemoDeviceToken   ($(…)-Expansion)
+  -> Auth/DemoAccess.swift  -> Knopf in Auth/LoginView.swift
+```
+
+Setup auf einem neuen Mac: `cp Config/Demo.xcconfig.example Config/Demo.xcconfig`
+und die Werte aus `scripts/demo.env` eintragen (Host **ohne** `https://` — in
+xcconfig beginnt `//` einen Kommentar). **Fehlt die Datei, ist der Knopf einfach
+aus und der Build läuft unverändert** — verifiziert am 2026-07-31 (Build grün,
+`SWDemoHost` leer). Vor dem Release also prüfen, ob der Knopf im `.dmg`
+tatsächlich erwünscht/vorhanden ist:
+
+```bash
+/usr/libexec/PlistBuddy -c "Print :SWDemoHost" \
+  build/Build/Products/Release/Focuseditor.app/Contents/Info.plist
+```
+
+**Bewusste Abweichung von „Token nur im Keychain":** ein Token im Binary ist per
+`strings` auslesbar. Deshalb darf dort ausschliesslich das Wegwerf-Demo-Konto
+stehen (Scopes `content:read,content:write`, wegwerfbare Inhalte) — wird es
+missbraucht, im Web-`/me`-Bereich widerrufen, neu ausstellen, `scripts/demo.env`
++ `Config/Demo.xcconfig` aktualisieren, neues Release. Nach dem Klick läuft der
+Demo-Login wie jeder andere (Validierung + Keychain).
+
 ## Build + Notarisieren (jedes Release)
 
 **Verteilung als `.dmg` (Standard):** ein Skript erledigt alles — Release bauen,
