@@ -111,7 +111,16 @@ final class APIClient {
     /// `401` schlägt wie üblich auf `onUnauthorized` durch und wirft; `5xx`
     /// und Netzfehler werfen ebenfalls. Lokale Inhalte werden NIE verworfen.
     func postExpectingJSON(_ path: String, body: Encodable) async throws -> (status: Int, data: Data) {
-        let request = try buildRequest(path, method: .POST, body: body)
+        try await sendExpectingJSON(path, method: .POST, body: body)
+    }
+
+    /// Wie `postExpectingJSON`, aber für beliebige Methoden — z. B.
+    /// `DELETE /me/account`, wo der Aufrufer `404` (Server ohne Selbst-Löschung)
+    /// von `403` (verweigert) unterscheiden muss.
+    func sendExpectingJSON(_ path: String,
+                           method: Method,
+                           body: Encodable? = nil) async throws -> (status: Int, data: Data) {
+        let request = try buildRequest(path, method: method, body: body)
         let (http, data) = try await perform(request)
 
         switch http.statusCode {

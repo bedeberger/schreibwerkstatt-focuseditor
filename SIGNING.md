@@ -230,23 +230,56 @@ plutil -p "$APP/Contents/Info.plist" | grep '"SU'           # leer
 Eigener `-derivedDataPath`, weil beide Targets ein `Focuseditor.app` produzieren
 und sich sonst gegenseitig überschreiben.
 
+**Store-Paket bauen — erledigt, verifiziert am 2026-08-01:**
+
+```bash
+scripts/archive-mas.sh      # Gegenprobe DMG-Schema -> Archiv -> Sanity-Check -> .pkg
+```
+
+Ergebnis: `build/mas/export/Focuseditor.pkg` (6,1 MB, Version 3.15/36). Nachweis am
+entpackten Paket (`pkgutil --expand-full`):
+
+- App: `Authority=Apple Distribution: David Berger (TQA2JLKT87)`
+- `Contents/embedded.provisionprofile` vorhanden (Mac-App-Store-Profil)
+- Entitlements exakt `application-identifier`, `team-identifier`, `app-sandbox`,
+  `files.user-selected.read-only`, `network.client` — keine `temporary-exception`
+- `.pkg`: `3rd Party Mac Developer Installer: David Berger (TQA2JLKT87)`
+
+**`-allowProvisioningUpdates` ist Pflicht** — an `archive` *und* `exportArchive`
+(steht im Skript). Damit legt Xcode App ID, die Zertifikate „Apple Distribution" +
+„3rd Party Mac Developer Installer" und das Mac-App-Store-Profil beim ersten
+Archiv **selbst** an; es braucht keinen Klick im Developer-Portal. Nebenbefund: der
+Installer-Cert erscheint nicht in `security find-identity -p codesigning` (nicht
+codesigning-fähig) — der richtige Nachweis ist `pkgutil --check-signature`.
+
 **Noch offen (Apple-Kontoarbeit, unabhängig vom Code):**
-1. App ID `David-Berger.schreibwerkstatt-focuseditor` im Developer-Portal
-   registrieren; Zertifikate „Apple Distribution" + „Mac Installer Distribution";
-   Provisioning-Profil *Mac App Store*.
-2. App-Record in App Store Connect. Das Paket baut dann
-   [scripts/archive-mas.sh](scripts/archive-mas.sh) (Archiv → Sanity-Check →
-   `.pkg`-Export nach `build/mas/export`, Rezept in
-   [Config/ExportOptions-MAS.plist](Config/ExportOptions-MAS.plist)); Upload via
-   Transporter oder Xcode-Organizer. Im Release-Workflow steckt das hinter
-   `/release appstore` bzw. `/release beide`.
-3. **Kontolöschung in-app** (Guideline 5.1.1(v)) — fehlt noch, wahrscheinlicher
+1. **App-Record in App Store Connect** — fehlt noch; `xcrun altool --list-apps
+   --type macos --apiKey … --apiIssuer …` liefert eine leere Liste. Anlegen:
+   appstoreconnect.apple.com → Apps → **+** → macOS → Bundle-ID
+   `David-Berger.schreibwerkstatt-focuseditor` → Name, Primärsprache, SKU.
+   **Ohne den Record ist kein Upload möglich:** `altool --upload-package` verlangt
+   `--apple-id` = die *numerische* App-ID aus dem Record (nicht die Bundle-ID).
+   Danach hochladen mit
+   ```bash
+   UPLOAD=1 ASC_APP_ID=<numerische App-ID> scripts/archive-mas.sh
+   ```
+   oder das fertige `.pkg` in Transporter ziehen. Im Release-Workflow steckt der
+   Paketbau hinter `/release appstore` bzw. `/release beide`.
+2. **Kontolöschung in-app** (Guideline 5.1.1(v)) — fehlt noch, wahrscheinlicher
    Reject-Grund.
-4. Metadaten: Screenshots de/en, Beschreibung, Support-/Datenschutz-URL,
-   App-Privacy-Deklaration, Altersfreigabe.
-5. Review-Notes: Demo-Zugang erwähnen (der Knopf „Demo öffnen" ist im Store-Build
-   bewusst aktiv) und kurz erklären, dass das OTA-Editor-Bundle von WebKit
+3. **`MACOSX_DEPLOYMENT_TARGET` senken** — das gebaute Paket trägt
+   `LSMinimumSystemVersion = 26.5`, ist im Store also für fast niemanden
+   installierbar. Vor der ersten Einreichung auf 14.0/15.0 ziehen und die dabei
+   auffallenden macOS-26-only-APIs abfangen. (Hochladen und in TestFlight prüfen
+   geht auch vorher — nur eben nicht einreichen.)
+4. Metadaten: **liegen fertig in [AppStore/](AppStore/)** — Listings de/en
+   (Name, Untertitel, Keywords, Beschreibung, Neuerungen, URLs), Screenshots
+   (je vier, 2880×1800, ohne Alphakanal), App-Privacy-Deklaration und
+   Altersfreigabe (4+). Eintrage-Reihenfolge und die Skripte
+   (`appstore-screenshots.sh`, `appstore-check-lengths.sh`) stehen in
+   [AppStore/README.md](AppStore/README.md).
+5. Review-Notes: fertiger Text in [REVIEW-NOTES.md](REVIEW-NOTES.md) — Demo-Zugang
+   („Demo öffnen" ist im Store-Build bewusst aktiv, Ein-Klick-Login für den
+   Reviewer) und die Erklärung, dass das OTA-Editor-Bundle von WebKit
    interpretierter Code ist (Guideline-2.5.2-Ausnahme), der den Funktionsumfang
-   nicht verändert.
-6. `MACOSX_DEPLOYMENT_TARGET` steht auf 26.5 — für den Store deutlich senken, sonst
-   ist die App für fast niemanden sichtbar.
+   nicht verändert. Block dort 1:1 in *App Review Information → Notes* kopieren.

@@ -24,11 +24,12 @@
 # solange das Konto-Setup noch offen ist.
 #
 # Nutzung:
-#   scripts/archive-mas.sh                # Archiv + Export nach build/mas/export
-#   UPLOAD=1 scripts/archive-mas.sh       # zusätzlich hochladen (App-Manager-Key nötig)
+#   scripts/archive-mas.sh                              # Archiv + Export nach build/mas/export
+#   UPLOAD=1 ASC_APP_ID=123456789 scripts/archive-mas.sh  # zusätzlich hochladen
 #
 # Umgebungsvariablen:
 #   UPLOAD          1 = nach dem Export via notarytool-API-Key hochladen
+#   ASC_APP_ID      numerische App-ID aus App Store Connect (nur mit UPLOAD=1)
 #   VERSION         optional, sonst aus Version.xcconfig (SSoT)
 
 set -euo pipefail
@@ -54,7 +55,8 @@ echo "==> Gegenprobe: DMG-Schema baut noch ($DMG_SCHEME)..."
 echo "==> Archiv ($SCHEME, Version $VERSION)..."
 rm -rf "$ARCHIVE"
 ( cd "$ROOT" && xcodebuild -scheme "$SCHEME" -configuration "$CONFIG" \
-    -derivedDataPath "$DERIVED" -archivePath "$ARCHIVE" archive )
+    -derivedDataPath "$DERIVED" -archivePath "$ARCHIVE" archive \
+    -allowProvisioningUpdates )
 
 # --- 3. Sanity-Check: der App-Store-Blocker darf nicht zurückkommen ----------
 APP="$ARCHIVE/Products/Applications/Focuseditor.app"
@@ -82,7 +84,8 @@ echo "==> Export (.pkg)..."
 rm -rf "$EXPORT_DIR"
 xcodebuild -exportArchive -archivePath "$ARCHIVE" \
   -exportOptionsPlist "$ROOT/Config/ExportOptions-MAS.plist" \
-  -exportPath "$EXPORT_DIR"
+  -exportPath "$EXPORT_DIR" \
+  -allowProvisioningUpdates
 
 PKG="$(find "$EXPORT_DIR" -maxdepth 1 -name '*.pkg' | head -1)"
 [[ -n "$PKG" ]] || { echo "FEHLER: kein .pkg im Export gefunden" >&2; exit 1; }
@@ -92,11 +95,28 @@ echo "==> Fertig: $PKG"
 # Achtung: der Notarisierungs-Key hat oft nur die Rolle „Developer" — für den
 # Build-Upload braucht es „App Manager". Schlägt das fehl, ist der Key das
 # Problem, nicht das Paket: dann über Transporter/Organizer hochladen.
+#
+# Zwei Stolpersteine, beide verifiziert am 2026-08-01:
+#   - `altool` verlangt `--apple-id` = die NUMERISCHE App-ID aus App Store
+#     Connect (nicht die Bundle-ID). Die gibt es erst, wenn der App-Record
+#     angelegt ist → ASC_APP_ID hier durchreichen. Prüfen, ob überhaupt ein
+#     Record existiert: `xcrun altool --list-apps --type macos --apiKey … --apiIssuer …`
+#   - `altool` findet den .p8 nur per Namenskonvention in einem
+#     `private_keys`-Ordner (z. B. ~/.appstoreconnect/private_keys/), nicht über
+#     den Pfad in NOTARY_KEY. Wir verlinken die Datei darum bei Bedarf dorthin.
 if [[ "${UPLOAD:-}" == "1" ]]; then
   : "${NOTARY_KEY:?NOTARY_KEY fehlt (scripts/release.env)}"
-  echo "==> Upload zu App Store Connect..."
+  : "${ASC_APP_ID:?ASC_APP_ID fehlt — numerische App-ID aus App Store Connect (App-Record zuerst anlegen)}"
+
+  # .p8 an die Stelle verlinken, an der altool sie sucht.
+  KEYDIR="$HOME/.appstoreconnect/private_keys"
+  mkdir -p "$KEYDIR"
+  [[ -e "$KEYDIR/AuthKey_${NOTARY_KEY_ID:?}.p8" ]] || ln -s "$NOTARY_KEY" "$KEYDIR/AuthKey_$NOTARY_KEY_ID.p8"
+
+  echo "==> Upload zu App Store Connect (App-ID $ASC_APP_ID)..."
   xcrun altool --upload-package "$PKG" --type macos \
-    --apiKey "${NOTARY_KEY_ID:?}" --apiIssuer "${NOTARY_ISSUER:?}" \
+    --apiKey "$NOTARY_KEY_ID" --apiIssuer "${NOTARY_ISSUER:?}" \
+    --apple-id "$ASC_APP_ID" \
     --bundle-id "David-Berger.schreibwerkstatt-focuseditor" \
     --bundle-version "$(awk -F'=' '/^CURRENT_PROJECT_VERSION/{gsub(/[[:space:]]/,"",$2); print $2; exit}' "$ROOT/Version.xcconfig")" \
     --bundle-short-version-string "$VERSION"

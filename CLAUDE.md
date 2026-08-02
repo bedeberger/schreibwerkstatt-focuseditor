@@ -156,6 +156,14 @@ Ablauf: **erst sichern + pushen**, dann Job. Der Server lektoriert den **Server-
 
 Die **Beanstandungen selbst bleiben serverseitig** (Lektorats-Karte der Web-App) — dieser Client zeigt nur Anzahl + Fehlerzustand in einem Banner über der Schreibfläche ([Lektorat/LektoratToolbarButton.swift](schreibwerkstatt-focuseditor/Lektorat/LektoratToolbarButton.swift)) plus einen Deep-Link `#book/<bookId>/page/<pageId>` in den Standard-Browser. Bewusst kein Findings-UI im Client: das wäre ein Editor-Fork (Karte + Replace-Logik) und widerspricht „nur der Schreibmodus". Online-only; offline degradiert es als Fehler-Banner (lokale Inhalte sind nie betroffen).
 
+### Konto löschen (in-app) — `DELETE /me/account`
+
+App-Store-Guideline 5.1.1(v) verlangt das Löschen des Kontos **in der App**. Einstellungen → Konto → „Konto löschen …" ([Settings/AccountDeletionSection.swift](schreibwerkstatt-focuseditor/Settings/AccountDeletionSection.swift)) öffnet ein Sheet mit den Folgen + Tipp-Bestätigung (`LÖSCHEN`/`DELETE`, lokalisiert); der Request selbst trägt immer den konstanten Protokollwert `{ "confirm": "DELETE" }`. **Kein Bridge-Op** — direkter Swift→Server-Call ([Auth/AccountDeletionController.swift](schreibwerkstatt-focuseditor/Auth/AccountDeletionController.swift)).
+
+Server-Vertrag (implementiert im Hauptrepo: [routes/usersettings.js](../../ClaudeProjects/schreibwerkstatt/routes/usersettings.js) `DELETE /account` + [lib/account-delete.js](../../ClaudeProjects/schreibwerkstatt/lib/account-delete.js), Doku [docs/clients.md](../../ClaudeProjects/schreibwerkstatt/docs/clients.md)): `200 { ok: true }` = gelöscht, alle Tokens des Kontos sofort tot (**keine** Karenzfrist → kein `scheduled_purge_at`; das Feld bleibt client-seitig optional, falls es später kommt) · `400 CONFIRM_REQUIRED` · `403 ACCOUNT_DELETE_FORBIDDEN` (ENV-Admin / letzter aktiver Admin) · `404 USER_NOT_FOUND` · `500 ACCOUNT_DELETE_FAILED` (Retry ist idempotent) · `404 **ohne** error_code` = Route existiert auf diesem Server nicht → der Client zeigt den Browser-Fallback (`…/#profil`) statt einer Sackgasse. **Demo-Konto:** derselbe Aufruf **setzt es zurück** statt es zu löschen (`200 { ok: true, demo_reset: true }`, Tokens bleiben gültig) — der Client behandelt es bewusst wie jede Löschung (lokal aufräumen + abmelden), damit der App-Review den vollen Ablauf sieht und die Demo nutzbar bleibt.
+
+**Erst nach bestätigter Server-Löschung** räumt der Client lokal auf (`AppCore.purgeLocalDataForCurrentServer()` → [Store/LocalDataPurge.swift](schreibwerkstatt-focuseditor/Store/LocalDataPurge.swift)): Sync anhalten, Namespace-Ordner `servers/<slug>/` (SQLite-Spiegel + `syncstate.json`) löschen, server-skopierte UserDefaults (`…​.<slug>`) entfernen, frische leere DB öffnen, dann abmelden (Keychain-Token weg → Login-Screen). Das gecachte Editor-Bundle bleibt (App-Assets, keine Nutzerinhalte; ein Neu-Download wäre ohne Token unmöglich). **Einziger Pfad, der lokale Inhalte verwirft** — überall sonst gilt „Datenverlust-Schutz vor allem": bei jedem Fehler (403/404/offline/401) bleibt alles unangetastet.
+
 ## Verzeichnislayout
 
 App-Sources unter [schreibwerkstatt-focuseditor/](schreibwerkstatt-focuseditor/), nach Verantwortung gruppiert. Die Datei-für-Datei-Karte (welcher Typ wo, wer wen besitzt) steht in [ARCHITECTURE.md](ARCHITECTURE.md) §2–§10.
@@ -164,9 +172,9 @@ App-Sources unter [schreibwerkstatt-focuseditor/](schreibwerkstatt-focuseditor/)
 schreibwerkstatt-focuseditor/        App-Sources (Swift)
   *App.swift · AppCore.swift · ContentView.swift · AppToolbar.swift · WindowChromeController.swift
   Web/        WKWebView-Host + Bridge + OTA-Lader (EINZIGE Kopplungsschicht WebView ⇄ Swift)
-  Store/      GRDB-LocalStore + Outbox
+  Store/      GRDB-LocalStore + Outbox + LocalDataPurge (lokales Aufräumen nach Konto-Löschung)
   Sync/       SyncEngine + Reachability + SyncState + SyncModels + SyncPreferences
-  Auth/       Keychain + Device-Token + Login + APIClient + ServerConfig
+  Auth/       Keychain + Device-Token + Login + APIClient + ServerConfig + AccountDeletionController
   Content/    ContentAPI (Lese-Zugriff Buch-/Kapitel-Struktur, Server-Soll)
   Library/    LibraryStore + native Picker (BookPicker, PagePickerOverlay)
   Theme/      Appearance + Typography (Controller) + BrandColor + BrandFont
@@ -179,7 +187,7 @@ schreibwerkstatt-focuseditor/        App-Sources (Swift)
   Localization/  Zweisprachigkeit de/en: Localization.swift (t()/tn() + L10nStore + LocalizationController) + mac-de.json/mac-en.json (gebündelt) + I18nBundleStore (OTA-Override)
 ```
 
-**Einstellungen (alle gerätelokal, UserDefaults):** App-Sprache (de/en/System) + Server-URL + Lieblingsbuch (Allgemein) · Hell/Dunkel/System + Fokus-Granularität + Auto-Hide-Toolbar (Darstellung) · Schriftgrösse/-art, Zeilenhöhe, Spaltenbreite (measure), Papier-Ton (Typografie) · Wortzahl-Anzeige + Wort-Ziel pro Seite (Schreiben) · Poll-Kadenz/Pause/manueller Sync (Sync) · LanguageTool an-aus + Sprach-Override (Rechtschreibung) · Abmelden + App-Version/Update (Sparkle) + Editor-Bundle-Version/Update + Cache leeren (Konto). Editor-wirksame Werte (Typografie, Fokus) fliessen über die Bridge als CSS — **kein Editor-Fork**.
+**Einstellungen (alle gerätelokal, UserDefaults):** App-Sprache (de/en/System) + Server-URL + Lieblingsbuch (Allgemein) · Hell/Dunkel/System + Fokus-Granularität + Auto-Hide-Toolbar (Darstellung) · Schriftgrösse/-art, Zeilenhöhe, Spaltenbreite (measure), Papier-Ton (Typografie) · Wortzahl-Anzeige + Wort-Ziel pro Seite (Schreiben) · Poll-Kadenz/Pause/manueller Sync (Sync) · LanguageTool an-aus + Sprach-Override (Rechtschreibung) · Abmelden + App-Version/Update (Sparkle) + Editor-Bundle-Version/Update + Cache leeren + Konto löschen (Konto). Editor-wirksame Werte (Typografie, Fokus) fliessen über die Bridge als CSS — **kein Editor-Fork**.
 
 Der App-Sources-Ordner ist eine `PBXFileSystemSynchronizedRootGroup` (Xcode 16+) → neue Swift-Dateien kommen **automatisch** ins Target (kein pbxproj-Edit nötig).
 

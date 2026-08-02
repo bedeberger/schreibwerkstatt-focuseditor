@@ -232,6 +232,7 @@ Alle Dateien unter [Auth/](schreibwerkstatt-focuseditor/Auth/).
 - [ServerConfig.swift](schreibwerkstatt-focuseditor/Auth/ServerConfig.swift) — Base-URL in UserDefaults (`server.baseURL`), Default `http://127.0.0.1:3737` (IPv4-Zwang, da Dev-Server nur IPv4 bindet). `normalizedURL` trimmt, prüft Schema/Host, erzwingt IPv4 für `localhost`.
 - [AuthError.swift](schreibwerkstatt-focuseditor/Auth/AuthError.swift) — `LocalizedError` mit deutschen Texten (`.malformedToken/.unauthorized/.invalidServerURL/.network/.server/.decoding`).
 - [LoginView.swift](schreibwerkstatt-focuseditor/Auth/LoginView.swift) — Card-UI: Server-URL + Token-`SecureField` → `auth.signIn(...)`.
+- [AccountDeletionController.swift](schreibwerkstatt-focuseditor/Auth/AccountDeletionController.swift) — `@MainActor ObservableObject`, Phasen `.idle/.deleting/.done(purgeAt:)/.unsupported/.failed`. `DELETE /me/account` mit `{ confirm: "DELETE" }` über `APIClient.sendExpectingJSON` (Status selbst deuten: `404` **ohne** `error_code` = Route fehlt → `.unsupported` → Browser-Fallback). Nur bei `2xx` läuft `onDeleted` — in `AppCore` verdrahtet auf `purgeLocalDataForCurrentServer()` (→ [Store/LocalDataPurge.swift](schreibwerkstatt-focuseditor/Store/LocalDataPurge.swift): Namespace-Ordner + `…​.<slug>`-Defaults weg, frische DB, Sync/Library neu) **und danach** `auth.signOut()`. UI: [Settings/AccountDeletionSection.swift](schreibwerkstatt-focuseditor/Settings/AccountDeletionSection.swift) (Tipp-Bestätigung im Sheet).
 
 ---
 

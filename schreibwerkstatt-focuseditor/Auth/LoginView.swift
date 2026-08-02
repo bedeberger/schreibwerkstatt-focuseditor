@@ -66,9 +66,15 @@ struct LoginView: View {
                     .accessibilityLabel("Schreibwerkstatt")
 
                 VStack(alignment: .leading, spacing: 10) {
+                    // Markenname wird nie umbrochen (auch nicht mitten im Wort):
+                    // eine Zeile, bei schmaler Hero-Spalte lieber kleiner skalieren.
                     Text("Schreibwerkstatt")
                         .font(BrandFont.serif(34, weight: .semibold))
                         .foregroundStyle(BrandColor.onPrimary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.5)
+                        .allowsTightening(true)
+                        .fixedSize(horizontal: false, vertical: true)
 
                     Text(t("login.heroTagline"))
                         .font(BrandFont.sans(14))

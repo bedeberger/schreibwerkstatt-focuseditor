@@ -215,6 +215,10 @@ struct AccountSettingsTab: View {
                     }
                 }
             }
+
+            // Konto-Löschung in der App (App-Store-Guideline 5.1.1(v)).
+            // Bewusst ganz unten und in einer eigenen Datei — irreversibel.
+            AccountDeletionSection()
         }
         .formStyle(.grouped)
         .alert(t("settings.account.signOutAlertTitle"), isPresented: $showLogoutAlert) {

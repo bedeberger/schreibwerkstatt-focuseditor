@@ -37,6 +37,9 @@ final class AppCore: ObservableObject {
     /// Serverseitiges Seiten-Lektorat (`POST /jobs/check` + Poll) — Start über
     /// den Toolbar-Knopf, Ergebnis als Banner über der Schreibfläche.
     let lektorat: LektoratJobStore
+    /// Konto-Löschung aus der App (`DELETE /me/account`, Guideline 5.1.1(v)) —
+    /// räumt nach bestätigter Server-Löschung auch lokal auf.
+    let accountDeletion: AccountDeletionController
 
     /// Server-Namespace, auf den die Stores aktuell zeigen. Erkennt einen Wechsel
     /// (Settings ODER URL-Edit im Login) gegen `ServerNamespace.currentSlug`.
@@ -109,6 +112,16 @@ final class AppCore: ObservableObject {
             await bridge?.flushDraftSave()
             await sync?.syncNow(manual: true)
         }
+        self.accountDeletion = AccountDeletionController(api: auth.api)
+        // Erst NACH bestätigter Server-Löschung lokal aufräumen: Spiegel/Sync-
+        // Zustand dieses Servers verwerfen, dann abmelden (→ Login-Screen).
+        // Reihenfolge zählt — `signOut()` zuerst würde die UI umschalten, während
+        // der Store noch auf die gelöschten Dateien zeigt.
+        self.accountDeletion.onDeleted = { [weak self] in
+            guard let self else { return }
+            await self.purgeLocalDataForCurrentServer()
+            self.auth.signOut()
+        }
     }
 
     /// Server-Wechsel (in-place): den lokalen Spiegel, den Sync-Zustand und die
@@ -156,6 +169,34 @@ final class AppCore: ObservableObject {
         switchInFlight = true
         defer { switchInFlight = false }
         await switchServer()
+    }
+
+    /// Nach bestätigter Konto-Löschung am Server: alle lokalen Inhalte dieses
+    /// Servers verwerfen. Bewusst NUR aus diesem Pfad heraus aufgerufen — überall
+    /// sonst gilt „Datenverlust-Schutz vor allem" (Abmelden/401 behalten alles).
+    ///
+    /// Ablauf wie beim Server-Wechsel: Sync anhalten (kein in-flight Write in die
+    /// gleich gelöschte DB), Puffer verwerfen, Dateien + Defaults löschen, danach
+    /// eine frische (leere) DB am selben Pfad öffnen und Sync/Library darauf neu
+    /// aufsetzen — die Objekt-Identitäten bleiben gültig (Bridge-Bindungen etc.).
+    func purgeLocalDataForCurrentServer() async {
+        await sync.suspendForServerSwitch()
+        lektorat.reset()
+        // Löschen und Verwerfen des Schreibzeit-Puffers ohne `await` dazwischen:
+        // auf dem MainActor kann kein Heartbeat-Tick einhaken und den alten
+        // `pending`-Wert nach dem Purge zurückschreiben. `reset()` zieht den
+        // In-Memory-Puffer danach aus den (nun leeren) Defaults nach.
+        LocalDataPurge.purgeServerNamespace()
+        writingTime.reset()
+        do {
+            try await store.switchToCurrentServer()
+        } catch {
+            Logger(subsystem: "ch.schreibwerkstatt.focuseditor", category: "store")
+                .error("Frischen Store nach Konto-Löschung nicht öffenbar: \(error.localizedDescription, privacy: .public)")
+        }
+        sync.reloadForCurrentServer()
+        library.reloadForCurrentServer()
+        boundSlug = ServerNamespace.currentSlug
     }
 
     /// Beim App-Start: Token prüfen, dann Sync hochfahren.
