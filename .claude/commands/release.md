@@ -44,12 +44,13 @@ Schritte:
    xcodebuild -scheme Focuseditor-MAS -configuration Release -derivedDataPath build/mas build -quiet
    ```
    (Bei Kanal `appstore`/`beide` macht [scripts/archive-mas.sh](scripts/archive-mas.sh) diese Gegenprobe in Schritt 8 ohnehin selbst.)
-4. **Datei-Größen-Guard (Pflicht):**
+4. **Guards (Pflicht):**
    ```bash
    xcodebuild -scheme schreibwerkstatt-focuseditor -configuration Debug test \
-     -only-testing:schreibwerkstatt-focuseditorTests/SourceFileSizeTests
+     -only-testing:schreibwerkstatt-focuseditorTests/SourceFileSizeTests \
+     -only-testing:schreibwerkstatt-focuseditorTests/DistributionTargetsTests
    ```
-   Muss grün sein. Schlägt er an → siehe CLAUDE.md (aufteilen oder bewusst in `allowedOverLimit`).
+   Beide müssen grün sein. Datei-Größe schlägt an → siehe CLAUDE.md (aufteilen oder bewusst in `allowedOverLimit`). `DistributionTargetsTests` schlägt an → die zwei Kanäle sind auseinandergelaufen (Plist-Key nur in einer Datei, Sparkle/Entitlements im MAS-Target, Bundle-ID oder Quell-Gruppe verschieden, `Version.xcconfig` nicht mehr projektweit). Das **vor** dem Bump fixen — es würde sonst genau den anderen Kanal treffen.
 5. **Committen:** Alle Änderungen `git add -A`, Commit mit aussagekräftiger Message — Features in Stichpunkten + Abschlusszeile im Repo-Stil `version <MARKETING_VERSION> (build <CURRENT_PROJECT_VERSION>)`. Mit Trailer:
    ```
    Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>

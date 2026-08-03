@@ -6,7 +6,7 @@
 //  und Synonyme. Bewusst aus `EditorBridge.swift` ausgelagert (eigene Datei pro
 //  Verantwortung + hält die Haupt-Bridge unter dem Zeilen-Limit, Vorbild
 //  `SyncEngine[+Push/+Pull]`). Aufgerufen vom zentralen `route(op:params:)` in
-//  `EditorBridge.swift`.
+//  `EditorBridge+Ops.swift`.
 //
 //  HARTE REGEL: Netzwerk macht ausschliesslich der Swift-Kern — kein direkter
 //  `fetch` aus der WebView. Alle Settings (LT-URL/Picky/Regeln, KI-Provider,
@@ -159,25 +159,22 @@ extension EditorBridge {
     /// wurde gerufen → Flag gesetzt (kein Retry-Spam in jedem Tick). No-op
     /// ohne WebView.
     func pushDeferredSpellcheckInit() async {
-        guard let webView else { return }
+        guard webView != nil else { return }
         guard !spellcheckDeferredDone else { return }
-        do {
-            // Expliziter Check statt `fn && fn()`-Trick: der `&&`-Ausdruck
-            // lieferte im Fehlerfall `null` (NSNull), im OK-Fall das Promise —
-            // beides truthy in JS, aber Swift muss eine klare Trennung haben
-            // („Fn noch null → nicht gesetzt, Tick wiederholen" vs „Fn
-            // gerufen, Flag setzen").
-            let result = try await webView.callAsyncJavaScript(
-                "const fn = window.__focusBridge && window.__focusBridge._trySpellcheckInit; if (typeof fn === 'function') { return fn(); } return null;",
-                in: nil,
-                contentWorld: .page)
-            // `null` (JS) → NSNull; `undefined` (JS) → nil. Beides bedeutet:
-            // die Boot-Fn war (noch) nicht registriert → nicht aufgerufen.
-            let invoked = !(result == nil || result is NSNull)
-            if invoked { spellcheckDeferredDone = true }
-        } catch {
-            log.error("pushDeferredSpellcheckInit fehlgeschlagen: \(error.localizedDescription, privacy: .public)")
-        }
+        // Expliziter Check + eigener Rückgabewert statt `return fn()`: die Boot-Fn
+        // liefert ein Promise, das zu `undefined` auflöst — daran liesse sich
+        // „war nicht registriert" (JS `null`) nicht von „gerufen" unterscheiden.
+        // Darum hier: fehlt die Fn → `null`; ist sie da → awaiten und `true`.
+        // Wirft sie (Import scheiterte, wieder offline), meldet `callJS` `nil` →
+        // Flag bleibt frei, der nächste Sync-Tick versucht erneut.
+        let result = await callJS("pushDeferredSpellcheckInit", """
+            const fn = window.__focusBridge && window.__focusBridge._trySpellcheckInit;
+            if (typeof fn !== 'function') { return null; }
+            await fn();
+            return true;
+            """)
+        let invoked = !(result == nil || result is NSNull)
+        if invoked { spellcheckDeferredDone = true }
     }
 
     /// Server-Wechsel: einmaligen Nachzieh-Versuch wieder freigeben, damit eine

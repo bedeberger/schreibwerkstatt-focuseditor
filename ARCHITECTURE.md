@@ -79,18 +79,34 @@ Alle Dateien unter [Web/](schreibwerkstatt-focuseditor/Web/).
 
 ### EditorBridge — die einzige Kopplungsschicht
 
-[EditorBridge.swift](schreibwerkstatt-focuseditor/Web/EditorBridge.swift) — `@MainActor final class EditorBridge: NSObject, WKScriptMessageHandlerWithReply, EditorCoordinating`.
+`@MainActor final class EditorBridge: NSObject, WKScriptMessageHandlerWithReply, EditorCoordinating` — auf sechs Dateien verteilt (eine Datei = eine Verantwortung, Vorbild `SyncEngine[+Push/+Pull]`):
 
-**JS → Swift** (über `WKScriptMessageHandlerWithReply`, Dispatch in `route(op:params:)`). Implementierte Ops: `load`, `save`, `list`, `editorState`, `log`, `focusGranularity`, `editorTypography`, `reportStats`, `spellcheckConfig`, `languagetoolCheck`, `dictionaryAdd`. (Vertrag + Payloads: [CLAUDE.md](CLAUDE.md) „Bridge-Vertrag".)
+| Datei | Inhalt |
+|---|---|
+| [EditorBridge.swift](schreibwerkstatt-focuseditor/Web/EditorBridge.swift) | Kern: Abhängigkeiten, Zustand/Callbacks, Message-Handler, Dirty-Tracking, `BridgeError` |
+| [EditorBridge+Ops.swift](schreibwerkstatt-focuseditor/Web/EditorBridge+Ops.swift) | `route(op:params:)` + alle Ops (JS → Swift) + `fetchAndMirror` |
+| [EditorBridge+Events.swift](schreibwerkstatt-focuseditor/Web/EditorBridge+Events.swift) | Swift → JS: `evaluateJS`/`callJS`/`emit`, Events, `flushDraftSave`, `merge3` |
+| [EditorBridge+Params.swift](schreibwerkstatt-focuseditor/Web/EditorBridge+Params.swift) | Validierung der WebView-Parameter + Grenzwerte + `encode(_ page:)` |
+| [EditorBridge+Recents.swift](schreibwerkstatt-focuseditor/Web/EditorBridge+Recents.swift) | gerätelokale Merker: zuletzt geöffnete Seite, MRU-Historie, aktives Buch |
+| [EditorBridge+Proxies.swift](schreibwerkstatt-focuseditor/Web/EditorBridge+Proxies.swift) | Server-Proxys (LanguageTool, Wörterbuch, Synonyme) + lokale Prefs |
+
+**JS → Swift** (über `WKScriptMessageHandlerWithReply`, Dispatch in `route(op:params:)`). Implementierte Ops: `load`, `save`, `list`, `activeBook`, `lastOpenPage`, `editorState`, `log`, `focusGranularity`, `editorTypography`, `editorBehavior`, `reportStats`, `spellcheckConfig`, `languagetoolCheck`, `dictionaryAdd`, `synonymConfig`, `synonymsThesaurus`, `synonymsAi`. (Vertrag + Payloads: [CLAUDE.md](CLAUDE.md) „Bridge-Vertrag".)
 
 - `load` ist **local-first**: erst Store, dann Online-Fallback (`fetchAndMirror`).
-- `editorState` pflegt `openPageId` (triggert `onOpenPageChange`-Callback) und `dirtyPages: Set<String>`.
+- `editorState` pflegt über `applyEditorState(pageId:dirty:)` die `openPageId` (triggert `onOpenPageChange`/`onPageOpened`) und den Dirty-Zustand — der Editor hält genau eine Seite offen, also enthält `dirtyPages` höchstens sie.
 - `languagetoolCheck`/`dictionaryAdd` proxyen über `APIClient`; lokale `SpellcheckPrefs` (UserDefaults) können vor dem Roundtrip abkürzen.
-- `console.log/info/warn/error` werden in der Facade abgefangen und über `log` ins OS-Log gespiegelt.
+- `console.log/info/warn/error` werden in der Facade abgefangen und über `log` ins OS-Log gespiegelt (einzeilig + gekürzt).
 
-**Swift → JS** (über `callAsyncJavaScript` in `contentWorld: .page`, Ziel `window.__focusBridge._receive`): `serverUpdate`, `openPage`, `focusGranularity`, `editorTypography`. Plus `merge3(base:local:server:)`, das `window.__focusBridge._merge3(...)` aufruft (lädt `block-merge.js` dynamisch) und `MergeOutcome { merged, conflictCount }` zurückgibt.
+**Swift → JS** (über `callAsyncJavaScript` in `contentWorld: .page`, Ziel `window.__focusBridge._receive`): `serverUpdate`, `openPage`, `closePage`, `focusGranularity`, `editorTypography`, `format`, `normalizeQuotes`, `synonyms`. Plus die zwei awaitbaren Direktaufrufe `flushDraftSave()` (⌘S-Vorlauf) und `merge3(base:local:server:)`, das `window.__focusBridge._merge3(...)` aufruft (lädt `block-merge.js` dynamisch) und `MergeOutcome { merged, conflictCount }` zurückgibt.
 
-**Callbacks nach aussen:** `onOpenPageChange` (→ `LibraryStore`), `onStats` (→ `WritingStatsStore`). Lese-Properties für den Boot-Pull: `focusGranularity`, `typography` (gesetzt von den Controllern).
+**Härtung** (die WebView ist eine nicht vertrauenswürdige Quelle — sie führt fremden Editor-Code aus dem OTA-Bundle aus):
+
+1. Der Message-Handler nimmt nur den eigenen Kanal, den **Haupt-Frame** und eine **lokale Origin** an (`http(s)`/`ws`/`ftp` werden abgewiesen).
+2. Jeder Parameter läuft durch `+Params` — Pflichtfelder werfen, optionale degradieren still zu `nil`; Längen-Deckel (HTML/Prüftext/Wort/Log), Zahlen-Klemmen (kein NaN/±∞/negativ in Store, Sync-Basis oder Statistik), Seiten-IDs nur ohne Steuerzeichen/Pfadtrenner/`..` (sie landen in URL-Pfaden, Defaults-Keys, Logs).
+3. **Kein Swift→JS-Aufruf ohne Timeout** (`jsCallTimeout` 5 s, Merge 8 s): ein hängendes JS darf den awaitenden Swift-Pfad (⌘S-Flush, Lektorats-Vorlauf, 409-Merge) nicht einfrieren.
+4. Event-Skripte nutzen Optional-Chaining (nicht gebootete Seite = stilles No-op) und `emit` filtert `nil`-Felder heraus (`callAsyncJavaScript` akzeptiert nur JSON-Werte).
+
+**Callbacks nach aussen:** `onOpenPageChange`/`onPageOpened` (→ `LibraryStore`/`SyncEngine`), `onOpenDirtyChange` (Save-Indikator), `onStats` (→ `WritingStatsStore`), `onActivity` (→ `WritingTimeTracker`), `onSaveResult` (Save-Fehler-Banner). Lese-Properties für den Boot-Pull: `focusGranularity`, `typography` (gesetzt von den Controllern).
 
 ### EditorCoordinating — Entkopplung Sync ⇄ WebView
 
@@ -294,7 +310,7 @@ Poll-Tick → `pullBook` → `GET …/sync` (Cursor) → pro Seite `applyServerP
 ## 12. Wo was hingehört (Entscheidungshilfe)
 
 - **Editor-Bug/-Feature (Logik, CSS, Block-Merge)** → Hauptrepo, **nicht hier**. Client zieht das Bundle beim nächsten Start.
-- **Neue Bridge-Op** → erst `WebAssets.bridgeFacadeJS` (JS) + `EditorBridge.route` (Swift), dann Vertrag in [CLAUDE.md](CLAUDE.md) dokumentieren.
+- **Neue Bridge-Op** → erst `WebAssets.bridgeFacadeJS` (JS) + `route(op:params:)` in [EditorBridge+Ops.swift](schreibwerkstatt-focuseditor/Web/EditorBridge+Ops.swift) (Swift, Parameter über die Validierer in `+Params`), dann Vertrag in [CLAUDE.md](CLAUDE.md) dokumentieren.
 - **Neue Server-Interaktion** → `APIClient` + passender Store/Engine; nie aus der WebView.
 - **Neue lokale Einstellung mit Editor-Wirkung** → Controller (`bind`/`apply`-Muster) + Settings-Tab; als CSS/Wert über die Bridge.
 - **Neues Tastaturkürzel** → Code **und** [ShortcutsHelpView.swift](schreibwerkstatt-focuseditor/ShortcutsHelpView.swift) im selben Schritt.

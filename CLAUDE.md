@@ -62,7 +62,7 @@ Bridge-Nachrichten **JS → Swift** (`WKScriptMessageHandlerWithReply`, je `{ op
 - `save { pageId, html, baseUpdatedAt? }` → LocalStore + Outbox (`{ id, updatedAt }`)
 - `list { bookId? }` → Seitenliste aus LocalStore (optional buch-gefiltert)
 - `log { level?, message }` → JS-Diagnose ins Swift-Log
-- `editorState { pageId, dirty, bookId? }` → meldet offene Seite + Dirty-Flag (steuert Open-Page-Reload/-Schutz im Sync). Merkt nebenbei die zuletzt geöffnete Seite gerätelokal — **pro Buch** (UserDefaults `editor.lastOpenByBook.<server>`, Dict `bookId→pageId`, via `bookId`) **und** global (Legacy-Key `editor.lastOpenPageId.<server>`); nur echte Seiten. Zusätzlich wächst daraus die **MRU-Historie** der letzten fünf Seiten pro Buch (`editor.recentPagesByBook.<server>`, Dict `bookId→[pageId]`, `EditorBridge.pushRecentPageId`) — sie speist die Gruppe „Zuletzt geöffnet" ganz oben im Seiten-Picker (`LibraryStore.recentPageRows()` löst gegen die Seitenliste des aktiven Buchs auf; eine Seite steht dann zweimal in der Liste, darum die sektions-qualifizierte Zeilen-Identität `RowKey` in [PagePickerOverlay.swift](schreibwerkstatt-focuseditor/Library/PagePickerOverlay.swift)).
+- `editorState { pageId, dirty, bookId? }` → meldet offene Seite + Dirty-Flag (steuert Open-Page-Reload/-Schutz im Sync). Merkt nebenbei die zuletzt geöffnete Seite gerätelokal — **pro Buch** (UserDefaults `editor.lastOpenByBook.<server>`, Dict `bookId→pageId`, via `bookId`) **und** global (Legacy-Key `editor.lastOpenPageId.<server>`); nur echte Seiten. Zusätzlich wächst daraus die **MRU-Historie** der letzten fünf Seiten pro Buch (`editor.recentPagesByBook.<server>`, Dict `bookId→[pageId]`, `EditorBridge.pushRecentPageId`) — sie speist die Gruppe „Zuletzt geöffnet" ganz oben im Seiten-Picker (`LibraryStore.recentPageRows()` löst gegen die Seitenliste des aktiven Buchs auf; eine Seite steht dann zweimal in der Liste, darum die sektions-qualifizierte Zeilen-Identität `RowKey` in [PagePickerModel.swift](schreibwerkstatt-focuseditor/Library/PagePickerModel.swift)).
 - `lastOpenPage { bookId? }` → `{ pageId }` (zuletzt geöffnete Seite, gerätelokal; mit `bookId` **buch-skopiert**, ohne den globalen Legacy-Wert; `null` wenn für das Buch nie geöffnet). Boot-Pull: der Editor-Glue (`loadPage` in [WebAssets.swift](schreibwerkstatt-focuseditor/Web/WebAssets.swift)) bevorzugt sie **nur für das aktive Buch** und nur, falls noch in dessen Seitenliste — sonst erste Seite. **Ohne aktives Buch** (Erststart-Race) wird **nie** restauriert (verhinderte den „falsches Buch geöffnet"-Bug).
 - `spellcheckConfig {}` → `{ enabled, debounceMs }` (aus `GET /config`, in der Bridge gecacht)
 - `languagetoolCheck { text, language?, pageId?, bookId? }` → `{ matches: [...] }` | `{ disabled: true }` (Proxy `POST /languagetool/check`; `404` = serverseitig aus). **Lokale Overrides** (UserDefaults, `SpellcheckPrefs` in [EditorBridge+Proxies.swift](schreibwerkstatt-focuseditor/Web/EditorBridge+Proxies.swift)): `spellcheck.localEnabled=false` → `{ disabled: true }` ohne Roundtrip; `spellcheck.languageOverride` (≠ „auto") übersteuert die gesendete Sprache.
@@ -176,7 +176,7 @@ schreibwerkstatt-focuseditor/        App-Sources (Swift)
   Sync/       SyncEngine + Reachability + SyncState + SyncModels + SyncPreferences
   Auth/       Keychain + Device-Token + Login + APIClient + ServerConfig + AccountDeletionController
   Content/    ContentAPI (Lese-Zugriff Buch-/Kapitel-Struktur, Server-Soll)
-  Library/    LibraryStore + native Picker (BookPicker, PagePickerOverlay)
+  Library/    LibraryStore + native Picker (BookPicker, PagePickerOverlay[+Rows/+Keyboard]) + PagePickerModel (PURE Filter-/Gruppierungs-Logik des Seiten-Pickers, getestet)
   Theme/      Appearance + Typography (Controller) + BrandColor + BrandFont
   Focus/      FocusController (lokale Fokus-Granularität)
   Writing/    WritingStatsStore (Live-Wortzahl/Lesezeit/Schreibziel/Tages-Delta) + WritingTimeTracker (Schreibzeit-Heartbeat → POST /history/writing-time)
@@ -204,6 +204,7 @@ Der App-Sources-Ordner ist eine `PBXFileSystemSynchronizedRootGroup` (Xcode 16+)
 - **Tastaturkürzel-Hilfe pflegen.** Wird ein Tastaturkürzel neu hinzugefügt, geändert oder entfernt (Swift `.keyboardShortcut` **oder** ein Editor-Shortcut, der für den Nutzer im Client greift), muss es in der Hilfe-Liste [ShortcutsHelpView.swift](schreibwerkstatt-focuseditor/ShortcutsHelpView.swift) (Help-Menü → „Tastaturkürzel", ⌘?) im selben Schritt aktualisiert werden. Die Liste ist die Single Source of Truth für die Nutzer-Hilfe — nie veralten lassen.
 - **Lokalisierung (de/en) — kein hartkodierter UI-String.** Jeder nutzersichtbare Text läuft über `t("key")` (Plural: `tn(count, "baseKey")`) aus [Localization/Localization.swift](schreibwerkstatt-focuseditor/Localization/Localization.swift). Neue/geänderte Strings **immer** in **beide** gebündelten Kataloge [mac-de.json](schreibwerkstatt-focuseditor/Localization/mac-de.json) **und** [mac-en.json](schreibwerkstatt-focuseditor/Localization/mac-en.json) (Namespace `macclient.*`, flach, `{param}`-Platzhalter wie die Web-i18n). Fallback-Kette: `OTA[locale] → bundled[locale] → bundled["de"] → key`. Markennamen (z. B. „Schreibwerkstatt") bleiben literal. Die gebündelten Kataloge sind der Offline-Pflicht-Fallback; der Server-Override (`GET /content/macclient-i18n.json`, `I18nBundleStore`) ist optional und greift wie das Editor-Bundle erst beim **nächsten** Start. Die aktive Sprache: lokale Wahl (Settings → Allgemein) gewinnt; ohne lokale Wahl seedet `LocalizationController.seedFromServerIfNeeded()` aus dem Server-Profil (`/config` → `userSettings.locale`), sonst Systemsprache. Code-Kommentare auf Deutsch (wie Hauptrepo).
 - **Sparkle nur hinter `#if SPARKLE`.** Jeder Zugriff auf `UpdaterController` oder das Sparkle-Modul muss in `#if SPARKLE … #endif` stehen — die Condition setzt ausschließlich das DMG-Target. Ohne Guard bricht der App-Store-Build (s. „Zwei Distributionswege"), und ein Sparkle-Artefakt im Store-Bundle ist ein Ablehnungsgrund. Neue nutzersichtbare Update-UI braucht auch einen `#else`-Zweig, damit der Store-Build keine Lücke zeigt.
+- **Info-Plist-Parität (DMG ⇄ App Store).** Die zwei Zusatz-Plists [Config/Info.plist](Config/Info.plist) und [Config/Info-MAS.plist](Config/Info-MAS.plist) dürfen sich **ausschließlich** um die vier `SU*`-Sparkle-Keys unterscheiden. Jeder neue Schlüssel (URL-Schema, Usage-Description, …) gehört im selben Schritt in **beide** Dateien — sonst verliert ein Kanal die Funktion still. Abgesichert durch [DistributionTargetsTests.swift](schreibwerkstatt-focuseditorTests/DistributionTargetsTests.swift); ein bewusst DMG-exklusiver Key wird dort in `sparkleOnlyKeys` eingetragen. Derselbe Test hält auch die Target-Konfiguration fest (MAS ohne Sparkle-Produkt/`SPARKLE`/Entitlements-Datei, gleiche Bundle-ID, geteilte Quell-Gruppe, `Version.xcconfig` projektweit).
 - **Nach jeder Swift-Änderung builden.** Nach jeder Anpassung an Swift-Code den Build laufen lassen (s. „Build & Run") und Fehler/Warnings zurückmelden, bevor es weitergeht. Nicht ungeprüft mehrere Änderungen stapeln.
 - **Datei-Größe prüfen (Test).** Nach jeder Änderung an Swift-Quelldateien (neue Datei, Datei deutlich gewachsen) den Datei-Größen-Guard [SourceFileSizeTests.swift](schreibwerkstatt-focuseditorTests/SourceFileSizeTests.swift) laufen lassen (s. „Build & Run"). Er hält jede `.swift`-Datei unter **800 Zeilen** (Richtwert/Ziel eher 300–500). Schlägt er an → aufteilen (in Swift meist per `extension` über mehrere Dateien, Vorbild `SyncEngine[+Push/+Pull]`) **oder**, wenn die Größe bewusst gewollt ist (z. B. zusammenhängendes Template), mit Begründung in die `allowedOverLimit`-Allowlist im Test aufnehmen. Neue App-Dateien, die eine getestete Datei als Abhängigkeit braucht, müssen ins Test-Target (explizite Membership im pbxproj, s. [ARCHITECTURE.md](ARCHITECTURE.md) / `xctest`-Hinweis).
 
@@ -236,6 +237,28 @@ ls "$APP/Contents/Frameworks" "$APP/Contents/XPCServices"   # kein Sparkle, kein
 plutil -p "$APP/Contents/Info.plist" | grep '"SU'           # leer
 ```
 
+Diese Checks brauchen ein gebautes Archiv und laufen darum erst beim Release
+(automatisch in [scripts/archive-mas.sh](scripts/archive-mas.sh)). **Früher** —
+ohne Build, in jedem Testlauf — greift der statische Guard
+[DistributionTargetsTests.swift](schreibwerkstatt-focuseditorTests/DistributionTargetsTests.swift):
+er liest die zwei Plists und die `project.pbxproj` (OpenStep-Plist, Auflösung
+über Target-**Namen**, nicht über UUIDs) und schlägt an, wenn ein Plist-Key nur
+in einem Kanal landet, das MAS-Target Sparkle/Entitlements bekommt, die
+Bundle-IDs auseinanderlaufen, ein Target die geteilte Quell-Gruppe verliert oder
+`Version.xcconfig` nicht mehr projektweit hängt.
+
+**Automatisiert im Arbeitsablauf:** Die Hooks in [.claude/settings.json](.claude/settings.json)
+merken sich per [scripts/hooks/mark-changed.sh](scripts/hooks/mark-changed.sh),
+was angefasst wurde, und [scripts/hooks/verify-build.sh](scripts/hooks/verify-build.sh)
+fährt am Rundenende die Test-Suite — **plus** den Release-Build des Targets
+`Focuseditor-MAS`, sobald die Projektdatei, eine Info-Plist, die Entitlements,
+`Version.xcconfig`, etwas unter `Update/` oder ein Edit mit Sparkle-Bezug dabei
+war. Der Hook-Build nutzt `build/mas-hook` (nicht `build/mas` — das gehört
+`archive-mas.sh`; zwei xcodebuild-Läufe auf demselben `derivedDataPath` scheitern
+an der gesperrten `build.db`) und überspringt sich per Lock, solange schon eine
+Verifikation läuft. Logs: `/tmp/swk-focuseditor-test.log` bzw.
+`/tmp/swk-focuseditor-mas.log`.
+
 Der Demo-Zugang (`SWDemoHost`/`SWDemoDeviceToken`) bleibt im Store-Build bewusst
 drin: der App-Review braucht einen Ein-Klick-Zugang, weil der normale Login ein
 Device-Token per Copy-Paste verlangt.
@@ -265,7 +288,15 @@ für das App-Store-`.pkg`. Der Slash-Command `/release` wählt den Kanal
   xcodebuild -scheme Focuseditor-MAS -configuration Release -derivedDataPath build/mas build -quiet
   ```
 
-  Verifiziert grün am 2026-08-01.
+  Verifiziert grün am 2026-08-01. Den Store-Build baut der Stop-Hook bei genau diesen Änderungen automatisch mit (s. „Zwei Distributionswege"), der manuelle Aufruf bleibt trotzdem gültig.
+- **Distributions-Guard (statisch, kein Build):**
+
+  ```bash
+  xcodebuild -scheme schreibwerkstatt-focuseditor -configuration Debug test \
+    -only-testing:schreibwerkstatt-focuseditorTests/DistributionTargetsTests
+  ```
+
+  Plist-Parität + Target-Konfiguration der zwei Kanäle (s. Harte Regeln „Info-Plist-Parität"). Verifiziert grün am 2026-08-03 (7 Tests).
 - **Datei-Größen-Guard (Pflicht bei Source-Änderungen, s. Harte Regeln):**
 
   ```bash
@@ -275,4 +306,4 @@ für das App-Store-`.pkg`. Der Slash-Command `/release` wählt den Kanal
 
   Prüft, dass keine `.swift`-Datei das 800-Zeilen-Limit überschreitet (Allowlist im Test). Die ganze Suite läuft mit `test` ohne `-only-testing`. Verifiziert grün am 2026-07-25 (136 Tests; die 5 `SyncIntegrationTests` brauchen einen laufenden Dev-Server auf `localhost:3737` und schlagen ohne ihn fehl — alle 131 offline-Tests grün).
 
-  **Test-Target-Mitgliedschaft:** Das Bundle ist non-hosted (kein `@testable import`, s. [ARCHITECTURE.md](ARCHITECTURE.md)) — getestete App-Quellen sind explizit im pbxproj eingetragen. Aktuell zusätzlich zu den Sync-/Auth-/Web-Dateien: `WritingTimeTracker.swift`, `LibraryStore.swift`, `GRDBLocalStore.swift` (dafür hängt auch das **GRDB**-Paketprodukt am Test-Target). Eine neue getestete Datei braucht denselben Eintrag, sonst fehlt sie im Test-Build.
+  **Test-Target-Mitgliedschaft:** Das Bundle ist non-hosted (kein `@testable import`, s. [ARCHITECTURE.md](ARCHITECTURE.md)) — getestete App-Quellen sind explizit im pbxproj eingetragen. Aktuell zusätzlich zu den Sync-/Auth-/Web-Dateien: `WritingTimeTracker.swift`, `LibraryStore.swift`, `GRDBLocalStore.swift` (dafür hängt auch das **GRDB**-Paketprodukt am Test-Target), `PagePickerModel.swift`. Eine neue getestete Datei braucht denselben Eintrag, sonst fehlt sie im Test-Build.

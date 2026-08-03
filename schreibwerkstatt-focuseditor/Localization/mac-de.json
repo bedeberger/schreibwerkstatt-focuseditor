@@ -338,6 +338,7 @@
   "picker.openBadge": "offen",
   "picker.textMatch": "im Text",
   "picker.recentSection": "Zuletzt geöffnet",
+  "picker.topLevelSection": "Ohne Kapitel",
 
   "menu.about": "Über schreibwerkstatt-focuseditor",
   "menu.checkForUpdates": "Nach Updates suchen…",

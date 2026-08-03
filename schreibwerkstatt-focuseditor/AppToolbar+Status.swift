@@ -241,9 +241,7 @@ struct SyncStatusLabel: View {
         if status == .serverUnreachable { return t("toolbar.tip.serverUnreachable") }
         if status == .offline { return t("toolbar.tip.offline") }
         if let last = lastSyncedAt {
-            let rel = RelativeDateTimeFormatter()
-            rel.locale = Locale(identifier: L10nStore.shared.localeCode)
-            return t("toolbar.tip.lastSynced", ["rel": rel.localizedString(for: last, relativeTo: Date())])
+            return t("toolbar.tip.lastSynced", ["rel": RelativeTime.string(for: last)])
         }
         return t("toolbar.tip.notSynced")
     }

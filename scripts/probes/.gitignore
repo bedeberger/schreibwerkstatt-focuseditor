@@ -1,0 +1,5 @@
+# Wegwerf-Sonden für Live-Messungen am laufenden Client (s. README.md).
+# Ort ist stabil, Inhalt nicht — nichts hier wird committet ausser README + dieser Datei.
+*
+!.gitignore
+!README.md

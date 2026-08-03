@@ -34,10 +34,15 @@
 		7E0000000000000000000059 /* Reachability.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E0000000000000000000049 /* Reachability.swift */; };
 		7E000000000000000000005A /* SyncPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E000000000000000000004A /* SyncPreferences.swift */; };
 		7E000000000000000000005B /* EditorBridge+Proxies.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E000000000000000000004B /* EditorBridge+Proxies.swift */; };
+		7E0000000000000000000090 /* EditorBridge+Ops.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E0000000000000000000080 /* EditorBridge+Ops.swift */; };
+		7E0000000000000000000091 /* EditorBridge+Events.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E0000000000000000000081 /* EditorBridge+Events.swift */; };
+		7E0000000000000000000092 /* EditorBridge+Params.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E0000000000000000000082 /* EditorBridge+Params.swift */; };
+		7E0000000000000000000093 /* EditorBridge+Recents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E0000000000000000000083 /* EditorBridge+Recents.swift */; };
 		7E000000000000000000005C /* WebAssets+BridgeFacade.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E000000000000000000004C /* WebAssets+BridgeFacade.swift */; };
 		7E000000000000000000005D /* WebAssets+IndexHTML.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E000000000000000000004D /* WebAssets+IndexHTML.swift */; };
 		7E0000000000000000000070 /* WritingTimeTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E0000000000000000000060 /* WritingTimeTracker.swift */; };
 		7E0000000000000000000071 /* LibraryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E0000000000000000000061 /* LibraryStore.swift */; };
+		7E0000000000000000000073 /* PagePickerModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E0000000000000000000063 /* PagePickerModel.swift */; };
 		7E0000000000000000000072 /* GRDBLocalStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E0000000000000000000062 /* GRDBLocalStore.swift */; };
 		7E0000000000000000000101 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = 7E0000000000000000000102 /* GRDB */; };
 /* End PBXBuildFile section */
@@ -80,10 +85,15 @@
 		7E0000000000000000000049 /* Reachability.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = Reachability.swift; path = "schreibwerkstatt-focuseditor/Sync/Reachability.swift"; sourceTree = SOURCE_ROOT; };
 		7E000000000000000000004A /* SyncPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SyncPreferences.swift; path = "schreibwerkstatt-focuseditor/Sync/SyncPreferences.swift"; sourceTree = SOURCE_ROOT; };
 		7E000000000000000000004B /* EditorBridge+Proxies.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "EditorBridge+Proxies.swift"; path = "schreibwerkstatt-focuseditor/Web/EditorBridge+Proxies.swift"; sourceTree = SOURCE_ROOT; };
+		7E0000000000000000000080 /* EditorBridge+Ops.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "EditorBridge+Ops.swift"; path = "schreibwerkstatt-focuseditor/Web/EditorBridge+Ops.swift"; sourceTree = SOURCE_ROOT; };
+		7E0000000000000000000081 /* EditorBridge+Events.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "EditorBridge+Events.swift"; path = "schreibwerkstatt-focuseditor/Web/EditorBridge+Events.swift"; sourceTree = SOURCE_ROOT; };
+		7E0000000000000000000082 /* EditorBridge+Params.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "EditorBridge+Params.swift"; path = "schreibwerkstatt-focuseditor/Web/EditorBridge+Params.swift"; sourceTree = SOURCE_ROOT; };
+		7E0000000000000000000083 /* EditorBridge+Recents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "EditorBridge+Recents.swift"; path = "schreibwerkstatt-focuseditor/Web/EditorBridge+Recents.swift"; sourceTree = SOURCE_ROOT; };
 		7E000000000000000000004C /* WebAssets+BridgeFacade.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "WebAssets+BridgeFacade.swift"; path = "schreibwerkstatt-focuseditor/Web/WebAssets+BridgeFacade.swift"; sourceTree = SOURCE_ROOT; };
 		7E000000000000000000004D /* WebAssets+IndexHTML.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "WebAssets+IndexHTML.swift"; path = "schreibwerkstatt-focuseditor/Web/WebAssets+IndexHTML.swift"; sourceTree = SOURCE_ROOT; };
 		7E0000000000000000000060 /* WritingTimeTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = WritingTimeTracker.swift; path = "schreibwerkstatt-focuseditor/Writing/WritingTimeTracker.swift"; sourceTree = SOURCE_ROOT; };
 		7E0000000000000000000061 /* LibraryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LibraryStore.swift; path = "schreibwerkstatt-focuseditor/Library/LibraryStore.swift"; sourceTree = SOURCE_ROOT; };
+		7E0000000000000000000063 /* PagePickerModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PagePickerModel.swift; path = "schreibwerkstatt-focuseditor/Library/PagePickerModel.swift"; sourceTree = SOURCE_ROOT; };
 		7E0000000000000000000062 /* GRDBLocalStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = GRDBLocalStore.swift; path = "schreibwerkstatt-focuseditor/Store/GRDBLocalStore.swift"; sourceTree = SOURCE_ROOT; };
 		7E0000000000000000000106 /* Focuseditor.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Focuseditor.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -148,6 +158,10 @@
 				7E0000000000000000000029 /* ServerNamespace.swift */,
 				7E0000000000000000000031 /* DeviceIdentity.swift */,
 				7E000000000000000000004B /* EditorBridge+Proxies.swift */,
+				7E0000000000000000000080 /* EditorBridge+Ops.swift */,
+				7E0000000000000000000081 /* EditorBridge+Events.swift */,
+				7E0000000000000000000082 /* EditorBridge+Params.swift */,
+				7E0000000000000000000083 /* EditorBridge+Recents.swift */,
 				7E0000000000000000000045 /* SyncEngine.swift */,
 				7E0000000000000000000046 /* SyncEngine+Push.swift */,
 				7E0000000000000000000047 /* SyncEngine+Pull.swift */,
@@ -156,6 +170,7 @@
 				7E000000000000000000004A /* SyncPreferences.swift */,
 				7E0000000000000000000060 /* WritingTimeTracker.swift */,
 				7E0000000000000000000061 /* LibraryStore.swift */,
+				7E0000000000000000000063 /* PagePickerModel.swift */,
 				7E0000000000000000000062 /* GRDBLocalStore.swift */,
 				7E0000000000000000000040 /* EditorBridge.swift */,
 				7E0000000000000000000041 /* EditorCoordinating.swift */,
@@ -348,6 +363,7 @@
 				7E0000000000000000000010 /* APIClient.swift in Sources */,
 				7E0000000000000000000070 /* WritingTimeTracker.swift in Sources */,
 				7E0000000000000000000071 /* LibraryStore.swift in Sources */,
+				7E0000000000000000000073 /* PagePickerModel.swift in Sources */,
 				7E0000000000000000000072 /* GRDBLocalStore.swift in Sources */,
 				7E0000000000000000000011 /* AuthError.swift in Sources */,
 				7E0000000000000000000012 /* ServerConfig.swift in Sources */,
@@ -364,6 +380,10 @@
 				7E000000000000000000003A /* ConflictDiff.swift in Sources */,
 				7E0000000000000000000050 /* EditorBridge.swift in Sources */,
 				7E000000000000000000005B /* EditorBridge+Proxies.swift in Sources */,
+				7E0000000000000000000090 /* EditorBridge+Ops.swift in Sources */,
+				7E0000000000000000000091 /* EditorBridge+Events.swift in Sources */,
+				7E0000000000000000000092 /* EditorBridge+Params.swift in Sources */,
+				7E0000000000000000000093 /* EditorBridge+Recents.swift in Sources */,
 				7E0000000000000000000051 /* EditorCoordinating.swift in Sources */,
 				7E0000000000000000000052 /* LocalStore.swift in Sources */,
 				7E0000000000000000000053 /* TypographyController.swift in Sources */,

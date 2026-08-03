@@ -273,6 +273,113 @@ final class EditorBridgeTests: XCTestCase {
                        "resetSpellcheckDelayed muss das Flag wieder freigeben")
     }
 
+    // MARK: Härtung — Eingangs-Validierung (params kommt aus der WebView)
+
+    /// Seiten-IDs landen im URL-Pfad des Server-Nachladens, in UserDefaults-Keys
+    /// und im Log → Pfadtrenner/Traversal/Steuerzeichen müssen abgewiesen werden.
+    func testLoadRejectsMalformedPageId() async throws {
+        let (bridge, _) = makeBridge()
+        for bad in ["../secret", "a/b", "", String(repeating: "9", count: 200), "p 1", "p\n1"] {
+            await assertThrowsBridgeError(invalidOrMissing: "pageId") {
+                _ = try await bridge.route(op: "load", params: ["pageId": bad])
+            }
+        }
+    }
+
+    /// Absurd grosse Bodies werden abgelehnt, statt den Spiegel aufzublasen.
+    /// Kein Datenverlust: der Text bleibt im DOM, der Editor sieht den Fehler.
+    func testSaveRejectsOversizedHtml() async throws {
+        let (bridge, store) = makeBridge()
+        let huge = String(repeating: "x", count: EditorBridge.maxHtmlLength + 1)
+        await assertThrowsBridgeError(invalidOrMissing: "html") {
+            _ = try await bridge.route(op: "save", params: ["pageId": "p1", "html": huge])
+        }
+        XCTAssertNil(store.pages["p1"], "abgewiesener Save darf nichts spiegeln")
+    }
+
+    /// Leeres HTML ist ein legitimer Zustand (Seite geleert) — der Deckel darf
+    /// das nicht mitverbieten.
+    func testSaveAcceptsEmptyHtml() async throws {
+        let (bridge, store) = makeBridge()
+        _ = try await bridge.route(op: "save", params: ["pageId": "p1", "html": ""])
+        XCTAssertEqual(store.pages["p1"]?.html, "")
+    }
+
+    /// Ein NaN/negativer `baseUpdatedAt` würde jeden Konflikt-Vergleich des Syncs
+    /// verbiegen → wird verworfen (Save läuft ohne Basis weiter).
+    func testSaveDropsNonFiniteBaseUpdatedAt() async throws {
+        let (bridge, store) = makeBridge()
+        _ = try await bridge.route(op: "save",
+                                   params: ["pageId": "p1", "html": "<p>x</p>",
+                                            "baseUpdatedAt": Double.nan])
+        XCTAssertNil(store.pages["p1"]?.baseUpdatedAt, "NaN-Basis darf nicht in den Store")
+
+        _ = try await bridge.route(op: "save",
+                                   params: ["pageId": "p2", "html": "<p>y</p>",
+                                            "baseUpdatedAt": 4242.0])
+        XCTAssertEqual(store.pages["p2"]?.baseUpdatedAt, 4242.0, "gültige Basis muss durchgehen")
+    }
+
+    /// Unsinnige Zahlen aus der WebView dürfen die Schreibstatistik nicht vergiften.
+    func testReportStatsClampsJunkNumbers() async throws {
+        let (bridge, _) = makeBridge()
+        var seen: (String?, Int, Int)?
+        bridge.onStats = { seen = ($0, $1, $2) }
+        _ = try await bridge.route(op: "reportStats",
+                                   params: ["words": Double.nan, "chars": -5])
+        XCTAssertEqual(seen?.1, 0)
+        XCTAssertEqual(seen?.2, 0)
+    }
+
+    /// Eine kaputte ID gilt als „keine Seite offen" — sie darf nicht in den
+    /// Boot-Restore-Merker geraten (sonst öffnete der Start dauerhaft Unsinn).
+    func testEditorStateIgnoresMalformedPageId() async throws {
+        let (bridge, _) = makeBridge()
+        _ = try await bridge.route(op: "editorState",
+                                   params: ["pageId": "../evil", "dirty": true])
+        XCTAssertNil(bridge.openPageId)
+        XCTAssertFalse(bridge.isDirty("../evil"))
+    }
+
+    /// Der Editor hält immer genau EINE Seite offen: das Dirty-Flag der vorher
+    /// offenen Seite darf nicht stehenbleiben, sonst blockierte es deren stillen
+    /// Server-Reload dauerhaft.
+    func testEditorStateDropsDirtyFlagOfPreviousPage() async throws {
+        let (bridge, _) = makeBridge()
+        _ = try await bridge.route(op: "editorState", params: ["pageId": "p1", "dirty": true])
+        _ = try await bridge.route(op: "editorState", params: ["pageId": "p2", "dirty": false])
+        XCTAssertFalse(bridge.isDirty("p1"), "Flag der nicht mehr offenen Seite muss fallen")
+        XCTAssertEqual(bridge.openPageId, "p2")
+    }
+
+    /// Unsinnige Buch-IDs (0, negativ, Bruch, Text) bedeuten „kein Filter" —
+    /// nie ein wild interpretierter Wert.
+    func testListIgnoresInvalidBookId() async throws {
+        let (bridge, store) = makeBridge()
+        try await store.applyServerPage(id: "a", html: "<p>a</p>", pageName: nil, bookId: 1,
+                                        chapterId: nil, serverUpdatedAtMillis: 1)
+        for bad: Any in [0, -3, 1.5, "keins"] {
+            let result = try await bridge.route(op: "list", params: ["bookId": bad])
+            let rows = try XCTUnwrap(result as? [[String: Any]])
+            XCTAssertEqual(rows.count, 1, "ungültige bookId darf nicht filtern (\(bad))")
+        }
+    }
+
+    /// Die MRU-Historie kommt aus UserDefaults (ältere Version, Absturz, Handarbeit)
+    /// → verbogene Einträge und Dubletten werden beim Lesen ausgesiebt.
+    func testRecentPageIdsSkipsCorruptEntries() throws {
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: "bridge.recents.test"))
+        defaults.removePersistentDomain(forName: "bridge.recents.test")
+        defaults.set(["7": ["p1", "p1", "../evil", "", "p2"]],
+                     forKey: EditorBridge.recentPagesByBookKey)
+        XCTAssertEqual(EditorBridge.recentPageIds(forBook: 7, defaults: defaults), ["p1", "p2"])
+
+        EditorBridge.pushRecentPageId("a/b", forBook: 7, defaults: defaults)
+        XCTAssertEqual(EditorBridge.recentPageIds(forBook: 7, defaults: defaults), ["p1", "p2"],
+                       "ungültige ID darf nicht in die Historie wandern")
+        defaults.removePersistentDomain(forName: "bridge.recents.test")
+    }
+
     // MARK: Unbekannte Op
 
     func testUnknownOpThrows() async throws {
@@ -293,6 +400,23 @@ final class EditorBridgeTests: XCTestCase {
         do {
             try await body()
             XCTFail("erwarteter BridgeError.missingParam(\(key)) blieb aus")
+        } catch let BridgeError.missingParam(k) {
+            XCTAssertEqual(k, key)
+        } catch {
+            XCTFail("falscher Fehler: \(error)")
+        }
+    }
+
+    /// Erwartet `BridgeError.missingParam(key)` ODER `.invalidParam(key, …)` —
+    /// für die Härtungs-Tests, wo je nach Eingabe das eine oder andere greift
+    /// (fehlender vs. formal kaputter Wert).
+    private func assertThrowsBridgeError(invalidOrMissing key: String,
+                                        _ body: () async throws -> Void) async {
+        do {
+            try await body()
+            XCTFail("erwarteter BridgeError für '\(key)' blieb aus")
+        } catch let BridgeError.invalidParam(k, _) {
+            XCTAssertEqual(k, key)
         } catch let BridgeError.missingParam(k) {
             XCTAssertEqual(k, key)
         } catch {

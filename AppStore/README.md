@@ -13,14 +13,38 @@ Code-Teil (zweites Target, Signierung, `.pkg`-Export) steht in
 | [../REVIEW-NOTES.md](../REVIEW-NOTES.md) | App-Prüfungsinformationen (Demo-Zugang, 2.5.2) |
 | [screenshots/de/](screenshots/de/) · [screenshots/en/](screenshots/en/) | Screenshots, je 4 Stück, 2880×1800 |
 
+## Stand in App Store Connect (per API geprüft, 2026-08-03)
+
+Der App-Record existiert: **ID `6797073919`**, SKU `SWK-FOCUSEDITOR-MAC`,
+Primärsprache de-DE, Status *Prepare for Submission*.
+
+| | Stand |
+|---|---|
+| Deutsche Texte | **drin** — Untertitel, Beschreibung und Keywords stimmen zeichengenau mit [listing-de.md](listing-de.md) überein |
+| Screenshots de | **drin** — vier Stück im Set `APP_DESKTOP`, 2880×1800, identisch mit `screenshots/de/` |
+| Datenschutz-URL | **drin** (`…/datenschutz`) |
+| Altersfreigabe | **drin** — 4+ (`FOUR_PLUS`) |
+| Kategorien | **fehlen** — s. [listing-de.md](listing-de.md), Abschnitt „Kategorie“ |
+| Inhalte Dritter (`contentRightsDeclaration`) | **fehlt** |
+| Englisch | **fehlt komplett** — weder App-Info noch Version in `en`, obwohl [listing-en.md](listing-en.md) und `screenshots/en/` bereitliegen |
+| Versionsnummer | **stimmt nicht** — ASC steht auf 3.17, `Version.xcconfig` auf 3.16 |
+| Build | **keiner hochgeladen**, keiner verknüpft |
+
+Nicht prüfbar mit dem vorhandenen API-Schlüssel (Rolle *Developer*):
+App-Datenschutz-Fragebogen (alle API-Pfade antworten 404) sowie Preis und
+Verfügbarkeit (403) — beides im Web bestätigen.
+
 ## Reihenfolge beim Einrichten
 
 1. App-Record anlegen (Bundle-ID `David-Berger.schreibwerkstatt-focuseditor`),
-   Name/Untertitel/Kategorien aus [listing-de.md](listing-de.md).
-2. Altersfreigabe-Fragebogen → [age-rating.md](age-rating.md).
+   Name/Untertitel/Kategorien aus [listing-de.md](listing-de.md). *(erledigt bis
+   auf die Kategorien)*
+2. Altersfreigabe-Fragebogen → [age-rating.md](age-rating.md). *(erledigt, 4+)*
 3. App-Datenschutz → [app-privacy.md](app-privacy.md). Muss **vor** der ersten
    Einreichung vollständig sein, sonst blockiert ASC das Absenden.
-4. Version 3.15: Beschreibung, Neuerungen, Keywords, URLs, Screenshots.
+4. Version: Beschreibung, Neuerungen, Keywords, URLs, Screenshots — auf Deutsch
+   erledigt, auf Englisch offen. Versionsnummer mit `Version.xcconfig`
+   abgleichen.
 5. Build hochladen (`scripts/archive-mas.sh`, dann Transporter/Organizer).
 6. Prüfungsinformationen → [../REVIEW-NOTES.md](../REVIEW-NOTES.md).
 
@@ -71,6 +95,9 @@ Apples Limits (Name 30, Untertitel 30, Promo 170, Keywords 100, Beschreibung
 
 Nicht Metadaten, aber blockierend — Details in [SIGNING.md](../SIGNING.md):
 
+- **Kategorien setzen** und dabei die Abweichung zum Build auflösen
+  (`LSApplicationCategoryType` steht auf `public.app-category.books`) — Details
+  und Empfehlung in [listing-de.md](listing-de.md).
 - **Kontolöschung in der App** (Richtlinie 5.1.1(v)) — Stand siehe SIGNING.md;
   ohne sie der wahrscheinlichste Reject-Grund.
 - **`MACOSX_DEPLOYMENT_TARGET`** steht auf 26.5 — für den Store deutlich senken.

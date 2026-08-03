@@ -62,9 +62,10 @@ struct ConflictResolutionView: View {
         let when = conflict.serverUpdatedAt.flatMap { ISOTime.millis($0) }
             .map { Date(timeIntervalSince1970: Double($0) / 1000) }
         if let who, !who.isEmpty, let when {
-            let rel = RelativeDateTimeFormatter()
-            rel.locale = Locale(identifier: loc.locale)
-            return t("conflict.subtitle.byWhen", ["who": who, "when": rel.localizedString(for: when, relativeTo: Date())])
+            // `loc.locale` explizit: hält die EnvironmentObject-Abhängigkeit, damit
+            // das Sheet beim Sprachwechsel neu rendert.
+            return t("conflict.subtitle.byWhen",
+                     ["who": who, "when": RelativeTime.string(for: when, localeCode: loc.locale)])
         }
         if let who, !who.isEmpty {
             return t("conflict.subtitle.by", ["who": who])

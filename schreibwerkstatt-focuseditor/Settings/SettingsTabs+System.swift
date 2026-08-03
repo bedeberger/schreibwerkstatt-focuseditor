@@ -69,9 +69,7 @@ struct SyncSettingsTab: View {
 
     private var lastSyncedText: String {
         guard let last = sync.lastSyncedAt else { return t("sync.lastSynced.never") }
-        let rel = RelativeDateTimeFormatter()
-        rel.locale = Locale(identifier: L10nStore.shared.localeCode)
-        return rel.localizedString(for: last, relativeTo: Date())
+        return RelativeTime.string(for: last)
     }
 }
 

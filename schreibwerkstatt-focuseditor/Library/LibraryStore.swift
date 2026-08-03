@@ -252,14 +252,22 @@ final class LibraryStore: ObservableObject {
         }
     }
 
+    /// Mindestlänge einer Volltextsuche. Ein einzelnes Zeichen zöge das halbe Buch
+    /// als Inhaltstreffer in den Picker — die Namens-/Kapitelsuche greift dort
+    /// ohnehin schon. EINE Stelle für die Regel (der Picker fragt nur noch).
+    static let minContentSearchLength = 2
+
     /// Volltextsuche über den lokal gespiegelten Seiteninhalt des aktiven Buchs —
     /// liefert die IDs der Seiten, deren BODY (nicht nur Name) zur Eingabe passt.
     /// Speist die zusätzlichen Inhaltstreffer im Picker. Nur lokal vorhandener
     /// Inhalt ist durchsuchbar (offline-first); ein Suchfehler degradiert still
     /// (leere Menge → der Picker zeigt einfach nur die Namens-/Kapiteltreffer).
+    /// Eine zu kurze (oder leere) Eingabe liefert die leere Menge, ohne den Store
+    /// zu behelligen.
     func searchContentIds(query: String) async -> Set<Int> {
-        guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return [] }
-        let ids = (try? await store.searchContent(query: query, bookId: activeBookId)) ?? []
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.count >= Self.minContentSearchLength else { return [] }
+        let ids = (try? await store.searchContent(query: trimmed, bookId: activeBookId)) ?? []
         return Set(ids.compactMap(Int.init))
     }
 

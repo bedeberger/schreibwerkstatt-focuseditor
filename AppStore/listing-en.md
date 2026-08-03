@@ -3,6 +3,9 @@
 Goes verbatim into App Store Connect → *Version → English*. Character counts
 are Apple's limits; measured values via `scripts/appstore-check-lengths.sh`.
 
+Language-independent fields — categories, SKU, copyright, age rating — live in
+[listing-de.md](listing-de.md) and are set once for the whole app.
+
 ## Name (max 30)
 
 ```

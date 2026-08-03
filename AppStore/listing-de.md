@@ -9,22 +9,42 @@ geprüften Ist-Werte stehen in Klammern (`scripts/appstore-check-lengths.sh`).
 | Feld | Wert |
 |---|---|
 | Bundle-ID | `David-Berger.schreibwerkstatt-focuseditor` |
-| Primäre Kategorie | Produktivität — **aber siehe Warnung unten** |
-| Sekundäre Kategorie | Bildung |
+| Primäre Kategorie | Produktivität (`PRODUCTIVITY`) — **Build angleichen, s. u.** |
+| Sekundäre Kategorie | Bücher (`BOOKS`) |
 | Copyright | 2026 David Berger |
 | Altersfreigabe | 4+ (Fragebogen: [age-rating.md](age-rating.md)) |
 | Preis | Gratis, keine In-App-Käufe |
 
-> **Kategorie stimmt noch nicht überein.** Beide Targets bauen mit
-> `INFOPLIST_KEY_LSApplicationCategoryType = public.app-category.books`
-> (pbxproj, vier Stellen) — das widerspricht „Produktivität“ in ASC, und Apple
-> mahnt Abweichungen zwischen Info.plist und gewählter Kategorie an. Eins von
-> beiden angleichen, **vor** dem ersten Upload:
-> - **Produktivität** (Empfehlung): Build-Setting auf
->   `public.app-category.productivity` ziehen. Grössere Zielgruppe, und die App
->   ist ein Schreibwerkzeug, kein Lesegerät.
-> - **Bücher**: hier „Produktivität“ durch „Bücher“ ersetzen, dann bleibt der
->   Code unangetastet. Weniger Konkurrenz, aber „Bücher“ suggeriert Lesen.
+### Kategorie — offene Entscheidung, vor dem ersten Upload klären
+
+**Stand (per API geprüft, 2026-08-03):** in App Store Connect ist **keine**
+Kategorie gesetzt — weder primär noch sekundär. Beide Targets bauen dagegen mit
+`INFOPLIST_KEY_LSApplicationCategoryType = public.app-category.books`
+(pbxproj, vier Stellen). Apple mahnt Abweichungen zwischen Info.plist und der in
+ASC gewählten Kategorie an, also muss eins von beiden nachgeben.
+
+Für macOS stehen u. a. `PRODUCTIVITY`, `BOOKS`, `EDUCATION`, `REFERENCE`,
+`UTILITIES`, `GRAPHICS_AND_DESIGN` zur Wahl; **Unterkategorien gibt es nur für
+`GAMES`** — hier ist also nichts weiter auszufüllen.
+
+**Empfehlung: primär `PRODUCTIVITY`, sekundär `BOOKS`.** Die App ist ein
+Schreibwerkzeug, kein Lesegerät — Produktivität trifft den Zweck und hat die
+grössere Zielgruppe; „Bücher“ als zweite Kategorie hält die Nähe zur
+Schreibwerkstatt, ohne den Eindruck einer Lese-App zu erwecken. Dafür nötig:
+
+```
+INFOPLIST_KEY_LSApplicationCategoryType = public.app-category.productivity
+```
+
+in beiden Targets (Debug + Release, vier Stellen im pbxproj), danach beide
+Targets neu bauen.
+
+**Alternative:** bei `BOOKS` bleiben — dann in der Tabelle oben primär „Bücher“
+und sekundär „Produktivität“ eintragen; der Code bliebe unangetastet. Weniger
+Konkurrenz in der Kategorie, aber „Bücher“ ist im Store die Ecke der Lese-Apps.
+
+„Bildung“ stand hier früher als Zweitkategorie; sie passt schlechter als
+`BOOKS`, weil die App nichts lehrt.
 
 ## Name (max. 30)
 
