@@ -190,7 +190,7 @@ struct AppToolbar: View {
         // darunterliegende Editor-WebView am unteren Rand ihren I-Beam durch
         // (sichtbar, wenn man von der Schreibfläche hochfährt). An die View
         // gebunden, daher zuverlässiger als ein transientes `NSCursor.set()`.
-        .pointerStyle(.default)
+        .pointerDefault()
         // Breite messen (treibt `showChapter`); Color.clear ist unsichtbar.
         .background(
             GeometryReader { geo in

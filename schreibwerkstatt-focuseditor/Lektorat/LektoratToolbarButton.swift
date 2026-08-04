@@ -111,7 +111,7 @@ struct LektoratResultBanner: View {
                 Button(t("lektorat.banner.open")) { openURL(url) }
                     .buttonStyle(.link)
                     .font(BrandFont.sans(12))
-                    .pointerStyle(.link)
+                    .pointerLink()
             }
 
             Button(action: { lektorat.dismiss() }) {
@@ -120,7 +120,7 @@ struct LektoratResultBanner: View {
                     .foregroundStyle(BrandColor.muted)
             }
             .buttonStyle(.plain)
-            .pointerStyle(.link)
+            .pointerLink()
             .accessibilityLabel(t("lektorat.dismiss"))
         }
         .padding(.horizontal, 14)

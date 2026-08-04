@@ -145,7 +145,7 @@ struct PagePickerOverlay: View {
             // die darunterliegende WebView, die sonst ihren I-Beam durchdrückt
             // (sichtbar v. a. wenn man aus dem Editor in die Liste fährt). Das
             // Suchfeld setzt seinen eigenen Text-Cursor lokal (s. `searchField`).
-            .pointerStyle(.default)
+            .pointerDefault()
             .background(.regularMaterial)
             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             .overlay(
@@ -221,7 +221,7 @@ struct PagePickerOverlay: View {
                 .focused($searchFocused)
                 .onSubmit(openSelected)         // ⏎ (Fallback; Monitor fängt i. d. R. ab)
                 // Text-Cursor nur hier — übersteuert das `.default` des Overlays.
-                .pointerStyle(.horizontalText)
+                .pointerHorizontalText()
                 .accessibilityLabel(t("picker.searchPage"))
                 .accessibilityHint(t("picker.a11y.searchHint"))
 

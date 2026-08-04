@@ -74,7 +74,7 @@ extension PagePickerOverlay {
         // `.pointerStyle(.default)` am Overlay sonst über allen Listenzeilen
         // erzwingt (sichtbar „nicht sinnig" über den Buttons). View-gebunden wie die
         // anderen klickbaren Ziele im Projekt (s. ContentView SwiftBar-Knopf).
-        .pointerStyle(.link)
+        .pointerLink()
         // Eine Zeile = EIN VoiceOver-Element. Sonst liest der Screenreader Name,
         // Badge und Relativ-Zeit als drei zusammenhanglose Fragmente vor.
         .accessibilityElement(children: .ignore)
@@ -235,7 +235,7 @@ extension PagePickerOverlay {
                     .buttonStyle(.plain)
                     .font(BrandFont.sans(11, weight: .semibold))
                     .foregroundStyle(BrandColor.primary)
-                    .pointerStyle(.link)
+                    .pointerLink()
                     .padding(.top, 2)
             }
         }

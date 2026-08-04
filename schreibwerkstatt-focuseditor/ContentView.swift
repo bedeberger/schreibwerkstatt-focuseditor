@@ -237,7 +237,7 @@ private struct EmptyEditorView: View {
         // durchscheinen → über der ganzen Fläche den Pfeil erzwingen. View-gebunden
         // (wie Toolbar/Picker), zuverlässiger als das transiente `NSCursor.set()`.
         // Die Knöpfe übersteuern lokal mit `.pointerStyle(.link)`.
-        .pointerStyle(.default)
+        .pointerDefault()
         .frame(minWidth: 640, minHeight: 480)
     }
 }
@@ -274,7 +274,7 @@ private struct NoBooksView: View {
             .padding(40)
         }
         // Wie der Leerzustand: I-Beam der WebView nicht durchscheinen lassen.
-        .pointerStyle(.default)
+        .pointerDefault()
         .frame(minWidth: 640, minHeight: 480)
     }
 }
@@ -312,7 +312,7 @@ private struct SaveErrorBanner: View {
             .buttonStyle(.plain)
             // Zeigehand — stiltreu zum Lektorat-Banner-Schliesser, der ebenfalls
             // als plain-Icon-Knopf über der WebView liegt.
-            .pointerStyle(.link)
+            .pointerLink()
             .accessibilityLabel(t("save.dismiss"))
         }
         .padding(.horizontal, 14)
@@ -371,7 +371,7 @@ private struct EmptyStateButton: View {
         // dem Gleichgewicht, wenn der Klick den Knopf entfernt (Seite öffnet),
         // bevor `onHover(false)` feuert → Zeigehand blieb über der Schreibfläche
         // hängen. Deklarativ kann das nicht passieren.
-        .pointerStyle(.link)
+        .pointerLink()
     }
 
     private var background: Color {
@@ -414,7 +414,7 @@ private struct BookSwitchLoadingView: View {
             }
         }
         // Wie der Leerzustand: I-Beam der WebView nicht durchscheinen lassen.
-        .pointerStyle(.default)
+        .pointerDefault()
     }
 }
 
