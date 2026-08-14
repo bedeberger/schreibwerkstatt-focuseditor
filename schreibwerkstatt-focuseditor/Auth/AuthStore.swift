@@ -124,7 +124,16 @@ final class AuthStore: ObservableObject {
     }
 
     /// Reaktion auf ein 401 aus laufendem Betrieb.
+    ///
+    /// Nur relevant, solange überhaupt eine Session besteht. Ohne Token feuern
+    /// Hintergrund-Komponenten trotzdem Requests (OTA-Bundle-Refresh,
+    /// `/config`-Seed der Lokalisierung) — deren 401 ist erwartbar und darf
+    /// keine „Token ungültig oder widerrufen"-Meldung auf den Login-Screen
+    /// schreiben: bei Erstinstallation stand sie dort, obwohl der Nutzer nie
+    /// ein Token hatte. Ein 401 während `signIn` (falsch eingefügtes Token)
+    /// wird dort selbst gemeldet (`lastError` im `catch`).
     private func handleUnauthorized() {
+        guard hasStoredToken || state == .signedIn else { return }
         clearToken()
         lastError = AuthError.unauthorized.errorDescription
         state = .signedOut

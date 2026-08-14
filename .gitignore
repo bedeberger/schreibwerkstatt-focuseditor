@@ -16,3 +16,6 @@ Config/Demo.xcconfig
 
 # Release-Log (Ausgabe von scripts/release-dmg.sh, s. SIGNING.md)
 release.log
+
+# Review-Screencast (gross, wird bei Bedarf neu aufgenommen)
+AppStore/review-video/

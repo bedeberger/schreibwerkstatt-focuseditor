@@ -51,10 +51,11 @@ Schritte:
      -only-testing:schreibwerkstatt-focuseditorTests/DistributionTargetsTests
    ```
    Beide müssen grün sein. Datei-Größe schlägt an → siehe CLAUDE.md (aufteilen oder bewusst in `allowedOverLimit`). `DistributionTargetsTests` schlägt an → die zwei Kanäle sind auseinandergelaufen (Plist-Key nur in einer Datei, Sparkle/Entitlements im MAS-Target, Bundle-ID oder Quell-Gruppe verschieden, `Version.xcconfig` nicht mehr projektweit). Das **vor** dem Bump fixen — es würde sonst genau den anderen Kanal treffen.
-5. **Committen:** Alle Änderungen `git add -A`, Commit mit aussagekräftiger Message — Features in Stichpunkten + Abschlusszeile im Repo-Stil `version <MARKETING_VERSION> (build <CURRENT_PROJECT_VERSION>)`. Mit Trailer:
+5. **Committen:** Alle Änderungen `git add -A`, Commit mit aussagekräftiger Message — Features in Stichpunkten + Abschlusszeile im Repo-Stil `version <MARKETING_VERSION> (build <CURRENT_PROJECT_VERSION>)`. Abschliessend der Co-Author-Trailer:
    ```
-   Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>
+   Co-Authored-By: Claude <MODELL> <noreply@anthropic.com>
    ```
+   `<MODELL>` ist das Modell, das den Commit **tatsächlich** macht — also der Trailer, den die laufende Umgebung vorgibt (z. B. `Claude Opus 5`). Hier bewusst **kein** fester Name: eine hartkodierte Version veraltet mit dem nächsten Modellwechsel und schreibt dann eine falsche Zuordnung in die Historie.
 6. **Taggen + pushen** *(Kanal `dmg`/`beide`)*: `git tag v<MARKETING_VERSION>`, dann `git push origin main` **und** `git push origin v<MARKETING_VERSION>`.
    *(Kanal `appstore`: nur `git push origin main` — der Tag gehört zum GitHub-Release und wäre ohne DMG-Asset irreführend. Wird später ein `beide`-Release derselben Version nachgezogen, kommt der Tag dort dazu.)*
 7. **Notarisiertes .dmg bauen + als GitHub-Release veröffentlichen** *(Kanal `dmg`/`beide`)*:
