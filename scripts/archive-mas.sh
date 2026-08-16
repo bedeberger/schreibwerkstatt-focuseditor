@@ -92,9 +92,11 @@ PKG="$(find "$EXPORT_DIR" -maxdepth 1 -name '*.pkg' | head -1)"
 echo "==> Fertig: $PKG"
 
 # --- 5. Optionaler Upload ----------------------------------------------------
-# Achtung: der Notarisierungs-Key hat oft nur die Rolle „Developer" — für den
-# Build-Upload braucht es „App Manager". Schlägt das fehl, ist der Key das
-# Problem, nicht das Paket: dann über Transporter/Organizer hochladen.
+# Der vorhandene Notarisierungs-Key (Rolle „Developer") trägt den Build-Upload
+# — verifiziert am 2026-08-16 mit 3.20 (42), „UPLOAD SUCCEEDED". Nur die
+# METADATEN-API (Release-Notes, Review-Antworten) bleibt ihm mit 403 verwehrt,
+# dafür braucht es „App Manager" bzw. den Browser. Schlägt der Upload trotzdem
+# fehl, über Transporter/Organizer hochladen.
 #
 # Zwei Stolpersteine, beide verifiziert am 2026-08-01:
 #   - `altool` verlangt `--apple-id` = die NUMERISCHE App-ID aus App Store
