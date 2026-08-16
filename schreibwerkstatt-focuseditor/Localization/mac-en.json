@@ -291,6 +291,7 @@
   "shortcuts.fullscreen": "Toggle full screen (distraction-free)",
   "shortcuts.syncNow": "Save & sync",
   "shortcuts.openSettings": "Open settings",
+  "shortcuts.mainWindow": "Open/bring forward the writing window",
   "shortcuts.thisHelp": "This keyboard-shortcuts help",
   "shortcuts.openPage": "Open page (picker)",
   "shortcuts.pickerOpenFirst": "In picker: open first match",
@@ -357,6 +358,8 @@
   "menu.bold": "Bold",
   "menu.italic": "Italic",
   "menu.underline": "Underline",
+  "menu.mainWindow": "Writing Window",
+  "window.mainTitle": "Schreibwerkstatt Fokus",
   "window.shortcutsTitle": "Keyboard shortcuts",
 
   "about.tagline": "Schreibwerkstatt's distraction-free writing mode",

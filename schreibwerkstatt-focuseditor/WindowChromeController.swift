@@ -44,8 +44,15 @@ final class WindowChromeController: ObservableObject {
     /// bliebe die Toolbar bei diesem Race verborgen). `installToolbar` wendet ihn an.
     private var toolbarVisible = false
 
-    // Beobachter für die nativen Vollbild-Notifications des Fensters.
+    // Beobachter für die Fenster-Notifications (Vollbild + Schliessen).
     private var fullscreenObservers: [NSObjectProtocol] = []
+
+    /// Wird gerufen, kurz bevor das Editor-Fenster schliesst (roter Ampel-Knopf).
+    /// Mit dem Fenster verschwindet die WKWebView (die Bridge hält sie nur `weak`)
+    /// — ein noch im Autosave-Debounce hängender Draft ginge sonst verloren. Der
+    /// Hook sichert ihn local-first; das Fenster selbst lässt sich danach über
+    /// „Fenster ▸ Schreibfenster" (⌘0) wieder öffnen.
+    var onWillClose: (() -> Void)?
 
     private static let buttons: [NSWindow.ButtonType] = [.closeButton, .miniaturizeButton, .zoomButton]
 
@@ -70,6 +77,10 @@ final class WindowChromeController: ObservableObject {
             center.addObserver(forName: NSWindow.didExitFullScreenNotification,
                                object: window, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated { self?.nativeFullscreenChanged(false) }
+            },
+            center.addObserver(forName: NSWindow.willCloseNotification,
+                               object: window, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.onWillClose?() }
             },
         ]
     }

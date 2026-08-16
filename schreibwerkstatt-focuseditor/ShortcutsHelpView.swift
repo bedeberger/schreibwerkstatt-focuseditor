@@ -74,6 +74,7 @@ struct ShortcutsHelpView: View {
                     (["⌃", "⌘", "F"], t("shortcuts.fullscreen")),
                     (["⌘", "S"], t("shortcuts.syncNow")),
                     (["⌘", ","], t("shortcuts.openSettings")),
+                    (["⌘", "0"], t("shortcuts.mainWindow")),
                     (["⌘", "?"], t("shortcuts.thisHelp")),
                 ])
 

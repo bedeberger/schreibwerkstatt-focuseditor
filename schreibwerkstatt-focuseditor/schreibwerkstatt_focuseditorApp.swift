@@ -43,6 +43,12 @@ struct schreibwerkstatt_focuseditorApp: App {
         UserDefaults.standard.register(defaults: ["WebAutomaticQuoteSubstitutionEnabled": false])
     }
 
+    /// Szenen-ID des Hauptfensters — geteilt zwischen `Window`-Szene und dem
+    /// Fenster-Menü-Eintrag, der es nach dem Schliessen wieder öffnet.
+    static let mainWindowID = "main"
+    /// Szenen-ID der Tastaturkürzel-Hilfe (Help-Menü **und** Fenster-Menü).
+    static let shortcutsWindowID = "shortcuts-help"
+
     @StateObject private var core = AppCore()
     @StateObject private var windowChrome = WindowChromeController()
     @StateObject private var appearance = AppearanceController()
@@ -86,7 +92,15 @@ struct schreibwerkstatt_focuseditorApp: App {
     }
 
     var body: some Scene {
-        WindowGroup {
+        // Bewusst `Window` statt `WindowGroup`: die App ist eine Ein-Fenster-
+        // Schreib-Shell (kein Dokumentmodell, „Neues Fenster" ist ersatzlos
+        // gestrichen). Ein `WindowGroup` ohne `.newItem`-Befehl liess sich
+        // schliessen, ohne dass es einen Weg zurück gab — App-Review-Befund
+        // (Guideline 4, „no menu item to re-open it"). Eine `Window`-Szene
+        // hängt dagegen einen festen Eintrag ins Fenster-Menü, der das Fenster
+        // auch nach dem Schliessen wieder öffnet (s. `MainWindowCommands` für
+        // den zusätzlichen expliziten Eintrag samt ⌘0).
+        Window(t("window.mainTitle"), id: Self.mainWindowID) {
             ContentView()
                 .environmentObject(core)
                 .environmentObject(core.auth)
@@ -105,6 +119,13 @@ struct schreibwerkstatt_focuseditorApp: App {
                     windowChrome.bind(window, toolbarHost: makeToolbarHost())
                 })
                 .task {
+                    // Schliesst der Nutzer das Fenster (Ampel-Knopf), stirbt die
+                    // WKWebView mit — den offenen Draft vorher local-first sichern
+                    // (best effort: der Flush läuft über die Bridge in LocalStore +
+                    // Outbox). Der Weg zurück ist „Fenster ▸ Schreibfenster" (⌘0).
+                    windowChrome.onWillClose = { [core] in
+                        Task { await core.bridge.flushDraftSave() }
+                    }
                     // Fokus- + Typografie-Controller an die app-weite Bridge
                     // koppeln (Push der Live-Umschaltung), Stats-Kanal anhängen,
                     // dann Auth/Sync hochfahren.
@@ -231,18 +252,34 @@ struct schreibwerkstatt_focuseditorApp: App {
                 .keyboardShortcut("f", modifiers: [.control, .command])
             }
 
+            // Fenster-Menü: expliziter Eintrag, der das Hauptfenster öffnet —
+            // auch (und gerade) wenn es geschlossen ist. Genau der Rückweg, den
+            // der App-Review vermisst hat (Guideline 4, „no menu item to re-open
+            // it"). ⌘0 ist der übliche macOS-Platz für „Hauptfenster zeigen".
+            // `replacing:` statt `before:`, weil SwiftUI in diese Sektion für
+            // jede `Window`-Szene selbst einen Eintrag hängt — sonst stünde das
+            // Hauptfenster doppelt („Schreibfenster" + Fenstertitel). Der
+            // automatische Eintrag der Kürzel-Hilfe überlebt das Ersetzen
+            // (nachgemessen im laufenden Build), bleibt also erreichbar.
+            CommandGroup(replacing: .singleWindowList) {
+                Button(t("menu.mainWindow")) {
+                    openWindow(id: Self.mainWindowID)
+                }
+                .keyboardShortcut("0", modifiers: .command)
+            }
+
             // Help-Menü: die Standard-„App-Hilfe" (toter Help-Book-Eintrag)
             // durch unsere Tastaturkürzel-Hilfe ersetzen (⌘?).
             CommandGroup(replacing: .help) {
                 Button(t("menu.shortcuts")) {
-                    openWindow(id: "shortcuts-help")
+                    openWindow(id: Self.shortcutsWindowID)
                 }
                 .keyboardShortcut("?", modifiers: .command)
             }
         }
 
         // Tastaturkürzel-Hilfe als eigenes, einfaches Fenster.
-        Window(t("window.shortcutsTitle"), id: "shortcuts-help") {
+        Window(t("window.shortcutsTitle"), id: Self.shortcutsWindowID) {
             ShortcutsHelpView()
                 .environmentObject(loc)
         }

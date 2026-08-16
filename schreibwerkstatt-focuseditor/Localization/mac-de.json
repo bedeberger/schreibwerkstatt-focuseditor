@@ -291,6 +291,7 @@
   "shortcuts.fullscreen": "Vollbild ein/aus (ablenkungsfrei)",
   "shortcuts.syncNow": "Speichern & synchronisieren",
   "shortcuts.openSettings": "Einstellungen öffnen",
+  "shortcuts.mainWindow": "Schreibfenster öffnen/nach vorn holen",
   "shortcuts.thisHelp": "Diese Tastaturkürzel-Hilfe",
   "shortcuts.openPage": "Seite öffnen (Picker)",
   "shortcuts.pickerOpenFirst": "Im Picker: ersten Treffer öffnen",
@@ -357,6 +358,8 @@
   "menu.bold": "Fett",
   "menu.italic": "Kursiv",
   "menu.underline": "Unterstrichen",
+  "menu.mainWindow": "Schreibfenster",
+  "window.mainTitle": "Schreibwerkstatt Fokus",
   "window.shortcutsTitle": "Tastaturkürzel",
 
   "about.tagline": "Ablenkungsfreier Schreibmodus der Schreibwerkstatt",
