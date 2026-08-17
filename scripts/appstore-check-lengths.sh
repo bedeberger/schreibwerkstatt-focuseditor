@@ -2,7 +2,8 @@
 #
 # appstore-check-lengths.sh — prüft die App-Store-Texte gegen Apples Limits.
 #
-# Liest AppStore/listing-de.md und AppStore/listing-en.md, nimmt jede Überschrift
+# Liest AppStore/listing-de.md, AppStore/listing-en.md und AppStore/whats-new.md
+# (dort die „Neue Funktionen“-Texte je Version), nimmt jede Überschrift
 # der Form `## Titel (max. N)` bzw. `## Title (max N)` samt dem darauf folgenden
 # Code-Block und vergleicht dessen Zeichenzahl mit N. Zeichen zählt Apple als
 # Unicode-Zeichen (nicht Bytes) — darum Python statt `wc -c`.
@@ -16,7 +17,7 @@ cd "$(dirname "$0")/.."
 python3 - "$@" <<'PY'
 import re, sys, pathlib
 
-files = ["AppStore/listing-de.md", "AppStore/listing-en.md"]
+files = ["AppStore/listing-de.md", "AppStore/listing-en.md", "AppStore/whats-new.md"]
 # `## Untertitel (max. 30)` / `## Subtitle (max 30)` → Limit; danach der erste ```-Block.
 head = re.compile(r"^##\s+(.*?)\s*\(max\.?\s*(\d+)[^)]*\).*$", re.M)
 fail = 0

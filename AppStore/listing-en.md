@@ -64,18 +64,11 @@ YOUR TEXT, YOUR SERVER
 The app talks only to the server you enter yourself. The device token lives in the macOS keychain and never leaves your Mac in plain text. No ads, no tracking, no third-party analytics. The AI-assisted features (synonyms, editorial review) run through your server; which AI service is used there is up to whoever operates it — see the privacy policy.
 ```
 
-## What's New in This Version (max 4000) — 3.15
+## What's New in This Version
 
-```
-First release on the Mac App Store.
-
-• Distraction-free writing mode for exactly one page, fully offline-capable
-• Local storage with background sync to your Schreibwerkstatt account
-• Typewriter mode, focus dimming and adjustable typography
-• Spell checking, synonyms (⌘⇧S) and quotation-mark normalisation
-• Word count, daily goal and writing time
-• German and English
-```
+Per version, in [whats-new.md](whats-new.md) — that file holds the German and the
+English text side by side, so both locales stay in sync. This file only carries
+what does *not* change from release to release.
 
 ## URLs
 
