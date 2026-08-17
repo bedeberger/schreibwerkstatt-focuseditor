@@ -30,6 +30,7 @@ final class GRDBLocalStore: LocalStore {
         dbQueue = try DatabaseQueue(path: dbURL.path)
         try Self.migrator.migrate(dbQueue)
         try Self.rebuildSearchIndexIfNeeded(dbQueue)
+        try Self.backfillPageStatsIfNeeded(dbQueue)
     }
 
     /// Wechselt den Spiegel auf den aktuell konfigurierten Server (Per-Server-
@@ -42,6 +43,7 @@ final class GRDBLocalStore: LocalStore {
         let newQueue = try DatabaseQueue(path: dbURL.path)
         try Self.migrator.migrate(newQueue)
         try Self.rebuildSearchIndexIfNeeded(newQueue)
+        try Self.backfillPageStatsIfNeeded(newQueue)
         dbQueue = newQueue
     }
 
@@ -113,10 +115,68 @@ final class GRDBLocalStore: LocalStore {
                 t.add(column: "serverBaseHtml", .text)
             }
         }
+        m.registerMigration("v5_page_counts") { db in
+            // Zählwerte je Seite (Zeichen/Wörter) für den Seiten-Picker. Als
+            // Spalten, weil sie sonst bei JEDEM Öffnen des Pickers aus dem HTML
+            // ALLER Seiten des Buchs neu gerechnet werden müssten (bei einem
+            // grossen Buch mehrere Tausend Seiten × mehrere KB).
+            //
+            // NULL = noch nicht gerechnet (Alt-Bestand) — `backfillPageStatsIfNeeded`
+            // trägt sie nach dem Öffnen der DB nach, in Häppchen statt in einer
+            // Riesen-Transaktion. Bewusst NICHT in der Migration selbst: die läuft
+            // beim Start, und ein Voll-Rechnen mit allen HTML-Bodies im Speicher
+            // wäre genau dort am unpassendsten.
+            //
+            // BEWUSST NICHT in `StoredPage` (wie `serverBaseHtml`): der Record
+            // schreibt nur seine eigenen Spalten, die Zählwerte pflegt
+            // `upsertDerived` in derselben Transaktion.
+            try db.alter(table: "page") { t in
+                t.add(column: "charCount", .integer)
+                t.add(column: "wordCount", .integer)
+            }
+        }
         return m
     }
 
-    // MARK: - Volltext-Index (FTS5)
+    // MARK: - Abgeleitete Werte (Volltext-Index + Zählwerte)
+
+    /// Führt ALLES nach, was sich aus dem HTML einer Seite ableitet: den
+    /// FTS-Eintrag (Picker-Inhaltssuche) und die Zählwerte (Zeichen/Wörter für die
+    /// Picker-Zeile). EIN Aufruf pro Write, damit die beiden nie auseinanderdriften.
+    /// `nonisolated`, da im DB-Writer-Thread aufgerufen.
+    nonisolated private static func upsertDerived(_ db: Database, id: String, html: String, pageName: String?) throws {
+        try upsertSearchIndex(db, id: id, html: html, pageName: pageName)
+        try writePageStats(db, id: id, html: html)
+    }
+
+    /// Schreibt die Zählwerte einer Seite. Reines Spalten-Update — Inhalt,
+    /// Stempel und Outbox der Seite bleiben unberührt.
+    nonisolated private static func writePageStats(_ db: Database, id: String, html: String) throws {
+        let stats = PageMetrics.counts(html: html)
+        try db.execute(sql: "UPDATE page SET charCount = ?, wordCount = ? WHERE id = ?",
+                       arguments: [stats.chars, stats.words, id])
+    }
+
+    /// Trägt fehlende Zählwerte nach (Alt-Bestand nach der Migration; theoretisch
+    /// auch ein Drift). In Häppchen von 200 Seiten, jedes in eigener Transaktion:
+    /// so liegen nie alle HTML-Bodies eines grossen Buchs gleichzeitig im Speicher
+    /// und der Start bleibt unterbrechbar. Ist nichts offen, kostet es EINE
+    /// indexlose Zählabfrage.
+    nonisolated private static func backfillPageStatsIfNeeded(_ queue: DatabaseQueue) throws {
+        while true {
+            let done = try queue.write { db -> Bool in
+                let rows = try Row.fetchAll(db, sql: """
+                    SELECT id, html FROM page WHERE charCount IS NULL LIMIT 200
+                    """)
+                guard !rows.isEmpty else { return true }
+                for row in rows {
+                    try writePageStats(db, id: row["id"], html: row["html"] ?? "")
+                }
+                return false
+            }
+            if done { return }
+        }
+    }
 
     /// Schreibt/aktualisiert den FTS-Eintrag einer Seite (löschen + neu einfügen —
     /// ein Eintrag pro ID). `nonisolated`, da im DB-Writer-Thread aufgerufen.
@@ -202,6 +262,33 @@ final class GRDBLocalStore: LocalStore {
         }
     }
 
+    func pageStats(bookId: Int?) async throws -> [String: PageStats] {
+        try await dbQueue.read { db in
+            // Ohne HTML-Body — nur die drei Zahlen-Spalten (der Picker fragt das
+            // für ALLE Seiten des Buchs ab). `charCount IS NULL` (noch nicht
+            // gerechnet) fällt raus, damit der Picker „—" zeigt statt einer 0,
+            // die „Seite ist leer" behaupten würde.
+            let rows: [Row]
+            if let bookId {
+                rows = try Row.fetchAll(db, sql: """
+                    SELECT id, charCount, wordCount FROM page
+                    WHERE bookId = ? AND charCount IS NOT NULL
+                    """, arguments: [bookId])
+            } else {
+                rows = try Row.fetchAll(db, sql: """
+                    SELECT id, charCount, wordCount FROM page WHERE charCount IS NOT NULL
+                    """)
+            }
+            var out: [String: PageStats] = [:]
+            out.reserveCapacity(rows.count)
+            for row in rows {
+                let id: String = row["id"]
+                out[id] = PageStats(chars: row["charCount"] ?? 0, words: row["wordCount"] ?? 0)
+            }
+            return out
+        }
+    }
+
     func pendingOutbox() async throws -> [OutboxEntry] {
         try await dbQueue.read { db in
             try OutboxEntry
@@ -242,8 +329,8 @@ final class GRDBLocalStore: LocalStore {
             // Outbox: einen Eintrag pro Seite (save = upsert auf pageId).
             let entry = OutboxEntry(pageId: id, html: html, baseUpdatedAt: base, queuedAt: now)
             try entry.save(db)
-            // Volltext-Index nachführen (selbe Transaktion → kein Drift).
-            try Self.upsertSearchIndex(db, id: id, html: html, pageName: page.pageName)
+            // Volltext-Index + Zählwerte nachführen (selbe Transaktion → kein Drift).
+            try Self.upsertDerived(db, id: id, html: html, pageName: page.pageName)
             return page
         }
     }
@@ -303,7 +390,7 @@ final class GRDBLocalStore: LocalStore {
                               updatedAt: serverUpdatedAtMillis,
                               baseUpdatedAt: serverUpdatedAtMillis)
         try page.save(db)
-        try upsertSearchIndex(db, id: id, html: html, pageName: page.pageName)
+        try upsertDerived(db, id: id, html: html, pageName: page.pageName)
     }
 
     func serverBaseHtml(id: String) async throws -> String? {

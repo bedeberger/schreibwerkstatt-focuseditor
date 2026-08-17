@@ -66,6 +66,14 @@ private final class FakeLocalStore: LocalStore {
             .map(\.id)
     }
 
+    func pageStats(bookId: Int?) async throws -> [String: PageStats] {
+        var out: [String: PageStats] = [:]
+        for page in pages.values where bookId == nil || page.bookId == bookId {
+            out[page.id] = PageMetrics.counts(html: page.html)
+        }
+        return out
+    }
+
     func pendingOutbox() async throws -> [OutboxEntry] {
         outbox.values.sorted { $0.queuedAt < $1.queuedAt }
     }

@@ -64,6 +64,14 @@ protocol LocalStore: AnyObject {
     /// Inhalt ist durchsuchbar (offline-first) — Seiten, deren Body noch nie
     /// gepullt wurde, sind (noch) nicht auffindbar. Leere/triviale Query → `[]`.
     func searchContent(query: String, bookId: Int?) async throws -> [String]
+    /// Zählwerte (Zeichen/Wörter) der gespiegelten Seiten, `bookId` skopiert auf
+    /// ein Buch. Schlüssel ist die Seiten-ID; enthalten sind NUR Seiten, deren
+    /// Inhalt lokal vorliegt — eine nie gepullte Seite fehlt bewusst (der Picker
+    /// zeigt dafür „—" statt einer erfundenen 0). Gerechnet wird beim Schreiben
+    /// (s. `PageMetrics`), nicht beim Lesen: der Picker fragt das für ALLE Seiten
+    /// des Buchs auf einmal ab.
+    func pageStats(bookId: Int?) async throws -> [String: PageStats]
+
     /// Schreibt eine Seite lokal UND legt einen Outbox-Eintrag an (local-first).
     /// Liefert die gespeicherte Seite mit neuem `updatedAt` zurück.
     func save(id: String, html: String, baseUpdatedAt: Double?) async throws -> StoredPage
@@ -273,6 +281,17 @@ final class InMemoryLocalStore: LocalStore {
             }
             .sorted { $0.updatedAt > $1.updatedAt }
             .map(\.id)
+    }
+
+    func pageStats(bookId: Int?) async throws -> [String: PageStats] {
+        // Platzhalter-Spiegel → beim Lesen rechnen. Der GRDB-Spiegel hält die
+        // Zählwerte als Spalten (beim Schreiben gepflegt), weil dort Tausende
+        // Seiten liegen können.
+        var out: [String: PageStats] = [:]
+        for page in pages.values where bookId == nil || page.bookId == bookId {
+            out[page.id] = PageMetrics.counts(html: page.html)
+        }
+        return out
     }
 
     func pendingOutbox() async throws -> [OutboxEntry] {

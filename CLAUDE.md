@@ -172,11 +172,11 @@ App-Sources unter [schreibwerkstatt-focuseditor/](schreibwerkstatt-focuseditor/)
 schreibwerkstatt-focuseditor/        App-Sources (Swift)
   *App.swift · AppCore.swift · ContentView.swift · AppToolbar.swift · WindowChromeController.swift
   Web/        WKWebView-Host + Bridge + OTA-Lader (EINZIGE Kopplungsschicht WebView ⇄ Swift)
-  Store/      GRDB-LocalStore + Outbox + LocalDataPurge (lokales Aufräumen nach Konto-Löschung)
+  Store/      GRDB-LocalStore + Outbox + PageMetrics (Zeichen-/Wortzahl je Seite) + LocalDataPurge (lokales Aufräumen nach Konto-Löschung)
   Sync/       SyncEngine + Reachability + SyncState + SyncModels + SyncPreferences
   Auth/       Keychain + Device-Token + Login + APIClient + ServerConfig + AccountDeletionController
   Content/    ContentAPI (Lese-Zugriff Buch-/Kapitel-Struktur, Server-Soll)
-  Library/    LibraryStore + native Picker (BookPicker, PagePickerOverlay[+Rows/+Keyboard]) + PagePickerModel (PURE Filter-/Gruppierungs-Logik des Seiten-Pickers, getestet)
+  Library/    LibraryStore + native Picker (BookPicker, PagePickerOverlay[+Rows/+Keyboard]) + PagePickerModel (PURE Filter-/Gruppierungs-/Summen-Logik des Seiten-Pickers, getestet). Zeichen-/Wortzahl je Zeile und die Summenzeile kommen aus dem LOKALEN Spiegel (`LibraryStore.pageStats` ← `store.pageStats(bookId:)`), weil der Server-Tree keine Zählwerte liefert; nie gepullte Seiten zeigen „—".
   Theme/      Appearance + Typography (Controller) + BrandColor + BrandFont
   Focus/      FocusController (lokale Fokus-Granularität)
   Writing/    WritingStatsStore (Live-Wortzahl/Lesezeit/Schreibziel/Tages-Delta) + WritingTimeTracker (Schreibzeit-Heartbeat → POST /history/writing-time)
@@ -187,7 +187,7 @@ schreibwerkstatt-focuseditor/        App-Sources (Swift)
   Localization/  Zweisprachigkeit de/en: Localization.swift (t()/tn() + L10nStore + LocalizationController) + mac-de.json/mac-en.json (gebündelt) + I18nBundleStore (OTA-Override)
 ```
 
-**Einstellungen (alle gerätelokal, UserDefaults):** App-Sprache (de/en/System) + Server-URL + Lieblingsbuch (Allgemein) · Hell/Dunkel/System + Fokus-Granularität + Auto-Hide-Toolbar (Darstellung) · Schriftgrösse/-art, Zeilenhöhe, Spaltenbreite (measure), Papier-Ton (Typografie) · Wortzahl-Anzeige + Wort-Ziel pro Seite (Schreiben) · Poll-Kadenz/Pause/manueller Sync (Sync) · LanguageTool an-aus + Sprach-Override (Rechtschreibung) · Abmelden + App-Version/Update (Sparkle) + Editor-Bundle-Version/Update + Cache leeren + Konto löschen (Konto). Editor-wirksame Werte (Typografie, Fokus) fliessen über die Bridge als CSS — **kein Editor-Fork**.
+**Einstellungen (alle gerätelokal, UserDefaults):** App-Sprache (de/en/System) + Server-URL + Lieblingsbuch (Allgemein) · Hell/Dunkel/System + Fokus-Granularität + Auto-Hide-Toolbar (Darstellung) · Schriftgrösse/-art, Zeilenhöhe, Spaltenbreite (measure), Papier-Ton (Typografie) · Wortzahl-Anzeige + Zählwert im Seiten-Picker (`picker.metric`: Zeichen/Wörter/beides/aus) + Wort-Ziel pro Seite (Schreiben) · Poll-Kadenz/Pause/manueller Sync (Sync) · LanguageTool an-aus + Sprach-Override (Rechtschreibung) · Abmelden + App-Version/Update (Sparkle) + Editor-Bundle-Version/Update + Cache leeren + Konto löschen (Konto). Editor-wirksame Werte (Typografie, Fokus) fliessen über die Bridge als CSS — **kein Editor-Fork**.
 
 Der App-Sources-Ordner ist eine `PBXFileSystemSynchronizedRootGroup` (Xcode 16+) → neue Swift-Dateien kommen **automatisch** ins Target (kein pbxproj-Edit nötig).
 
@@ -264,10 +264,21 @@ drin: der App-Review braucht einen Ein-Klick-Zugang, weil der normale Login ein
 Device-Token per Copy-Paste verlangt.
 
 **Release:** ein Bump für beide Kanäle (dieselbe `Version.xcconfig`), danach
-`scripts/release-dmg.sh` für das DMG bzw. [scripts/archive-mas.sh](scripts/archive-mas.sh)
-für das App-Store-`.pkg`. Der Slash-Command `/release` wählt den Kanal
-(`dmg` | `appstore` | `beide`, Default `dmg`) — Details in [SIGNING.md](SIGNING.md)
-„App Store".
+`UPLOAD=1 scripts/archive-mas.sh` für das App-Store-`.pkg`
+([scripts/archive-mas.sh](scripts/archive-mas.sh)) bzw. `scripts/release-dmg.sh`
+für das DMG. Der Slash-Command `/release` wählt den Kanal
+(`appstore` | `dmg` | `beide`, **Default `appstore`**) — Details in
+[SIGNING.md](SIGNING.md) „App Store".
+
+**Der App Store ist der Hauptkanal**, das DMG bleibt aber vollwertig: die
+Sparkle-Bestandsnutzer wechseln **nicht** von selbst in den Store, ihre
+Installation prüft weiter das GitHub-Appcast. Ein Release, das alle erreichen
+soll, läuft darum als `/release beide`; ein reines `/release` versorgt nur die
+Store-Nutzer. Updates im Store verteilt Apple selbst (Auto-Update-Einstellung des
+Nutzers) — die App hat dafür bewusst keinen eigenen Mechanismus, im Store-Build
+zeigt der Einstellungen-Tab „Konto" nur die Version + den Hinweis
+`settings.account.appUpdateHintStore`. Editor-Änderungen brauchen ohnehin kein
+Store-Release (OTA-Bundle).
 
 ## Build & Run
 

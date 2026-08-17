@@ -30,6 +30,14 @@ final class LibraryStore: ObservableObject {
         }
     }
     @Published private(set) var pages: [PagePickerRow] = []
+    /// Zählwerte (Zeichen/Wörter) je Seiten-ID des aktiven Buchs — aus dem lokalen
+    /// Spiegel, weil der Server-Tree keine liefert. Speist die Zahl an der
+    /// Picker-Zeile und die Summenzeile. Eine Seite, deren Inhalt nie gepullt
+    /// wurde, FEHLT hier bewusst (der Picker zeigt „—" statt einer erfundenen 0).
+    @Published private(set) var pageStats: [Int: PageStats] = [:]
+    /// Seiten mit offenem Outbox-Eintrag (lokal geändert, noch nicht am Server) —
+    /// treibt den dezenten Punkt an der Picker-Zeile („ist mein Text schon drüben?").
+    @Published private(set) var unsavedPageIds: Set<Int> = []
     /// Aktuell im Editor geöffnete Seite (von der Bridge gemeldet bzw. per Picker
     /// gewählt) — treibt die Seiten-Anzeige in der Toolbar.
     @Published private(set) var openPageId: Int? {
@@ -224,6 +232,8 @@ final class LibraryStore: ObservableObject {
     func refreshPages() async {
         guard let bookId = activeBookId else {
             pages = []
+            pageStats = [:]
+            unsavedPageIds = []
             return
         }
         isLoadingPages = true
@@ -250,6 +260,36 @@ final class LibraryStore: ObservableObject {
                 ? ((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
                 : nil
         }
+        // Zählwerte + Outbox-Zustand passend zur frischen Liste nachziehen. Läuft
+        // in DEMSELBEN Aufruf, damit die Picker-Zeilen nicht erst ohne und dann
+        // mit Zahl erscheinen (ein Umbau der Liste würde sonst flackern).
+        await refreshPageStats()
+    }
+
+    /// Liest die Zählwerte des aktiven Buchs (lokaler Spiegel) und die Seiten mit
+    /// offenem Outbox-Eintrag. Beides ist reine Anzeige — ein Fehler degradiert
+    /// still zu „keine Zahlen" (die Picker-Zeile zeigt dann „—").
+    func refreshPageStats() async {
+        guard let bookId = activeBookId else {
+            pageStats = [:]
+            unsavedPageIds = []
+            return
+        }
+        let raw = (try? await store.pageStats(bookId: bookId)) ?? [:]
+        // Späte Antwort eines inzwischen abgewählten Buchs verwerfen (gleicher
+        // Race-Schutz wie in `refreshPages`).
+        guard bookId == activeBookId else { return }
+        var mapped: [Int: PageStats] = [:]
+        mapped.reserveCapacity(raw.count)
+        for (id, stats) in raw {
+            if let pid = Int(id) { mapped[pid] = stats }
+        }
+        pageStats = mapped
+        // Outbox ist buch-übergreifend; auf die Seiten des Buchs zu filtern wäre
+        // ein zweiter Store-Roundtrip ohne Nutzen — der Picker fragt nur nach IDs,
+        // die er ohnehin anzeigt.
+        let pending = (try? await store.pendingOutbox()) ?? []
+        unsavedPageIds = Set(pending.compactMap { Int($0.pageId) })
     }
 
     /// Mindestlänge einer Volltextsuche. Ein einzelnes Zeichen zöge das halbe Buch
@@ -365,6 +405,8 @@ final class LibraryStore: ObservableObject {
         books = []
         booksLoaded = false
         pages = []
+        pageStats = [:]
+        unsavedPageIds = []
         openPageId = nil
         openPageDirty = false
         lastError = nil

@@ -232,4 +232,122 @@ final class PagePickerModelTests: XCTestCase {
 
         XCTAssertNotEqual(build(pages: [a, b]).structureID, build(pages: [b, a]).structureID)
     }
+
+    // MARK: - Rangfolge innerhalb eines Kapitels
+
+    /// Titel-Treffer stehen vor Nur-im-Text-Treffern — pro Kapitelblock.
+    func testNameMatchesRankAboveContentMatchesWithinChapter() {
+        let pages = [
+            row(1, "Beiläufige Notiz", ["Kapitel"]),     // nur Volltext-Treffer
+            row(2, "Der Amoklauf", ["Kapitel"]),         // Titel-Treffer
+            row(3, "Noch eine Notiz", ["Kapitel"]),      // nur Volltext-Treffer
+        ]
+
+        let result = build(pages: pages, query: "amoklauf", content: [1, 3])
+        XCTAssertEqual(result.groups.count, 1)
+        XCTAssertEqual(result.groups[0].rows.map(\.row.id), [2, 1, 3],
+                       "Titel-Treffer zuerst, Volltext-Treffer in Buch-Reihenfolge danach")
+    }
+
+    /// Ein Kapitelpfad-Treffer zählt wie ein Titel-Treffer (dieselbe Regel wie der
+    /// Filter): passt der Kapitelname, sind ALLE Seiten des Blocks gleichrangig und
+    /// bleiben in Buch-Reihenfolge — ein zusätzlicher Volltext-Treffer darf keine
+    /// Seite nach vorn ziehen.
+    func testChapterPathMatchCountsAsTitleMatchForEveryRowInTheBlock() {
+        let pages = [
+            row(1, "Irgendwas", ["Januar"]),     // Kapitel-Treffer + Volltext-Treffer
+            row(2, "Neujahr", ["Januar"]),       // Kapitel-Treffer
+        ]
+
+        let result = build(pages: pages, query: "januar", content: [1])
+        XCTAssertEqual(result.groups[0].rows.map(\.row.id), [1, 2])
+        XCTAssertFalse(PagePickerModel.isContentOnlyMatch(pages[0], query: "januar",
+                                                          contentMatches: [1]),
+                       "über das Kapitel gefunden → kein „im Text\"-Treffer")
+    }
+
+    /// Die Kapitelreihenfolge des Buchs bleibt unangetastet: priorisiert wird NUR
+    /// innerhalb eines Blocks, es wandert keine Seite in ein anderes Kapitel.
+    func testRankingDoesNotReorderChapters() {
+        let pages = [
+            row(1, "Volltext hier", ["Erstes"]),
+            row(2, "Amoklauf", ["Zweites"]),
+        ]
+
+        let result = build(pages: pages, query: "amoklauf", content: [1])
+        XCTAssertEqual(result.groups.map(\.path), [["Erstes"], ["Zweites"]])
+        XCTAssertEqual(result.rows.map(\.row.id), [1, 2])
+    }
+
+    /// Ohne Suche ist die Rangfolge ein No-op — die `book_order` des Servers gilt.
+    func testNoQueryKeepsBookOrder() {
+        let pages = [row(3, "C", ["K"]), row(1, "A", ["K"]), row(2, "B", ["K"])]
+        XCTAssertEqual(build(pages: pages).rows.map(\.row.id), [3, 1, 2])
+    }
+
+    /// Innerhalb einer Rangstufe bleibt die Buch-Reihenfolge stabil (kein
+    /// Durcheinander bei vielen gleichrangigen Treffern).
+    func testRankingIsStableWithinARank() {
+        let pages = (1...12).map { row($0, "Kapitel Notiz \($0)", ["K"]) }
+        let result = build(pages: pages, query: "notiz")
+        XCTAssertEqual(result.groups[0].rows.map(\.row.id), Array(1...12))
+    }
+
+    // MARK: - Summenzeile (Umfang der Trefferliste)
+
+    func testSummaryAddsUpMatchingPages() {
+        let pages = [row(1, "Eins", ["A"]), row(2, "Zwei", ["A"]), row(3, "Drei", ["B"])]
+        let stats: [Int: PageStats] = [
+            1: PageStats(chars: 100, words: 20),
+            2: PageStats(chars: 250, words: 40),
+            3: PageStats(chars: 5, words: 1),
+        ]
+
+        let all = PagePickerModel.build(pages: pages, recents: [], query: "",
+                                       contentMatches: [], stats: stats).summary
+        XCTAssertEqual(all.pages, 3)
+        XCTAssertEqual(all.chars, 355)
+        XCTAssertEqual(all.words, 61)
+        XCTAssertEqual(all.unknown, 0)
+    }
+
+    /// Bei aktiver Suche summiert die Zeile die TREFFER, nicht das Buch.
+    func testSummaryFollowsTheSearch() {
+        let pages = [row(1, "Neujahr", ["2026"]), row(2, "Fasnacht", ["2026"])]
+        let stats: [Int: PageStats] = [
+            1: PageStats(chars: 100, words: 20),
+            2: PageStats(chars: 900, words: 150),
+        ]
+
+        let hit = PagePickerModel.build(pages: pages, recents: [], query: "fasnacht",
+                                       contentMatches: [], stats: stats).summary
+        XCTAssertEqual(hit.pages, 1)
+        XCTAssertEqual(hit.chars, 900)
+    }
+
+    /// Eine zuletzt geöffnete Seite steht ZWEIMAL in der Liste (Recent-Kopie +
+    /// Baum-Zeile) — die Summe darf sie nur einmal zählen.
+    func testSummaryIgnoresRecentDuplicates() {
+        let page = row(1, "Neujahr", ["2026"])
+        let stats: [Int: PageStats] = [1: PageStats(chars: 100, words: 20)]
+
+        let result = PagePickerModel.build(pages: [page], recents: [page], query: "",
+                                          contentMatches: [], stats: stats)
+        XCTAssertEqual(result.rows.count, 2, "Recent-Kopie + Baum-Zeile")
+        XCTAssertEqual(result.summary.pages, 1)
+        XCTAssertEqual(result.summary.chars, 100)
+    }
+
+    /// Seiten ohne lokal gespiegelten Inhalt fehlen in der Summe — sie werden
+    /// ausgewiesen, statt die Summe stillschweigend zu klein zu lassen.
+    func testSummaryReportsPagesWithoutLocalContent() {
+        let pages = [row(1, "Eins"), row(2, "Zwei")]
+        let stats: [Int: PageStats] = [1: PageStats(chars: 100, words: 20)]
+
+        let summary = PagePickerModel.build(pages: pages, recents: [], query: "",
+                                           contentMatches: [], stats: stats).summary
+        XCTAssertEqual(summary.pages, 2)
+        XCTAssertEqual(summary.unknown, 1)
+        XCTAssertEqual(summary.chars, 100)
+    }
 }

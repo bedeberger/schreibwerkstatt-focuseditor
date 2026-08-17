@@ -44,6 +44,7 @@
 		7E0000000000000000000071 /* LibraryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E0000000000000000000061 /* LibraryStore.swift */; };
 		7E0000000000000000000073 /* PagePickerModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E0000000000000000000063 /* PagePickerModel.swift */; };
 		7E0000000000000000000072 /* GRDBLocalStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E0000000000000000000062 /* GRDBLocalStore.swift */; };
+		7E0000000000000000000074 /* PageMetrics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E0000000000000000000064 /* PageMetrics.swift */; };
 		7E0000000000000000000101 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = 7E0000000000000000000102 /* GRDB */; };
 /* End PBXBuildFile section */
 
@@ -94,6 +95,7 @@
 		7E0000000000000000000060 /* WritingTimeTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = WritingTimeTracker.swift; path = "schreibwerkstatt-focuseditor/Writing/WritingTimeTracker.swift"; sourceTree = SOURCE_ROOT; };
 		7E0000000000000000000061 /* LibraryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LibraryStore.swift; path = "schreibwerkstatt-focuseditor/Library/LibraryStore.swift"; sourceTree = SOURCE_ROOT; };
 		7E0000000000000000000063 /* PagePickerModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PagePickerModel.swift; path = "schreibwerkstatt-focuseditor/Library/PagePickerModel.swift"; sourceTree = SOURCE_ROOT; };
+		7E0000000000000000000064 /* PageMetrics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PageMetrics.swift; path = "schreibwerkstatt-focuseditor/Store/PageMetrics.swift"; sourceTree = SOURCE_ROOT; };
 		7E0000000000000000000062 /* GRDBLocalStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = GRDBLocalStore.swift; path = "schreibwerkstatt-focuseditor/Store/GRDBLocalStore.swift"; sourceTree = SOURCE_ROOT; };
 		7E0000000000000000000106 /* Focuseditor.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Focuseditor.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -171,6 +173,7 @@
 				7E0000000000000000000060 /* WritingTimeTracker.swift */,
 				7E0000000000000000000061 /* LibraryStore.swift */,
 				7E0000000000000000000063 /* PagePickerModel.swift */,
+				7E0000000000000000000064 /* PageMetrics.swift */,
 				7E0000000000000000000062 /* GRDBLocalStore.swift */,
 				7E0000000000000000000040 /* EditorBridge.swift */,
 				7E0000000000000000000041 /* EditorCoordinating.swift */,
@@ -364,6 +367,7 @@
 				7E0000000000000000000070 /* WritingTimeTracker.swift in Sources */,
 				7E0000000000000000000071 /* LibraryStore.swift in Sources */,
 				7E0000000000000000000073 /* PagePickerModel.swift in Sources */,
+				7E0000000000000000000074 /* PageMetrics.swift in Sources */,
 				7E0000000000000000000072 /* GRDBLocalStore.swift in Sources */,
 				7E0000000000000000000011 /* AuthError.swift in Sources */,
 				7E0000000000000000000012 /* ServerConfig.swift in Sources */,

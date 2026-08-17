@@ -1,7 +1,10 @@
 # Signieren, Notarisieren & Verteilen
 
-Zwei Kanäle, ein Quellcode: **DMG** (Direktdownload, dieses Dokument bis zum
-Abschnitt „Auto-Update") und **App Store** (Abschnitt „App Store" ganz unten).
+Zwei Kanäle, ein Quellcode: **App Store** (Hauptkanal, Abschnitt „App Store" ganz
+unten — auch der Default von `/release`) und **DMG** (Direktdownload für die
+Sparkle-Bestandsnutzer, dieses Dokument bis zum Abschnitt „Auto-Update").
+Das DMG ist **nicht** abgekündigt: Store-Updates erreichen die DMG-Installationen
+nicht, deshalb braucht ein Release für alle Nutzer `/release beide`.
 
 Ziel des DMG-Wegs: Die App läuft auf fremden Macs ohne Gatekeeper-Warnung. Dafür
 braucht es ein **Developer-ID-Zertifikat** + **Notarisierung** durch Apple.
@@ -252,26 +255,23 @@ Archiv **selbst** an; es braucht keinen Klick im Developer-Portal. Nebenbefund: 
 Installer-Cert erscheint nicht in `security find-identity -p codesigning` (nicht
 codesigning-fähig) — der richtige Nachweis ist `pkgutil --check-signature`.
 
-**Noch offen (Apple-Kontoarbeit, unabhängig vom Code):**
-1. **App-Record in App Store Connect** — fehlt noch; `xcrun altool --list-apps
-   --type macos --apiKey … --apiIssuer …` liefert eine leere Liste. Anlegen:
-   appstoreconnect.apple.com → Apps → **+** → macOS → Bundle-ID
-   `David-Berger.schreibwerkstatt-focuseditor` → Name, Primärsprache, SKU.
-   **Ohne den Record ist kein Upload möglich:** `altool --upload-package` verlangt
-   `--apple-id` = die *numerische* App-ID aus dem Record (nicht die Bundle-ID).
-   Danach hochladen mit
+**Erledigt:**
+1. **App-Record in App Store Connect** — angelegt, numerische App-ID
+   **`6797073919`** (Bundle-ID `David-Berger.schreibwerkstatt-focuseditor`).
+   `altool --upload-package` verlangt sie als `--apple-id` (nicht die Bundle-ID);
+   sie steht darum als Default in [scripts/archive-mas.sh](scripts/archive-mas.sh)
+   und muss nicht mehr von aussen gesetzt werden. Bauen + hochladen:
    ```bash
-   UPLOAD=1 ASC_APP_ID=<numerische App-ID> scripts/archive-mas.sh
+   UPLOAD=1 scripts/archive-mas.sh
    ```
-   oder das fertige `.pkg` in Transporter ziehen. Im Release-Workflow steckt der
-   Paketbau hinter `/release appstore` bzw. `/release beide`.
-2. **Kontolöschung in-app** (Guideline 5.1.1(v)) — fehlt noch, wahrscheinlicher
-   Reject-Grund.
-3. **`MACOSX_DEPLOYMENT_TARGET` senken** — das gebaute Paket trägt
-   `LSMinimumSystemVersion = 26.5`, ist im Store also für fast niemanden
-   installierbar. Vor der ersten Einreichung auf 14.0/15.0 ziehen und die dabei
-   auffallenden macOS-26-only-APIs abfangen. (Hochladen und in TestFlight prüfen
-   geht auch vorher — nur eben nicht einreichen.)
+   Im Release-Workflow ist das der Default-Kanal: `/release` (bzw. `/release beide`,
+   wenn auch das DMG raus soll).
+2. **Kontolöschung in-app** (Guideline 5.1.1(v)) — implementiert, s. CLAUDE.md
+   „Konto löschen (in-app)".
+3. **`MACOSX_DEPLOYMENT_TARGET`** — auf `14.0` gesenkt (vorher 26.5, im Store für
+   fast niemanden installierbar).
+
+**Noch zu beachten:**
 4. Metadaten: **liegen fertig in [AppStore/](AppStore/)** — Listings de/en
    (Name, Untertitel, Keywords, Beschreibung, Neuerungen, URLs), Screenshots
    (je vier, 2880×1800, ohne Alphakanal), App-Privacy-Deklaration und

@@ -148,11 +148,22 @@ struct WritingSettingsTab: View {
     @AppStorage(EditorBehaviorPrefs.autosaveKey) private var autosaveMs = 1500.0
     /// Synonym-Hilfe (Cmd+Shift+S) gerätelokal an/aus.
     @AppStorage(SynonymPrefs.enabledKey) private var synonymsEnabled = true
+    /// Zählwert an der Zeile im Seiten-Picker (⌘O).
+    @AppStorage(PagePickerMetric.defaultsKey) private var pickerMetric = PagePickerMetric.chars
 
     var body: some View {
         Form {
             Section(t("settings.writing.statsSection")) {
                 Toggle(t("settings.writing.showStats"), isOn: $stats.showStats)
+                Picker(t("settings.writing.pickerMetric"), selection: $pickerMetric) {
+                    ForEach(PagePickerMetric.allCases) { metric in
+                        Text(t(metric.labelKey)).tag(metric)
+                    }
+                }
+                Text(t("settings.writing.pickerMetricHint"))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             Section(t("settings.writing.synonymSection")) {

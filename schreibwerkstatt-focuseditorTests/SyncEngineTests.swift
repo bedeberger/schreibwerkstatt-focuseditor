@@ -96,6 +96,14 @@ private final class FakeStore: LocalStore {
 
     func searchContent(query: String, bookId: Int?) async throws -> [String] { [] }
 
+    func pageStats(bookId: Int?) async throws -> [String: PageStats] {
+        var out: [String: PageStats] = [:]
+        for page in pages.values where bookId == nil || page.bookId == bookId {
+            out[page.id] = PageMetrics.counts(html: page.html)
+        }
+        return out
+    }
+
     func save(id: String, html: String, baseUpdatedAt: Double?) async throws -> StoredPage {
         if let existing = pages[id], existing.html == html { return existing }
         let now = tick()

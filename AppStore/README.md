@@ -95,11 +95,10 @@ Apples Limits (Name 30, Untertitel 30, Promo 170, Keywords 100, Beschreibung
 
 Nicht Metadaten, aber blockierend — Details in [SIGNING.md](../SIGNING.md):
 
-- **Kategorien setzen** und dabei die Abweichung zum Build auflösen
-  (`LSApplicationCategoryType` steht auf `public.app-category.books`) — Details
-  und Empfehlung in [listing-de.md](listing-de.md).
-- **Kontolöschung in der App** (Richtlinie 5.1.1(v)) — Stand siehe SIGNING.md;
-  ohne sie der wahrscheinlichste Reject-Grund.
-- **`MACOSX_DEPLOYMENT_TARGET`** steht auf 26.5 — für den Store deutlich senken.
+- ✅ **Kategorien** — `LSApplicationCategoryType = public.app-category.productivity`
+  (Build und Store-Eintrag stimmen überein), Hintergrund in [listing-de.md](listing-de.md).
+- ✅ **Kontolöschung in der App** (Richtlinie 5.1.1(v)) — implementiert, s. CLAUDE.md
+  „Konto löschen (in-app)".
+- ✅ **`MACOSX_DEPLOYMENT_TARGET`** — auf 14.0 gesenkt.
 - **Support-URL**: zeigt vorerst auf die Startseite. Sobald es eine eigene
   Hilfe-/Kontaktseite gibt, in beiden Listing-Dateien nachziehen.

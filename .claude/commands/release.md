@@ -1,5 +1,5 @@
 ---
-description: Version bumpen, builden, committen + veröffentlichen — als notarisiertes .dmg (GitHub-Release inkl. Sparkle-Appcast) und/oder als App-Store-Paket
+description: Version bumpen, builden, committen + veröffentlichen — als App-Store-Paket (Default) und/oder als notarisiertes .dmg (GitHub-Release inkl. Sparkle-Appcast)
 ---
 
 Führe den kompletten Release-Workflow für **schreibwerkstatt-focuseditor** (nativer macOS-Client) aus. Dieser Command ist die **gezielte Freigabe** des Users — wenn er aufgerufen wird, den ganzen Ablauf ohne weitere Rückfrage durchziehen (außer ein Build-/Notarisierungs-Schritt schlägt fehl, dann stoppen und melden).
@@ -7,25 +7,27 @@ Führe den kompletten Release-Workflow für **schreibwerkstatt-focuseditor** (na
 ## Argumente (`$ARGUMENTS`, Reihenfolge egal, beide optional)
 
 - **Bump-Höhe:** `patch` | `minor` | `major`. Fehlt sie, aus den seit dem letzten Tag liegenden Änderungen ableiten — neue nutzersichtbare Features → `minor`, sonst `patch`, im Zweifel `patch`.
-- **Kanal:** `dmg` (Default) | `appstore` | `beide`.
+- **Kanal:** `appstore` (Default) | `dmg` | `beide`.
 
 ```
-/release                  → DMG, Bump-Höhe abgeleitet
-/release minor            → DMG, Minor-Bump
-/release appstore         → nur App Store
-/release minor appstore   → App Store, Minor-Bump
-/release beide            → ein Bump, danach DMG-Release UND App-Store-Archiv
+/release                  → App Store, Bump-Höhe abgeleitet
+/release minor            → App Store, Minor-Bump
+/release dmg              → nur DMG (GitHub-Release + Sparkle-Appcast)
+/release minor dmg        → DMG, Minor-Bump
+/release beide            → ein Bump, danach DMG-Release UND App-Store-Upload
 ```
 
-Es gibt **zwei Distributionswege auf einem Quellcode** (Hintergrund: [CLAUDE.md](CLAUDE.md) „Zwei Distributionswege"). Der Versions-Bump passiert **einmal** am Anfang und gilt für beide — beide Targets lesen dieselbe [Version.xcconfig](Version.xcconfig). Nie pro Kanal separat bumpen, sonst laufen DMG- und Store-Version auseinander.
+Es gibt **zwei Distributionswege auf einem Quellcode** (Hintergrund: [CLAUDE.md](CLAUDE.md) „Zwei Distributionswege"). Der App Store ist der **Hauptkanal**; das DMG bleibt vollwertig, weil die Bestandsnutzer aus der Sparkle-Welt weiter versorgt werden müssen (sie wechseln **nicht** von selbst in den Store) — es wird nur nicht mehr automatisch mitgezogen. Wenn ein Release beide Nutzergruppen erreichen soll, ist `beide` der richtige Aufruf. Den Kanal gibt allein das Argument vor — nicht mitten im Ablauf nachfragen; lief nur `appstore`, in der Abschluss-Zusammenfassung **erwähnen**, dass die DMG-/Sparkle-Nutzer diese Version nicht bekommen. Nachziehen **derselben** Version geht dann nicht über den Command (der bumpt immer), sondern von Hand: `git tag v<MARKETING_VERSION> && git push origin v<MARKETING_VERSION>`, danach `PUBLISH=1 scripts/release-dmg.sh` (= Schritte 6 + 7).
+
+Der Versions-Bump passiert **einmal** am Anfang und gilt für beide — beide Targets lesen dieselbe [Version.xcconfig](Version.xcconfig). Nie pro Kanal separat bumpen, sonst laufen DMG- und Store-Version auseinander.
 
 Die Schritte 1–5 sind für alle Kanäle identisch. Danach verzweigt es:
 
-| Schritt | `dmg` | `appstore` |
+| Schritt | `appstore` | `dmg` |
 |---|---|---|
-| 6 Tag + Push | ✅ | ❌ (kein Tag, aber Commit + `git push origin main`) |
-| 7 notarisiertes .dmg + GitHub-Release | ✅ | ❌ |
-| 8 Archiv + .pkg-Export | ❌ | ✅ |
+| 6 Tag + Push | ❌ (kein Tag, aber Commit + `git push origin main`) | ✅ |
+| 7 notarisiertes .dmg + GitHub-Release | ❌ | ✅ |
+| 8 Archiv + .pkg-Export + Upload | ✅ | ❌ |
 
 Bei `beide`: erst 6 + 7, dann 8.
 
@@ -57,7 +59,7 @@ Schritte:
    ```
    `<MODELL>` ist das Modell, das den Commit **tatsächlich** macht — also der Trailer, den die laufende Umgebung vorgibt (z. B. `Claude Opus 5`). Hier bewusst **kein** fester Name: eine hartkodierte Version veraltet mit dem nächsten Modellwechsel und schreibt dann eine falsche Zuordnung in die Historie.
 6. **Taggen + pushen** *(Kanal `dmg`/`beide`)*: `git tag v<MARKETING_VERSION>`, dann `git push origin main` **und** `git push origin v<MARKETING_VERSION>`.
-   *(Kanal `appstore`: nur `git push origin main` — der Tag gehört zum GitHub-Release und wäre ohne DMG-Asset irreführend. Wird später ein `beide`-Release derselben Version nachgezogen, kommt der Tag dort dazu.)*
+   *(Kanal `appstore` — der Default: nur `git push origin main`. Kein Tag, weil er zum GitHub-Release gehört und ohne DMG-Asset irreführend wäre. Wird das DMG für dieselbe Version später nachgezogen, entsteht der Tag dabei von Hand, s. Kanal-Abschnitt oben.)*
 7. **Notarisiertes .dmg bauen + als GitHub-Release veröffentlichen** *(Kanal `dmg`/`beide`)*:
    ```bash
    PUBLISH=1 scripts/release-dmg.sh
@@ -65,18 +67,18 @@ Schritte:
    Das Skript zieht die Version automatisch aus [Version.xcconfig](Version.xcconfig) und erledigt in einem Rutsch: frischer Release-Build → signieren + **notarisieren** + stapeln ([scripts/notarize.sh](scripts/notarize.sh)) → Drag-to-Applications-.dmg → .dmg signieren + notarisieren → Gatekeeper-Check → dann [scripts/publish-github-release.sh](scripts/publish-github-release.sh): **Sparkle-`appcast.xml`** erzeugen + EdDSA-signieren und zusammen mit dem `Focuseditor-<version>.dmg` als `--latest`-Release unter dem (in Schritt 6 bereits gepushten) Tag `v<version>` hochladen.
    - Voraussetzungen liegen in [scripts/release.env](scripts/release.env) (`DEV_ID_APP` + notarytool-Key) und `gh auth` muss eingeloggt sein — beides ist eingerichtet. Schlägt Notarisierung/Upload fehl → Fehler melden, **nicht** den lokalen Commit/Tag zurückrollen (der Push ist schon erfolgt).
 
-8. **App-Store-Paket bauen** *(Kanal `appstore`/`beide`)*:
+8. **App-Store-Paket bauen + hochladen** *(Kanal `appstore`/`beide`)*:
    ```bash
-   scripts/archive-mas.sh
+   UPLOAD=1 scripts/archive-mas.sh
    ```
-   Das Skript baut zuerst das DMG-Schema als Gegenprobe, archiviert dann das Target `Focuseditor-MAS`, prüft das archivierte Bundle auf die App-Store-Blocker (kein Sparkle.framework, kein `Contents/XPCServices`, keine `temporary-exception`-Entitlement, keine `SU*`-Keys) und exportiert nach `build/mas/export/*.pkg` ([Config/ExportOptions-MAS.plist](Config/ExportOptions-MAS.plist)).
+   Das Skript baut zuerst das DMG-Schema als Gegenprobe, archiviert dann das Target `Focuseditor-MAS`, prüft das archivierte Bundle auf die App-Store-Blocker (kein Sparkle.framework, kein `Contents/XPCServices`, keine `temporary-exception`-Entitlement, keine `SU*`-Keys), exportiert nach `build/mas/export/*.pkg` ([Config/ExportOptions-MAS.plist](Config/ExportOptions-MAS.plist)) und lädt das Paket zu App Store Connect hoch (`ASC_APP_ID` ist im Skript vorbelegt). Ohne `UPLOAD=1` endet es beim `.pkg` — dieser Weg ist nur für Trockenläufe gedacht.
    - **Kein** Tag, **kein** GitHub-Release, **keine** Notarisierung — das macht Apple beim Store-Ingest.
-   - **Upload:** `UPLOAD=1 ASC_APP_ID=6797073919 scripts/archive-mas.sh` (oder derselbe `xcrun altool --upload-package`-Aufruf direkt auf ein schon exportiertes `.pkg`). Der vorhandene Notarisierungs-Key reicht dafür — verifiziert am 2026-08-16 mit 3.20 (42). Nur die **Metadaten**-API (Release-Notes, Antwort an den Review) bleibt ihm mit `403` verwehrt (Rolle „Developer"), das läuft über den Browser. Fällt der Upload doch aus, auf Transporter/Xcode-Organizer ausweichen — das ist dann kein Problem des Pakets.
-   - **Voraussetzungen** (Apple-Kontoarbeit, s. [SIGNING.md](SIGNING.md) „App Store"): App ID registriert, Zertifikate „Apple Distribution" + „Mac Installer Distribution", Provisioning-Profil *Mac App Store*, App-Record in App Store Connect. Solange das fehlt, läuft Archiv + Sanity-Check durch und der **Export bricht mit einem Signier-/Profilfehler ab** — das melden, nicht umgehen und **nicht** den Commit/Tag zurückrollen.
-   - Nach dem Upload in App Store Connect: Build der Version zuordnen, „Was ist neu"-Text, Metadaten, zur Review einreichen. **Bei einem Reject** vor dem erneuten Upload `CURRENT_PROJECT_VERSION` erhöhen — Apple nimmt keine Build-Nummer zweimal an.
+   - Der Upload **veröffentlicht nichts**: der Build landet in App Store Connect und wird dort verarbeitet (~10–30 min). Der vorhandene Notarisierungs-Key trägt ihn (verifiziert am 2026-08-16 mit 3.20 (42)); nur die **Metadaten**-API (Release-Notes, Antwort an den Review) bleibt ihm mit `403` verwehrt (Rolle „Developer"), das läuft über den Browser. Schlägt der Upload fehl, auf Transporter/Xcode-Organizer ausweichen — das ist dann kein Problem des Pakets. **Nicht** den Commit/Tag zurückrollen.
+   - **Voraussetzungen** (Apple-Kontoarbeit, s. [SIGNING.md](SIGNING.md) „App Store"): App ID registriert, Zertifikate „Apple Distribution" + „Mac Installer Distribution", Provisioning-Profil *Mac App Store*, App-Record in App Store Connect. Fehlt davon etwas, läuft Archiv + Sanity-Check durch und der **Export bricht mit einem Signier-/Profilfehler ab** — das melden, nicht umgehen.
+   - **Danach im Browser** (nicht automatisierbar, s. Metadaten-`403`): App Store Connect → neue Version anlegen → Build zuordnen → „Neue Funktionen" in **de und en** → zur Review einreichen → nach der Freigabe veröffentlichen. Am Ende des Commands diese offenen Schritte explizit auflisten. **Bei einem Reject** vor dem erneuten Upload `CURRENT_PROJECT_VERSION` erhöhen — Apple nimmt keine Build-Nummer zweimal an.
 
 **Warum notarisiertes .dmg + Appcast (nicht nur ein Debug-Artefakt):** Der Server (Mutterprojekt) liest das `latest`-Release und bietet das .dmg unter Profil-Einstellungen zum Download an; **Sparkle** zieht `releases/latest/download/appcast.xml` für In-App-Auto-Updates. Beides setzt ein mit „Developer ID Application" signiertes, notarisiertes Image samt EdDSA-signiertem Appcast voraus (siehe [SIGNING.md](SIGNING.md)). Die Versionserkennung vergleicht den Tag (`v` gestrippt) per SemVer gegen die laufende App.
 
 **Tastaturkürzel-/Lokalisierungs-Pflichten** (CLAUDE.md): Wurde im Release-Diff ein Shortcut oder ein UI-String berührt, vor dem Commit prüfen, dass [ShortcutsHelpView.swift](schreibwerkstatt-focuseditor/ShortcutsHelpView.swift) bzw. die Kataloge [mac-de.json](schreibwerkstatt-focuseditor/Localization/mac-de.json)/[mac-en.json](schreibwerkstatt-focuseditor/Localization/mac-en.json) mitgezogen wurden.
 
-Am Ende: knappe Zusammenfassung mit der neuen Version (Marketing + Build), Commit-Hash und — je nach Kanal — Release-URL und/oder Pfad zum `.pkg` samt der noch offenen manuellen Schritte in App Store Connect.
+Am Ende: knappe Zusammenfassung mit der neuen Version (Marketing + Build), Commit-Hash und — je nach Kanal — Release-URL und/oder Pfad zum `.pkg` samt der noch offenen manuellen Schritte in App Store Connect. Beim Default-Kanal `appstore` zusätzlich der Satz, dass die DMG-/Sparkle-Nutzer diese Version **nicht** erhalten.

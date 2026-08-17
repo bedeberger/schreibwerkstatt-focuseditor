@@ -24,12 +24,13 @@
 # solange das Konto-Setup noch offen ist.
 #
 # Nutzung:
-#   scripts/archive-mas.sh                              # Archiv + Export nach build/mas/export
-#   UPLOAD=1 ASC_APP_ID=123456789 scripts/archive-mas.sh  # zusätzlich hochladen
+#   UPLOAD=1 scripts/archive-mas.sh   # Archiv + Export + Upload (der Release-Weg)
+#   scripts/archive-mas.sh            # nur Archiv + Export nach build/mas/export
 #
 # Umgebungsvariablen:
 #   UPLOAD          1 = nach dem Export via notarytool-API-Key hochladen
-#   ASC_APP_ID      numerische App-ID aus App Store Connect (nur mit UPLOAD=1)
+#   ASC_APP_ID      numerische App-ID aus App Store Connect; unten vorbelegt,
+#                   nur zum Überschreiben (anderer App-Record) nötig
 #   VERSION         optional, sonst aus Version.xcconfig (SSoT)
 
 set -euo pipefail
@@ -44,6 +45,10 @@ DERIVED="$ROOT/build/mas"
 VERSION="${VERSION:-$(awk -F'=' '/^MARKETING_VERSION/{gsub(/[[:space:]]/,"",$2); print $2; exit}' "$ROOT/Version.xcconfig")}"
 ARCHIVE="$DERIVED/Focuseditor-$VERSION.xcarchive"
 EXPORT_DIR="$DERIVED/export"
+# Numerische App-ID des App-Store-Records (keine Bundle-ID, kein Geheimnis —
+# steht so auch in der öffentlichen Store-URL). Vorbelegt, weil der App Store
+# der Hauptkanal ist und der Upload sonst an einer vergessenen Variable scheitert.
+ASC_APP_ID="${ASC_APP_ID:-6797073919}"
 
 # --- 1. DMG-Schema gegenbauen ------------------------------------------------
 # Beide Targets teilen den Quellcode; ein fehlender `#if SPARKLE`-Guard bricht
@@ -91,7 +96,7 @@ PKG="$(find "$EXPORT_DIR" -maxdepth 1 -name '*.pkg' | head -1)"
 [[ -n "$PKG" ]] || { echo "FEHLER: kein .pkg im Export gefunden" >&2; exit 1; }
 echo "==> Fertig: $PKG"
 
-# --- 5. Optionaler Upload ----------------------------------------------------
+# --- 5. Upload (UPLOAD=1 — der normale Release-Weg) --------------------------
 # Der vorhandene Notarisierungs-Key (Rolle „Developer") trägt den Build-Upload
 # — verifiziert am 2026-08-16 mit 3.20 (42), „UPLOAD SUCCEEDED". Nur die
 # METADATEN-API (Release-Notes, Review-Antworten) bleibt ihm mit 403 verwehrt,
@@ -100,15 +105,14 @@ echo "==> Fertig: $PKG"
 #
 # Zwei Stolpersteine, beide verifiziert am 2026-08-01:
 #   - `altool` verlangt `--apple-id` = die NUMERISCHE App-ID aus App Store
-#     Connect (nicht die Bundle-ID). Die gibt es erst, wenn der App-Record
-#     angelegt ist → ASC_APP_ID hier durchreichen. Prüfen, ob überhaupt ein
-#     Record existiert: `xcrun altool --list-apps --type macos --apiKey … --apiIssuer …`
+#     Connect (nicht die Bundle-ID). Sie steht oben als Default in ASC_APP_ID;
+#     für einen anderen Record von aussen überschreiben. Records auflisten:
+#     `xcrun altool --list-apps --type macos --apiKey … --apiIssuer …`
 #   - `altool` findet den .p8 nur per Namenskonvention in einem
 #     `private_keys`-Ordner (z. B. ~/.appstoreconnect/private_keys/), nicht über
 #     den Pfad in NOTARY_KEY. Wir verlinken die Datei darum bei Bedarf dorthin.
 if [[ "${UPLOAD:-}" == "1" ]]; then
   : "${NOTARY_KEY:?NOTARY_KEY fehlt (scripts/release.env)}"
-  : "${ASC_APP_ID:?ASC_APP_ID fehlt — numerische App-ID aus App Store Connect (App-Record zuerst anlegen)}"
 
   # .p8 an die Stelle verlinken, an der altool sie sucht.
   KEYDIR="$HOME/.appstoreconnect/private_keys"

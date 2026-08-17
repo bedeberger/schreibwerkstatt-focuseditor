@@ -47,6 +47,9 @@ struct PagePickerOverlay: View {
 
     @State var query = ""
     @FocusState var searchFocused: Bool
+    /// Welcher Zählwert an der Zeile steht (Einstellungen → Schreiben). Wirkt
+    /// sofort — die Zahlen liegen ohnehin im `LibraryStore`, es ist reine Anzeige.
+    @AppStorage(PagePickerMetric.defaultsKey) var pickerMetric = PagePickerMetric.chars
     /// Index der per Tastatur/Hover markierten Zeile in `filtered`.
     @State var selected = 0
     /// Ziel für den Auto-Scroll — der `RowKey` der anzusteuernden Zeile (gleiche
@@ -88,6 +91,10 @@ struct PagePickerOverlay: View {
     /// Zahl der ECHTEN Treffer im Kapitelbaum (ohne die Zuletzt-Geöffnet-Kopien) —
     /// speist die Trefferzahl im Suchfeld, die sonst durch die Duplikate zu hoch wäre.
     @State var matchCount = 0
+    /// Umfang der Trefferliste (Seiten/Wörter/Zeichen) für die Summenzeile —
+    /// memoisiert wie `filtered`: die Summe über Tausende Zeilen darf nicht an
+    /// jedem Hover-Render hängen.
+    @State var summary = PagePickerModel.Summary.empty
     /// Seiten-IDs, deren INHALT (Body, nicht nur Name) zur aktuellen Suche passt —
     /// async aus dem lokalen Volltext-Index (`library.searchContentIds`) gespeist.
     /// Erweitert die rein synchrone Namens-/Kapitelsuche.
@@ -110,10 +117,12 @@ struct PagePickerOverlay: View {
         let result = PagePickerModel.build(pages: library.pages,
                                           recents: library.recentPageRows(),
                                           query: query,
-                                          contentMatches: contentMatches)
+                                          contentMatches: contentMatches,
+                                          stats: library.pageStats)
         filtered = result.rows
         groups = result.groups
         matchCount = result.matchCount
+        summary = result.summary
         structureID = result.structureID
         hasComputed = true
         // Genau EIN Treffer → sogleich selektieren, sodass ⏎ direkt öffnet.
@@ -126,7 +135,21 @@ struct PagePickerOverlay: View {
         }
     }
 
+    /// Wunschmass des Overlays. Breiter als früher (460 pt), weil in der Zeile jetzt
+    /// Name, Badge, Umfang UND Relativ-Zeit stehen — lange Seitennamen wurden sonst
+    /// abgeschnitten. Bei einem kleineren Fenster klemmt `frame(maxWidth:)` das
+    /// Mass auf die verfügbare Breite (minus Rand), damit das Overlay nie über den
+    /// Fensterrand hinausläuft.
+    private static let preferredWidth: CGFloat = 620
+    private static let preferredHeight: CGFloat = 460
+
     var body: some View {
+        GeometryReader { geo in
+            picker(available: geo.size)
+        }
+    }
+
+    private func picker(available: CGSize) -> some View {
         ZStack {
             // Abdunkelnder Hintergrund — Klick schliesst.
             Color.black.opacity(0.25)
@@ -138,8 +161,15 @@ struct PagePickerOverlay: View {
                 searchField
                 Divider()
                 content
+                // Summenzeile nur, wenn auch Zeilen stehen — im Leer-/Ladezustand
+                // wäre „0 Seiten · 0 Zeichen" nur Lärm.
+                if hasComputed && !filtered.isEmpty {
+                    Divider()
+                    summaryBar
+                }
             }
-            .frame(width: 460, height: 420)
+            .frame(width: min(Self.preferredWidth, max(320, available.width - 48)),
+                   height: min(Self.preferredHeight, max(240, available.height - 48)))
             // Pfeil-Cursor für das GANZE Overlay erzwingen. An die View gebunden
             // (nicht das transiente `NSCursor.set()`) → gewinnt zuverlässig über
             // die darunterliegende WebView, die sonst ihren I-Beam durchdrückt
@@ -175,6 +205,10 @@ struct PagePickerOverlay: View {
             recompute()                                 // neue Liste → Treffer/Gruppen neu
             selectOpenPage()
         }
+        // Zählwerte kommen aus dem lokalen Spiegel und treffen nach der Seitenliste
+        // ein → Summenzeile (memoisiert) nachrechnen. Die Zahlen an den Zeilen
+        // selbst lesen direkt aus `library.pageStats` und brauchen das nicht.
+        .onChange(of: library.pageStats) { _, _ in recompute() }
         .onChange(of: query) { _, newQuery in           // neue Suche → oben anfangen
             recompute()                                 // sofort: Namens-/Kapiteltreffer
             selected = 0

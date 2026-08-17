@@ -158,6 +158,7 @@ Cache-Ort: `~/Library/Application Support/schreibwerkstatt-focuseditor/web-cache
 - `StoredPage` — `id, html, title?, pageName?, bookId?, chapterId?, updatedAt (Epoch-ms), baseUpdatedAt? (Server-Basis als ms)`.
 - `OutboxEntry` — `pageId, html, baseUpdatedAt?, queuedAt`.
 - `PageSummary` — leichte Listenzeile (ohne HTML); `displayName` bevorzugt `pageName` über `title`.
+- `PageStats` / `PageMetrics` ([Store/PageMetrics.swift](schreibwerkstatt-focuseditor/Store/PageMetrics.swift)) — Zeichen-/Wortzahl einer Seite, aus dem HTML gescannt (ein Durchgang über die Unicode-Skalare, kein Regex). Spiegelt bewusst die Editor-Zählung in der WebView (`countAndReport`, Leerraum-Läufe kollabieren, Blocktags = eine Zeilengrenze), damit Picker und Toolbar für die offene Seite dieselbe Zahl zeigen. `chars == 0` heisst verlässlich „unbeschrieben" (auch beim leeren Editor-Absatz `<p><br></p>`) — daran hängt das „leer"-Badge im Picker.
 
 Protokoll-Methoden mit ihrer Semantik:
 
@@ -165,6 +166,7 @@ Protokoll-Methoden mit ihrer Semantik:
 |---|---|
 | `page(id:)` | eine Seite voll laden |
 | `list(bookId:)` | `PageSummary[]`, ohne HTML, neueste zuerst |
+| `pageStats(bookId:)` | `[pageId: PageStats]` für den Picker — nur Seiten, deren Inhalt lokal vorliegt (fehlende zeigt der Picker als „—", nicht als 0) |
 | `save(id:html:baseUpdatedAt:)` | **local-first**: upsert Seite **+ Outbox-Eintrag** |
 | `pendingOutbox()` | offene Pushes, älteste zuerst |
 | `markPushed(id:queuedAt:serverUpdatedAtMillis:)` | quittiert Push — droppt Outbox-Eintrag **nur wenn `queuedAt` unverändert** (sonst liegt eine neuere Edit vor) |
@@ -173,7 +175,7 @@ Protokoll-Methoden mit ihrer Semantik:
 
 Zwei Implementierungen:
 
-- [GRDBLocalStore.swift](schreibwerkstatt-focuseditor/Store/GRDBLocalStore.swift) — produktiv, SQLite via GRDB. Migration `v1_pages_outbox`: Tabellen `page` (PK `id TEXT`) + `outbox` (PK `pageId TEXT`) + Index `page_on_bookId`. DB unter `…/localstore.sqlite`. Reads auf der Lese-Queue, Writes in `dbQueue.write {}`.
+- [GRDBLocalStore.swift](schreibwerkstatt-focuseditor/Store/GRDBLocalStore.swift) — produktiv, SQLite via GRDB. Migration `v1_pages_outbox`: Tabellen `page` (PK `id TEXT`) + `outbox` (PK `pageId TEXT`) + Index `page_on_bookId`. DB unter `…/localstore.sqlite`. Reads auf der Lese-Queue, Writes in `dbQueue.write {}`. Abgeleitete Werte (FTS-Eintrag + Zählwerte `charCount`/`wordCount`, Migration `v5_page_counts`) pflegt `upsertDerived` in DERSELBEN Transaktion wie den Seiten-Write; Alt-Bestand mit `charCount IS NULL` trägt `backfillPageStatsIfNeeded` beim Öffnen in 200er-Häppchen nach. Gerechnet wird also beim Schreiben — der Picker liest nur Zahlen, nie HTML.
 - `InMemoryLocalStore` (in `LocalStore.swift`) — Fallback/Test, JSON-Snapshot, verhaltensgleich.
 
 > GRDB-Records sind `nonisolated` deklariert (MainActor-Default-Isolation des Projekts erzwingt das für Typ **und** Conformance) — siehe Memory `grdb-nonisolated-conformance`.
@@ -263,7 +265,8 @@ Alle Dateien unter [Auth/](schreibwerkstatt-focuseditor/Auth/).
 [Library/LibraryStore.swift](schreibwerkstatt-focuseditor/Library/LibraryStore.swift) — `@MainActor ObservableObject`. Hält `books`, `activeBookId` (persistiert), `pages` (des aktiven Buchs), `openPageId`. Empfängt die offene Seite über `bridge.onOpenPageChange`. `refreshPages` ist **offline-first**: erst Server-`pickerRows`, bei Fehler lokaler Fallback aus `store.list`. `openPage(id:)` setzt sofort `openPageId` (Toolbar) und ruft `bridge.openPage(...)`.
 
 - [Library/BookPicker.swift](schreibwerkstatt-focuseditor/Library/BookPicker.swift) — minimales `Menu` in der Toolbar (Buchwechsel ist selten).
-- [Library/PagePickerOverlay.swift](schreibwerkstatt-focuseditor/Library/PagePickerOverlay.swift) — modales Such-Overlay (⌘O): TextField + gefilterte Liste, Tastatur-Navigation (↑/↓/⏎ via `NSEvent`-Monitor), ⎋ schliesst.
+- [Library/PagePickerOverlay.swift](schreibwerkstatt-focuseditor/Library/PagePickerOverlay.swift) — modales Such-Overlay (⌘O): TextField + gefilterte Liste, Tastatur-Navigation (↑/↓/⏎ via `NSEvent`-Monitor), ⎋ schliesst. Pro Zeile zusätzlich der Umfang (`pickerMetric`: Zeichen/Wörter/beides/aus, `@AppStorage "picker.metric"`), ein „leer"-Badge bei 0 Zeichen und ein goldener Punkt für Seiten mit offenem Outbox-Eintrag; unten die Summenzeile über die aktuelle Trefferliste (`PagePickerModel.Summary`, memoisiert in `recompute()` — nicht pro Render).
+- Zahlen-Quelle des Pickers ist der **lokale Spiegel**, nicht der Server-Tree (`/tree` liefert keine Zählwerte): `LibraryStore.refreshPageStats()` liest `store.pageStats(bookId:)` + `store.pendingOutbox()` in `pageStats` / `unsavedPageIds`, aufgerufen am Ende jedes `refreshPages()`. Eine Seite, deren Body noch nie gepullt wurde, fehlt bewusst → „—" statt einer erfundenen 0.
 
 ---
 

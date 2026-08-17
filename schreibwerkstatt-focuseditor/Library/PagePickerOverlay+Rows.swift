@@ -23,6 +23,9 @@ extension PagePickerOverlay {
     func rowButton(_ row: PagePickerRow, isSelected: Bool, indent: Int) -> some View {
         Button { open(row) } label: {
             HStack(spacing: 6) {
+                // Fester Platzhalter, damit die Seitennamen mit UND ohne Punkt auf
+                // derselben Kante stehen (sonst wandert die halbe Liste um 11 pt).
+                unsavedDot(row)
                 Text(row.name.isEmpty ? t("picker.untitled") : row.name)
                     .font(BrandFont.sans(13))
                     .foregroundStyle(BrandColor.text)
@@ -46,8 +49,27 @@ extension PagePickerOverlay {
                         .padding(.vertical, 1)
                         .background(BrandColor.muted.opacity(0.12),
                                     in: Capsule())
+                } else if library.pageStats[row.id]?.isEmpty == true {
+                    // Angelegt, aber noch unbeschrieben — sichtbar, ohne die Seite
+                    // öffnen zu müssen (typisch bei einer vorab gebauten Gliederung).
+                    Text(t("picker.emptyBadge"))
+                        .font(BrandFont.sans(9, weight: .semibold))
+                        .foregroundStyle(BrandColor.faint)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 1)
+                        .background(BrandColor.faint.opacity(0.14),
+                                    in: Capsule())
                 }
                 Spacer(minLength: 8)
+                // Umfang der Seite (Zeichen/Wörter, s. Einstellungen → Schreiben).
+                if let metric = metricLabel(row) {
+                    Text(metric)
+                        .font(BrandFont.sans(10))
+                        .monospacedDigit()
+                        .foregroundStyle(BrandColor.faint)
+                        .lineLimit(1)
+                        .layoutPriority(1)
+                }
                 // Dezente Relativ-Zeit der letzten Änderung — Orientierung im
                 // grossen Buch („woran habe ich zuletzt geschrieben?").
                 if let updated = row.updatedAt {
@@ -70,6 +92,9 @@ extension PagePickerOverlay {
             .background(isSelected ? BrandColor.primary.opacity(0.14) : Color.clear)
         }
         .buttonStyle(.plain)
+        // Ausgeschriebene Zahlen (beide Einheiten) im Tooltip — die Zeile selbst
+        // bleibt knapp, die genaue Auskunft ist einen Hover entfernt.
+        .help(rowTooltip(row))
         // Zeile ist ein klickbares Ziel → Zeigehand statt des Pfeil-Cursors, den das
         // `.pointerStyle(.default)` am Overlay sonst über allen Listenzeilen
         // erzwingt (sichtbar „nicht sinnig" über den Buttons). View-gebunden wie die
@@ -84,8 +109,8 @@ extension PagePickerOverlay {
     }
 
     /// Vorlese-Text einer Zeile: Seitenname, Kapitelpfad, Zustand („geöffnet" /
-    /// Volltext-Treffer) und die letzte Änderung — in dieser Reihenfolge, damit
-    /// das Wichtigste zuerst kommt.
+    /// Volltext-Treffer / „leer" / ungesichert), Umfang und die letzte Änderung —
+    /// in dieser Reihenfolge, damit das Wichtigste zuerst kommt.
     private func rowLabel(_ row: PagePickerRow) -> String {
         var parts = [row.name.isEmpty ? t("picker.untitled") : row.name]
         if !row.chapterPath.isEmpty {
@@ -96,10 +121,64 @@ extension PagePickerOverlay {
         } else if isContentOnlyMatch(row) {
             parts.append(t("picker.textMatch"))
         }
+        if library.unsavedPageIds.contains(row.id) {
+            parts.append(t("picker.unsavedHint"))
+        }
+        // Ausgeschrieben statt „1 240 Z" — Kürzel liest der Screenreader nicht vor.
+        parts.append(statsSentence(row) ?? t("picker.a11y.noStats"))
         if let updated = row.updatedAt {
             parts.append(RelativeTime.string(for: updated))
         }
         return parts.joined(separator: ", ")
+    }
+
+    // MARK: - Umfang (Zeichen/Wörter)
+
+    /// Kleiner Punkt für „lokal geändert, noch nicht am Server". Immer im Layout
+    /// (nur unsichtbar, wenn nichts offen ist), damit die Namen nicht springen.
+    @ViewBuilder
+    private func unsavedDot(_ row: PagePickerRow) -> some View {
+        let unsaved = library.unsavedPageIds.contains(row.id)
+        Circle()
+            // Gold = „etwas ist noch in Bewegung" (dieselbe Bedeutung wie der
+            // Save-Indikator in der Toolbar); Navy bleibt der Auswahl vorbehalten.
+            .fill(unsaved ? BrandColor.accent : Color.clear)
+            .frame(width: 5, height: 5)
+            .accessibilityHidden(true)   // der Zustand steht im Zeilen-Label
+    }
+
+    /// Kurzer Zählwert für die Zeile — je Einstellung Zeichen, Wörter, beides oder
+    /// nichts. „—", solange der Inhalt der Seite lokal nicht vorliegt (nie gepullt):
+    /// eine 0 würde dort fälschlich „leer" behaupten.
+    private func metricLabel(_ row: PagePickerRow) -> String? {
+        guard pickerMetric != .off else { return nil }
+        guard let stats = library.pageStats[row.id] else { return "—" }
+        var parts: [String] = []
+        if pickerMetric.showsWords {
+            parts.append(t("picker.wordsShort", ["n": NumberText.grouped(stats.words)]))
+        }
+        if pickerMetric.showsChars {
+            parts.append(t("picker.charsShort", ["n": NumberText.grouped(stats.chars)]))
+        }
+        return parts.joined(separator: " · ")
+    }
+
+    /// Ausgeschriebener Umfang („210 Wörter · 1 240 Zeichen") — für Tooltip und
+    /// VoiceOver. `nil`, wenn der Inhalt lokal nicht vorliegt.
+    private func statsSentence(_ row: PagePickerRow) -> String? {
+        guard let stats = library.pageStats[row.id] else { return nil }
+        return NumberText.plural(stats.words, "picker.words")
+            + " · " + NumberText.plural(stats.chars, "picker.chars")
+    }
+
+    /// Tooltip der Zeile: Umfang (beide Einheiten, unabhängig von der
+    /// Zeilen-Einstellung) plus der Hinweis auf ungesicherte Änderungen.
+    private func rowTooltip(_ row: PagePickerRow) -> String {
+        var parts = [statsSentence(row) ?? t("picker.a11y.noStats")]
+        if library.unsavedPageIds.contains(row.id) {
+            parts.append(t("picker.unsavedHint"))
+        }
+        return parts.joined(separator: " · ")
     }
 
     /// Trägt die Zeile das „im Text"-Badge? Die Regel selbst (und damit die
@@ -191,6 +270,45 @@ extension PagePickerOverlay {
             out += seg
         }
         return Text(out)
+    }
+
+    // MARK: - Summenzeile
+
+    /// Umfang der aktuellen Liste: bei leerer Suche der des Buchs, bei aktiver
+    /// Suche der der Treffer („48 Seiten · 21 800 Wörter · 132 400 Zeichen").
+    /// Beantwortet die Frage, die man sonst nur durch Aufaddieren beantwortet —
+    /// „wie viel steht hier eigentlich schon?".
+    var summaryBar: some View {
+        HStack(spacing: 6) {
+            Text(summaryText)
+                .font(BrandFont.sans(10))
+                .monospacedDigit()
+                .foregroundStyle(BrandColor.muted)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 6)
+        .background(.regularMaterial)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(summaryText)
+    }
+
+    /// Text der Summenzeile. Seiten ohne lokal vorliegenden Inhalt werden
+    /// ausgewiesen, statt die Summe stillschweigend zu klein zu lassen.
+    private var summaryText: String {
+        var parts = [NumberText.plural(summary.pages, "picker.summary.pages")]
+        // Ohne Zählwerte (frisches Buch, nichts gepullt) nur die Seitenzahl —
+        // „0 Wörter" wäre schlicht falsch.
+        if summary.unknown < summary.pages {
+            parts.append(NumberText.plural(summary.words, "picker.words"))
+            parts.append(NumberText.plural(summary.chars, "picker.chars"))
+        }
+        if summary.unknown > 0 {
+            parts.append(NumberText.plural(summary.unknown, "picker.summary.unknown"))
+        }
+        return parts.joined(separator: " · ")
     }
 
     // MARK: - Leerzustand

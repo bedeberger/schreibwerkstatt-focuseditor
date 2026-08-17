@@ -17,6 +17,25 @@
 
 import Foundation
 
+/// Welchen Zählwert der Seiten-Picker rechts an der Zeile zeigt (gerätelokal,
+/// Einstellungen → Schreiben). Default `chars` — die Zeichenzahl ist die Zahl,
+/// an der man den Umfang einer Seite erkennt, ohne dass die Zeile voll läuft.
+enum PagePickerMetric: String, CaseIterable, Identifiable {
+    case off, chars, words, both
+
+    var id: String { rawValue }
+
+    /// UserDefaults-Key (gerätelokale Einstellung, kein Server-Wert → NICHT
+    /// server-skopiert wie `library.activeBookId`).
+    static let defaultsKey = "picker.metric"
+
+    /// i18n-Key des Labels im Einstellungs-Menü.
+    var labelKey: String { "settings.writing.pickerMetric.\(rawValue)" }
+
+    var showsChars: Bool { self == .chars || self == .both }
+    var showsWords: Bool { self == .words || self == .both }
+}
+
 enum PagePickerModel {
 
     /// Zu welchem Block der Liste gehört eine Zeile: die Gruppe „Zuletzt
@@ -96,6 +115,22 @@ enum PagePickerModel {
         /// Kopien) — speist die Trefferzahl im Suchfeld, die sonst durch die
         /// Duplikate zu hoch wäre.
         let matchCount: Int
+        /// Umfang der Trefferliste (Seiten/Wörter/Zeichen) für die Summenzeile.
+        let summary: Summary
+    }
+
+    /// Umfang der aktuellen Trefferliste — bei leerer Suche also des ganzen Buchs
+    /// bzw. bei aktiver Suche der Treffer. `unknown` sind Treffer, deren Inhalt
+    /// lokal (noch) nicht vorliegt und die darum in `chars`/`words` fehlen; die
+    /// Summenzeile weist sie aus, statt eine zu kleine Summe als vollständig
+    /// auszugeben.
+    struct Summary: Equatable {
+        let pages: Int
+        let chars: Int
+        let words: Int
+        let unknown: Int
+
+        static let empty = Summary(pages: 0, chars: 0, words: 0, unknown: 0)
     }
 
     /// Rechnet Trefferliste + Gruppierung: zuerst die zuletzt geöffneten Seiten,
@@ -113,8 +148,12 @@ enum PagePickerModel {
     ///     (`LibraryStore.recentPageRows()`), bereits gegen `pages` aufgelöst.
     ///   - query: Sucheingabe; leer = alles zeigen.
     ///   - contentMatches: Seiten-IDs mit Volltext-Treffer (async nachgeladen).
+    ///   - stats: Zählwerte je Seiten-ID aus dem lokalen Spiegel
+    ///     (`LibraryStore.pageStats`) — nur für die Summenzeile; fehlende Seiten
+    ///     zählen als `unknown`.
     static func build(pages: [PagePickerRow], recents: [PagePickerRow],
-                      query: String, contentMatches: Set<Int>) -> Result {
+                      query: String, contentMatches: Set<Int>,
+                      stats: [Int: PageStats] = [:]) -> Result {
         let treeRows: [PagePickerRow]
         if query.isEmpty {
             treeRows = pages
@@ -157,13 +196,13 @@ enum PagePickerModel {
         var runPath: [String] = []
         for row in treeRows {
             if !run.isEmpty && row.chapterPath != runPath {
-                appendGroup(.tree, path: runPath, rows: run)
+                appendGroup(.tree, path: runPath, rows: ranked(run, query: query))
                 run = []
             }
             if run.isEmpty { runPath = row.chapterPath }
             run.append(row)
         }
-        appendGroup(.tree, path: runPath, rows: run)
+        appendGroup(.tree, path: runPath, rows: ranked(run, query: query))
 
         // Struktur-Stempel: Gruppen-Identitäten + Zeilen-Identitäten in
         // Anzeige-Reihenfolge. Bewusst über die IDs (nicht über Namen/Zeitstempel),
@@ -176,7 +215,47 @@ enum PagePickerModel {
             for entry in group.rows { hasher.combine(entry.key) }
         }
         return Result(structureID: hasher.finalize(), rows: flat,
-                      groups: built, matchCount: treeRows.count)
+                      groups: built, matchCount: treeRows.count,
+                      summary: summary(for: treeRows, stats: stats))
+    }
+
+    /// Ordnet die Zeilen EINES Kapitelblocks nach Trefferqualität: Treffer im
+    /// Seitennamen (bzw. im Kapitelpfad) zuerst, Nur-im-Text-Treffer danach. Wer
+    /// den Titel einer Seite sucht, will sie nicht unter zwanzig Volltextstellen
+    /// finden.
+    ///
+    /// Bewusst NUR innerhalb des Blocks: die Kapitelreihenfolge des Buchs bleibt
+    /// unangetastet (kein globales Umsortieren, das die Gliederung zerreisst) —
+    /// jedes Kapitel priorisiert für sich. Die Sortierung ist **stabil**, innerhalb
+    /// einer Rangstufe gilt also weiter die `book_order`-Reihenfolge des Servers.
+    /// Ohne Suche ist es ein No-op (alle Zeilen haben denselben Rang).
+    private static func ranked(_ rows: [PagePickerRow], query: String) -> [PagePickerRow] {
+        guard !query.isEmpty, rows.count > 1 else { return rows }
+        // `sorted(by:)` ist in Swift NICHT garantiert stabil → über den
+        // Ursprungs-Index als Tiebreaker selbst stabil machen.
+        return rows.enumerated()
+            .sorted { a, b in
+                let ra = matchesNameOrChapter(a.element, query: query) ? 0 : 1
+                let rb = matchesNameOrChapter(b.element, query: query) ? 0 : 1
+                if ra != rb { return ra < rb }
+                return a.offset < b.offset
+            }
+            .map(\.element)
+    }
+
+    /// Summiert Zeichen/Wörter über die Trefferzeilen des Kapitelbaums. BEWUSST
+    /// über `treeRows` und nicht über die flache Zeilenfolge: dort steht eine
+    /// zuletzt geöffnete Seite zweimal und würde doppelt gezählt.
+    static func summary(for rows: [PagePickerRow], stats: [Int: PageStats]) -> Summary {
+        var chars = 0
+        var words = 0
+        var unknown = 0
+        for row in rows {
+            guard let s = stats[row.id] else { unknown += 1; continue }
+            chars += s.chars
+            words += s.words
+        }
+        return Summary(pages: rows.count, chars: chars, words: words, unknown: unknown)
     }
 
     /// Passt die Zeile über ihren Namen oder ein Segment ihres Kapitelpfads zur

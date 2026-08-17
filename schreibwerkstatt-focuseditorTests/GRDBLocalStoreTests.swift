@@ -16,6 +16,7 @@
 //
 
 import XCTest
+import GRDB
 
 @MainActor
 final class GRDBLocalStoreTests: XCTestCase {
@@ -264,5 +265,67 @@ final class GRDBLocalStoreTests: XCTestCase {
         XCTAssertTrue(stale.isEmpty, "der Index muss dem Inhalt folgen")
         let fresh = try await store.searchContent(query: "sonne", bookId: nil)
         XCTAssertEqual(fresh, ["1"])
+    }
+
+    // MARK: - Zählwerte (Seiten-Picker)
+
+    /// Der Server-Write pflegt die Zählwerte mit, buch-skopiert abfragbar.
+    func testPageStatsFollowServerWritesPerBook() async throws {
+        let store = try makeStore()
+        try await store.applyServerPage(id: "1", html: "<p>Ein kurzer Satz</p>", pageName: "A",
+                                        bookId: 7, chapterId: nil, serverUpdatedAtMillis: 1_000)
+        try await store.applyServerPage(id: "2", html: "<p>Andere Seite</p>", pageName: "B",
+                                        bookId: 9, chapterId: nil, serverUpdatedAtMillis: 1_000)
+
+        let inSeven = try await store.pageStats(bookId: 7)
+        XCTAssertEqual(inSeven.keys.sorted(), ["1"])
+        XCTAssertEqual(inSeven["1"], PageMetrics.counts(html: "<p>Ein kurzer Satz</p>"))
+        XCTAssertEqual(inSeven["1"]?.words, 3)
+
+        let global = try await store.pageStats(bookId: nil)
+        XCTAssertEqual(global.keys.sorted(), ["1", "2"])
+    }
+
+    /// Ein lokaler Save aktualisiert die Zahlen — sonst zeigte der Picker den
+    /// Umfang von gestern.
+    func testPageStatsFollowLocalEdits() async throws {
+        let store = try makeStore()
+        _ = try await store.save(id: "1", html: "<p>drei kleine Wörter</p>", baseUpdatedAt: nil)
+        let before = try await store.pageStats(bookId: nil)
+        XCTAssertEqual(before["1"]?.words, 3)
+
+        _ = try await store.save(id: "1", html: "<p>eins</p>", baseUpdatedAt: nil)
+        let after = try await store.pageStats(bookId: nil)
+        XCTAssertEqual(after["1"]?.words, 1)
+        XCTAssertEqual(after["1"]?.chars, 4)
+    }
+
+    /// Alt-Bestand ohne gerechnete Zählwerte (Spalten NULL, wie direkt nach der
+    /// Migration) wird beim Öffnen der DB nachgetragen.
+    func testPageStatsBackfillOnOpen() async throws {
+        let store = try makeStore()
+        try await store.applyServerPage(id: "1", html: "<p>Hallo Welt</p>", pageName: "A",
+                                        bookId: 7, chapterId: nil, serverUpdatedAtMillis: 1_000)
+        // Zustand direkt nach der Migration nachstellen: Spalten auf NULL, an der
+        // DB vorbei (der Store selbst hat dafür bewusst keine API).
+        let raw = try DatabaseQueue(path: dbURL.path)
+        try await raw.write { db in
+            try db.execute(sql: "UPDATE page SET charCount = NULL, wordCount = NULL")
+        }
+        let cleared = try await store.pageStats(bookId: nil)
+        XCTAssertTrue(cleared.isEmpty, "ohne Zählwerte liefert der Store nichts (Picker zeigt „—“)")
+
+        let reopened = try makeStore()
+        let filled = try await reopened.pageStats(bookId: nil)
+        XCTAssertEqual(filled["1"]?.words, 2)
+    }
+
+    /// Eine gelöschte Seite verschwindet mitsamt ihren Zählwerten.
+    func testPageStatsDropWithDeletedPage() async throws {
+        let store = try makeStore()
+        _ = try await store.save(id: "1", html: "<p>weg damit</p>", baseUpdatedAt: nil)
+        try await store.deletePage(id: "1")
+        let stats = try await store.pageStats(bookId: nil)
+        XCTAssertTrue(stats.isEmpty)
     }
 }
