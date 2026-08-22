@@ -69,8 +69,16 @@ final class LektoratJobStore: ObservableObject {
     /// sofort, sonst je nach Provider bis zu Minuten) → 1,5 s × 240 ≈ 6 Minuten,
     /// danach gilt der Job als hängend (der Server läuft ggf. weiter, wir hören
     /// nur auf zu warten).
-    private static let pollInterval = Duration.milliseconds(1500)
-    private static let maxPolls = 240
+    /// Produktionswerte; über den Initializer überschreibbar, damit die Tests
+    /// den Poll-Zyklus in Millisekunden statt in Minuten durchspielen können.
+    /// `nonisolated`, weil sie als Default-Argumente des Initializers gelesen
+    /// werden — Default-Argumente werden ausserhalb der MainActor-Isolation
+    /// ausgewertet (Projekt-Default `-default-isolation=MainActor`).
+    nonisolated static let defaultPollInterval = Duration.milliseconds(1500)
+    nonisolated static let defaultMaxPolls = 240
+
+    private let pollInterval: Duration
+    private let maxPolls: Int
 
     private let api: APIClient?
     /// Sichert den offenen Draft und pusht ihn (local-first bleibt local-first —
@@ -80,10 +88,15 @@ final class LektoratJobStore: ObservableObject {
     private var runTask: Task<Void, Never>?
     /// Job-ID des laufenden Server-Jobs (für „Abbrechen" via `DELETE /jobs/:id`).
     private var activeJobId: String?
-    private let log = Logger(subsystem: "ch.schreibwerkstatt.focuseditor", category: "lektorat")
+    private let log = AppLog.lektorat
 
-    init(api: APIClient?, prepare: @escaping () async -> Void = {}) {
+    init(api: APIClient?,
+         pollInterval: Duration = LektoratJobStore.defaultPollInterval,
+         maxPolls: Int = LektoratJobStore.defaultMaxPolls,
+         prepare: @escaping () async -> Void = {}) {
         self.api = api
+        self.pollInterval = pollInterval
+        self.maxPolls = maxPolls
         self.prepare = prepare
     }
 
@@ -176,36 +189,30 @@ final class LektoratJobStore: ObservableObject {
         }
     }
 
-    /// Pollt `GET /jobs/:id`, bis der Job terminal ist. Transiente Lesefehler
-    /// (Netz-Zucken) werden übersprungen statt den Lauf abzubrechen — der Job
-    /// läuft serverseitig weiter; nur der Deckel beendet das Warten.
+    /// Wartet den Job ab und übersetzt sein Ende in eine Phase. Die Schleife
+    /// selbst (Deckel, transiente Lesefehler, Status-Deutung) liegt in
+    /// [JobPolling](../Jobs/JobPolling.swift) — dieselbe Queue bedient auch die
+    /// KI-Synonyme.
     private func poll(jobId: String, api: APIClient) async throws {
-        let encoded = Self.encodePath(jobId)
-        for _ in 0..<Self.maxPolls {
-            try await Task.sleep(for: Self.pollInterval)
-            guard let job = try? await api.send("/jobs/\(encoded)",
-                                                decode: CheckJobStatusResponse.self) else {
-                continue
+        let outcome = try await JobPolling.awaitCompletion(
+            jobId: jobId, api: api, interval: pollInterval, maxPolls: maxPolls,
+            resultType: LektoratJobResult.self,
+            onProgress: { progress in phase = .running(progress: progress) })
+
+        switch outcome {
+        case .done(let result):
+            // `empty: true` (leere Seite) liefert kein `fehler`-Array → 0.
+            phase = .done(count: result?.fehler?.count ?? 0)
+        case .failed(let code):
+            // Der Code ist ein i18n-Key des SERVER-Katalogs (nicht in den
+            // mac-Katalogen) → generische Meldung zeigen, Key nur ins Log.
+            if let code {
+                log.notice("Lektorats-Job \(jobId, privacy: .public) endete mit \(code, privacy: .public)")
             }
-            switch job.status {
-            case "queued", "running", .none:
-                let pct = Double(job.progress ?? 0) / 100
-                phase = .running(progress: min(max(pct, 0), 1))
-            case "done":
-                // `empty: true` (leere Seite) liefert kein `fehler`-Array → 0.
-                phase = .done(count: job.result?.fehler?.count ?? 0)
-                return
-            default:   // error / cancelled
-                // `job.error` ist ein i18n-Key des Server-Katalogs (nicht in den
-                // mac-Katalogen) → generische Meldung zeigen, Key nur ins Log.
-                if let raw = job.error {
-                    log.notice("Lektorats-Job \(jobId, privacy: .public) endete mit \(raw, privacy: .public)")
-                }
-                phase = .failed(t("lektorat.err.generic"))
-                return
-            }
+            phase = .failed(t("lektorat.err.generic"))
+        case .timedOut:
+            phase = .failed(t("lektorat.err.timeout"))
         }
-        phase = .failed(t("lektorat.err.timeout"))
     }
 
     // MARK: - Hilfen
@@ -251,16 +258,12 @@ private struct CheckJobCreateResponse: Decodable {
     let existing: Bool?
 }
 
-/// Antwort von `GET /jobs/:id` — Status + Fortschritt (0…100) und bei `done`
+/// Bei `done`
 /// die Beanstandungen. Nur die Anzahl interessiert hier; die Findings selbst
 /// bleiben serverseitig (gelesen wird sie in der Web-App).
-private struct CheckJobStatusResponse: Decodable {
-    struct Result: Decodable {
-        struct Finding: Decodable {}
-        let fehler: [Finding]?
-    }
-    let status: String?
-    let progress: Int?
-    let result: Result?
-    let error: String?
+/// `result`-Teil von `GET /jobs/:id` für den Lektorats-Job. Den Rahmen (status/
+/// progress/error) liefert `JobStatusEnvelope`.
+private nonisolated struct LektoratJobResult: Decodable, Sendable {
+    struct Finding: Decodable, Sendable {}
+    let fehler: [Finding]?
 }

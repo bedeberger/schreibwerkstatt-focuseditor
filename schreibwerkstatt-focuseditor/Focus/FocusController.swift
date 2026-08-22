@@ -55,22 +55,14 @@ enum FocusGranularity: String, CaseIterable, Identifiable {
 final class FocusController: ObservableObject {
     private weak var bridge: EditorBridge?
 
-    /// Hat der Nutzer lokal gewählt? Genau dann liegt ein UserDefaults-Eintrag
-    /// vor — Server-Seeding ist dann gesperrt (lokale Wahl gewinnt dauerhaft).
-    private var hasLocalOverride: Bool {
-        UserDefaults.standard.object(forKey: FocusGranularity.storageKey) != nil
-    }
-
-    /// Unterdrückt die Persistenz, während ein Server-Default eingespielt wird:
-    /// Seeding soll NICHT als lokale Wahl zählen (sonst friert der erste Server-
-    /// Wert die „folgt dem Server"-Semantik ein).
-    private var isSeeding = false
+    /// „Lokale Wahl gewinnt, sonst folgt der Server" — inklusive der Regel, dass
+    /// ein eingespielter Server-Wert NICHT als lokale Wahl zählen darf
+    /// ([ServerSeededChoice](../Theme/ServerSeededChoice.swift)).
+    private let choice = ServerSeededChoice(storageKey: FocusGranularity.storageKey)
 
     @Published var granularity: FocusGranularity {
         didSet {
-            if !isSeeding {
-                UserDefaults.standard.set(granularity.rawValue, forKey: FocusGranularity.storageKey)
-            }
+            choice.persist(granularity.rawValue)
             apply()
         }
     }
@@ -92,13 +84,13 @@ final class FocusController: ObservableObject {
     /// (der `/config`-Request braucht ein gültiges Token). Offline/Fehler →
     /// bleibt beim aktuellen Wert. Eine zwischenzeitliche lokale Wahl gewinnt.
     func seedFromServerIfNeeded() async {
-        guard !hasLocalOverride, let bridge else { return }
+        guard !choice.hasLocalOverride, let bridge else { return }
         guard let raw = await bridge.serverFocusGranularity(),
               let server = FocusGranularity(rawValue: raw) else { return }
-        guard !hasLocalOverride, server != granularity else { return }
-        isSeeding = true
-        granularity = server      // aktualisiert UI + pusht live, ohne zu persistieren
-        isSeeding = false
+        // Erneut prüfen: der `await` oben gibt dem Nutzer Zeit, inzwischen selbst
+        // zu wählen — die lokale Wahl darf der Seed nicht überschreiben.
+        guard !choice.hasLocalOverride, server != granularity else { return }
+        choice.seed { granularity = server }   // UI + Live-Push, ohne zu persistieren
     }
 
     /// Spiegelt die Wahl in die Bridge (Op-Antwort) und pusht sie live in die

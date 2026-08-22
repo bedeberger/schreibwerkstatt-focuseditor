@@ -43,9 +43,29 @@
 		7E0000000000000000000070 /* WritingTimeTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E0000000000000000000060 /* WritingTimeTracker.swift */; };
 		7E0000000000000000000071 /* LibraryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E0000000000000000000061 /* LibraryStore.swift */; };
 		7E0000000000000000000073 /* PagePickerModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E0000000000000000000063 /* PagePickerModel.swift */; };
+		7E0000000000000000000210 /* Shortcuts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E0000000000000000000211 /* Shortcuts.swift */; };
+		7E0000000000000000000212 /* ServerScopedKeys.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E0000000000000000000213 /* ServerScopedKeys.swift */; };
+		7E000000000000000000022C /* WebAssets+GlueSynonyms.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E000000000000000000022D /* WebAssets+GlueSynonyms.swift */; };
+		7E000000000000000000022A /* WebAssets+GlueMount.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E000000000000000000022B /* WebAssets+GlueMount.swift */; };
+		7E0000000000000000000228 /* WebAssets+GlueStats.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E0000000000000000000229 /* WebAssets+GlueStats.swift */; };
+		7E0000000000000000000226 /* WebAssets+GlueTypography.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E0000000000000000000227 /* WebAssets+GlueTypography.swift */; };
+		7E0000000000000000000224 /* WebAssets+GlueEvents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E0000000000000000000225 /* WebAssets+GlueEvents.swift */; };
+		7E0000000000000000000222 /* WebAssets+GlueHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E0000000000000000000223 /* WebAssets+GlueHistory.swift */; };
+		7E0000000000000000000220 /* WebAssets+GlueCaret.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E0000000000000000000221 /* WebAssets+GlueCaret.swift */; };
+		7E000000000000000000021E /* WebAssets+GlueSpellcheck.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E000000000000000000021F /* WebAssets+GlueSpellcheck.swift */; };
+		7E0000000000000000000218 /* ServerSeededChoice.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E0000000000000000000219 /* ServerSeededChoice.swift */; };
+		7E0000000000000000000216 /* JobPolling.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E0000000000000000000217 /* JobPolling.swift */; };
+		7E0000000000000000000214 /* AppLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E0000000000000000000215 /* AppLog.swift */; };
 		7E0000000000000000000072 /* GRDBLocalStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E0000000000000000000062 /* GRDBLocalStore.swift */; };
 		7E0000000000000000000074 /* PageMetrics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E0000000000000000000064 /* PageMetrics.swift */; };
 		7E0000000000000000000101 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = 7E0000000000000000000102 /* GRDB */; };
+		7E0000000000000000000200 /* WebAssets+DevHarness.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E0000000000000000000201 /* WebAssets+DevHarness.swift */; };
+		7E0000000000000000000202 /* HTMLToMarkdown.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E0000000000000000000203 /* HTMLToMarkdown.swift */; };
+		7E0000000000000000000204 /* BookExport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E0000000000000000000205 /* BookExport.swift */; };
+		7E0000000000000000000206 /* DiagnosticsReport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E0000000000000000000207 /* DiagnosticsReport.swift */; };
+		7E0000000000000000000208 /* EditorBundleStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E0000000000000000000209 /* EditorBundleStore.swift */; };
+		7E000000000000000000020A /* LektoratJobStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E000000000000000000020B /* LektoratJobStore.swift */; };
+		7E000000000000000000020C /* AccountDeletionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E000000000000000000020D /* AccountDeletionController.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -95,9 +115,29 @@
 		7E0000000000000000000060 /* WritingTimeTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = WritingTimeTracker.swift; path = "schreibwerkstatt-focuseditor/Writing/WritingTimeTracker.swift"; sourceTree = SOURCE_ROOT; };
 		7E0000000000000000000061 /* LibraryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = LibraryStore.swift; path = "schreibwerkstatt-focuseditor/Library/LibraryStore.swift"; sourceTree = SOURCE_ROOT; };
 		7E0000000000000000000063 /* PagePickerModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PagePickerModel.swift; path = "schreibwerkstatt-focuseditor/Library/PagePickerModel.swift"; sourceTree = SOURCE_ROOT; };
+		7E0000000000000000000211 /* Shortcuts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = Shortcuts.swift; path = "schreibwerkstatt-focuseditor/Shortcuts.swift"; sourceTree = SOURCE_ROOT; };
+		7E0000000000000000000213 /* ServerScopedKeys.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ServerScopedKeys.swift; path = "schreibwerkstatt-focuseditor/Auth/ServerScopedKeys.swift"; sourceTree = SOURCE_ROOT; };
+		7E000000000000000000022D /* WebAssets+GlueSynonyms.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "WebAssets+GlueSynonyms.swift"; path = "schreibwerkstatt-focuseditor/Web/WebAssets+GlueSynonyms.swift"; sourceTree = SOURCE_ROOT; };
+		7E000000000000000000022B /* WebAssets+GlueMount.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "WebAssets+GlueMount.swift"; path = "schreibwerkstatt-focuseditor/Web/WebAssets+GlueMount.swift"; sourceTree = SOURCE_ROOT; };
+		7E0000000000000000000229 /* WebAssets+GlueStats.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "WebAssets+GlueStats.swift"; path = "schreibwerkstatt-focuseditor/Web/WebAssets+GlueStats.swift"; sourceTree = SOURCE_ROOT; };
+		7E0000000000000000000227 /* WebAssets+GlueTypography.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "WebAssets+GlueTypography.swift"; path = "schreibwerkstatt-focuseditor/Web/WebAssets+GlueTypography.swift"; sourceTree = SOURCE_ROOT; };
+		7E0000000000000000000225 /* WebAssets+GlueEvents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "WebAssets+GlueEvents.swift"; path = "schreibwerkstatt-focuseditor/Web/WebAssets+GlueEvents.swift"; sourceTree = SOURCE_ROOT; };
+		7E0000000000000000000223 /* WebAssets+GlueHistory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "WebAssets+GlueHistory.swift"; path = "schreibwerkstatt-focuseditor/Web/WebAssets+GlueHistory.swift"; sourceTree = SOURCE_ROOT; };
+		7E0000000000000000000221 /* WebAssets+GlueCaret.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "WebAssets+GlueCaret.swift"; path = "schreibwerkstatt-focuseditor/Web/WebAssets+GlueCaret.swift"; sourceTree = SOURCE_ROOT; };
+		7E000000000000000000021F /* WebAssets+GlueSpellcheck.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "WebAssets+GlueSpellcheck.swift"; path = "schreibwerkstatt-focuseditor/Web/WebAssets+GlueSpellcheck.swift"; sourceTree = SOURCE_ROOT; };
+		7E0000000000000000000219 /* ServerSeededChoice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ServerSeededChoice.swift; path = "schreibwerkstatt-focuseditor/Theme/ServerSeededChoice.swift"; sourceTree = SOURCE_ROOT; };
+		7E0000000000000000000217 /* JobPolling.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = JobPolling.swift; path = "schreibwerkstatt-focuseditor/Jobs/JobPolling.swift"; sourceTree = SOURCE_ROOT; };
+		7E0000000000000000000215 /* AppLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppLog.swift; path = "schreibwerkstatt-focuseditor/AppLog.swift"; sourceTree = SOURCE_ROOT; };
 		7E0000000000000000000064 /* PageMetrics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = PageMetrics.swift; path = "schreibwerkstatt-focuseditor/Store/PageMetrics.swift"; sourceTree = SOURCE_ROOT; };
 		7E0000000000000000000062 /* GRDBLocalStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = GRDBLocalStore.swift; path = "schreibwerkstatt-focuseditor/Store/GRDBLocalStore.swift"; sourceTree = SOURCE_ROOT; };
 		7E0000000000000000000106 /* Focuseditor.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Focuseditor.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		7E0000000000000000000201 /* WebAssets+DevHarness.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "WebAssets+DevHarness.swift"; path = "schreibwerkstatt-focuseditor/Web/WebAssets+DevHarness.swift"; sourceTree = SOURCE_ROOT; };
+		7E0000000000000000000203 /* HTMLToMarkdown.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "HTMLToMarkdown.swift"; path = "schreibwerkstatt-focuseditor/Export/HTMLToMarkdown.swift"; sourceTree = SOURCE_ROOT; };
+		7E0000000000000000000205 /* BookExport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "BookExport.swift"; path = "schreibwerkstatt-focuseditor/Export/BookExport.swift"; sourceTree = SOURCE_ROOT; };
+		7E0000000000000000000207 /* DiagnosticsReport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "DiagnosticsReport.swift"; path = "schreibwerkstatt-focuseditor/Diagnostics/DiagnosticsReport.swift"; sourceTree = SOURCE_ROOT; };
+		7E0000000000000000000209 /* EditorBundleStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "EditorBundleStore.swift"; path = "schreibwerkstatt-focuseditor/Web/EditorBundleStore.swift"; sourceTree = SOURCE_ROOT; };
+		7E000000000000000000020B /* LektoratJobStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "LektoratJobStore.swift"; path = "schreibwerkstatt-focuseditor/Lektorat/LektoratJobStore.swift"; sourceTree = SOURCE_ROOT; };
+		7E000000000000000000020D /* AccountDeletionController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = "AccountDeletionController.swift"; path = "schreibwerkstatt-focuseditor/Auth/AccountDeletionController.swift"; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -145,6 +185,13 @@
 		6184ADAD2FDEB109002D1DF7 /* Recovered References */ = {
 			isa = PBXGroup;
 			children = (
+				7E000000000000000000020D /* AccountDeletionController.swift */,
+				7E000000000000000000020B /* LektoratJobStore.swift */,
+				7E0000000000000000000209 /* EditorBundleStore.swift */,
+				7E0000000000000000000207 /* DiagnosticsReport.swift */,
+				7E0000000000000000000205 /* BookExport.swift */,
+				7E0000000000000000000203 /* HTMLToMarkdown.swift */,
+				7E0000000000000000000201 /* WebAssets+DevHarness.swift */,
 				7E0000000000000000000020 /* APIClient.swift */,
 				7E0000000000000000000021 /* AuthError.swift */,
 				7E0000000000000000000022 /* ServerConfig.swift */,
@@ -173,6 +220,19 @@
 				7E0000000000000000000060 /* WritingTimeTracker.swift */,
 				7E0000000000000000000061 /* LibraryStore.swift */,
 				7E0000000000000000000063 /* PagePickerModel.swift */,
+				7E0000000000000000000211 /* Shortcuts.swift */,
+				7E0000000000000000000213 /* ServerScopedKeys.swift */,
+				7E000000000000000000022D /* WebAssets+GlueSynonyms.swift */,
+				7E000000000000000000022B /* WebAssets+GlueMount.swift */,
+				7E0000000000000000000229 /* WebAssets+GlueStats.swift */,
+				7E0000000000000000000227 /* WebAssets+GlueTypography.swift */,
+				7E0000000000000000000225 /* WebAssets+GlueEvents.swift */,
+				7E0000000000000000000223 /* WebAssets+GlueHistory.swift */,
+				7E0000000000000000000221 /* WebAssets+GlueCaret.swift */,
+				7E000000000000000000021F /* WebAssets+GlueSpellcheck.swift */,
+				7E0000000000000000000219 /* ServerSeededChoice.swift */,
+				7E0000000000000000000217 /* JobPolling.swift */,
+				7E0000000000000000000215 /* AppLog.swift */,
 				7E0000000000000000000064 /* PageMetrics.swift */,
 				7E0000000000000000000062 /* GRDBLocalStore.swift */,
 				7E0000000000000000000040 /* EditorBridge.swift */,
@@ -364,9 +424,29 @@
 			buildActionMask = 2147483647;
 			files = (
 				7E0000000000000000000010 /* APIClient.swift in Sources */,
+				7E000000000000000000020C /* AccountDeletionController.swift in Sources */,
+				7E000000000000000000020A /* LektoratJobStore.swift in Sources */,
+				7E0000000000000000000208 /* EditorBundleStore.swift in Sources */,
+				7E0000000000000000000206 /* DiagnosticsReport.swift in Sources */,
+				7E0000000000000000000204 /* BookExport.swift in Sources */,
+				7E0000000000000000000202 /* HTMLToMarkdown.swift in Sources */,
+				7E0000000000000000000200 /* WebAssets+DevHarness.swift in Sources */,
 				7E0000000000000000000070 /* WritingTimeTracker.swift in Sources */,
 				7E0000000000000000000071 /* LibraryStore.swift in Sources */,
 				7E0000000000000000000073 /* PagePickerModel.swift in Sources */,
+				7E0000000000000000000210 /* Shortcuts.swift in Sources */,
+				7E0000000000000000000212 /* ServerScopedKeys.swift in Sources */,
+				7E000000000000000000022C /* WebAssets+GlueSynonyms.swift in Sources */,
+				7E000000000000000000022A /* WebAssets+GlueMount.swift in Sources */,
+				7E0000000000000000000228 /* WebAssets+GlueStats.swift in Sources */,
+				7E0000000000000000000226 /* WebAssets+GlueTypography.swift in Sources */,
+				7E0000000000000000000224 /* WebAssets+GlueEvents.swift in Sources */,
+				7E0000000000000000000222 /* WebAssets+GlueHistory.swift in Sources */,
+				7E0000000000000000000220 /* WebAssets+GlueCaret.swift in Sources */,
+				7E000000000000000000021E /* WebAssets+GlueSpellcheck.swift in Sources */,
+				7E0000000000000000000218 /* ServerSeededChoice.swift in Sources */,
+				7E0000000000000000000216 /* JobPolling.swift in Sources */,
+				7E0000000000000000000214 /* AppLog.swift in Sources */,
 				7E0000000000000000000074 /* PageMetrics.swift in Sources */,
 				7E0000000000000000000072 /* GRDBLocalStore.swift in Sources */,
 				7E0000000000000000000011 /* AuthError.swift in Sources */,

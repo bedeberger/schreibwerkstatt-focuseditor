@@ -283,6 +283,33 @@ final class LibraryStoreTests: XCTestCase {
         XCTAssertNil(lib.saveError)
     }
 
+    // MARK: - Widerrufen / Wiederherstellen (Hinweis)
+
+    func testHistoryNoticeOnlyForNotableUndo() async throws {
+        let lib = try makeStore()
+
+        // Kleine Korrektur (ein Wort) bleibt still — sonst poppte der Hinweis
+        // bei jedem ⌘Z für eine Silbe.
+        lib.reportHistoryEdit(undo: true, chars: 12)
+        XCTAssertNil(lib.historyNotice, "kleines Undo darf keinen Hinweis zeigen")
+
+        // Ein grosser Wurf muss sichtbar werden: WebKit fasst die ganze
+        // Tippstrecke in EINEN Undo-Schritt zusammen.
+        lib.reportHistoryEdit(undo: true, chars: 1_240)
+        let notice = try XCTUnwrap(lib.historyNotice)
+        XCTAssertTrue(notice.isUndo)
+        XCTAssertEqual(notice.chars, 1_240)
+
+        // Wiederherstellen ersetzt den Hinweis (eigene Meldung, kein Stapel).
+        lib.reportHistoryEdit(undo: false, chars: 1_240)
+        let redo = try XCTUnwrap(lib.historyNotice)
+        XCTAssertFalse(redo.isUndo)
+        XCTAssertNotEqual(redo.id, notice.id, "neue Meldung, nicht die alte recycelt")
+
+        lib.dismissHistoryNotice()
+        XCTAssertNil(lib.historyNotice)
+    }
+
     // MARK: - Zuletzt geöffnete Seiten (Picker-Gruppe)
 
     func testRecentPageRowsResolveAgainstActiveBookInMRUOrder() async throws {

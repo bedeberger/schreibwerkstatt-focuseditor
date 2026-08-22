@@ -18,6 +18,8 @@
 //    • editorTypography {}                     → { fontSize, … }        (Boot-Pull)
 //    • editorBehavior {}                       → { autosaveMs }         (Boot-Pull)
 //    • reportStats { words, chars, pageId? }   → null
+//    • resetUndo {}                            → null   (Undo-Stack der WebView leeren)
+//    • historyEdit { kind, chars }             → null   (Widerrufen/Wiederherstellen gemeldet)
 //
 //  Proxy-Ops (Implementierung in `EditorBridge+Proxies.swift`, NIE direkter
 //  `fetch` aus der WebView — HARTE REGEL):
@@ -30,6 +32,7 @@
 //  UserDefaults oder Log.
 //
 
+import AppKit
 import Foundation
 import os
 
@@ -48,6 +51,8 @@ extension EditorBridge {
         case "lastOpenPage":    return opLastOpenPage(params)
         case "activeBook":      return ["bookId": Self.activeBookId as Any]
         case "reportStats":     opReportStats(params); return nil
+        case "resetUndo":       opResetUndo(); return nil
+        case "historyEdit":     opHistoryEdit(params); return nil
 
         // Boot-Pull: lokale Editor-Einstellungen (kein Netz, kein Store).
         case "focusGranularity":  return ["granularity": focusGranularity]
@@ -196,6 +201,36 @@ extension EditorBridge {
         onStats?(optPageId(params, "pageId"), words, chars)
         // Jede Meldung ist ein Lebenszeichen → Idle-Uhr der Schreibzeit zurück.
         onActivity?()
+    }
+
+    // MARK: - Widerrufen / Wiederherstellen (WebKit-Undo)
+
+    /// Undo-Stack der WebView leeren. Ruft der Boot-Glue nach jedem `setPage`
+    /// (Seitenwechsel, stiller Server-Refresh, Seite schliessen) auf.
+    ///
+    /// Warum: Der Editor rendert eine Seite per `innerHTML`. WebKits Undo-Stack
+    /// hängt an der WebView, nicht am Inhalt — die Einträge der vorigen Seite
+    /// bleiben also stehen. Sie greifen dann auf Knoten, die es nicht mehr gibt:
+    /// gemessen verpufft so ein Undo wirkungslos, verbraucht aber den Eintrag und
+    /// macht ein Redo scharf. Nach dem Leeren gilt „Widerrufen" immer nur für die
+    /// offene Seite (und das Menü zeigt es korrekt grau, solange nichts getippt ist).
+    private func opResetUndo() {
+        webView?.undoManager?.removeAllActions()
+    }
+
+    /// Ein Widerrufen/Wiederherstellen hat gerade Text entfernt bzw. wieder
+    /// eingesetzt (aus dem `input`-Event der WebView: `historyUndo`/`historyRedo`).
+    ///
+    /// Warum überhaupt gemeldet: WebKit fasst eine ganze Tippstrecke in EINEN
+    /// Undo-Schritt zusammen (gemessen am echten Bundle: alles seit dem letzten
+    /// Mausklick — Pfeiltasten, Enter, Auto-Save und Fokuswechsel trennen nicht).
+    /// Ein versehentliches ⌘Z entfernt damit unter Umständen den ganzen
+    /// Schreib-Abschnitt, und der Auto-Save persistiert das still. Der Hinweis
+    /// macht es sichtbar und nennt den Rückweg (⌘⇧Z).
+    private func opHistoryEdit(_ params: [String: Any]) {
+        guard let kind = optToken(params, "kind", maxLength: 8),
+              kind == "undo" || kind == "redo" else { return }
+        onHistoryEdit?(kind == "undo", Self.clampedCount(params["chars"]))
     }
 
     // MARK: - Server-Nachladen (offline-first-Lücke)

@@ -106,6 +106,27 @@ extension PagePickerOverlay {
         .accessibilityLabel(rowLabel(row))
         .accessibilityHint(t("picker.a11y.openHint"))
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+        // Umbenennen/Löschen per Rechtsklick — die zwei Verwaltungsschritte, für
+        // die man bisher in die Web-App wechseln musste. Bewusst NUR im
+        // Kontextmenü: sie gehören nicht in die Sichtlinie beim Schreiben, und
+        // Löschen soll man nicht versehentlich streifen. Beides braucht den
+        // Server (s. PageAdminController) — der Fehlerfall steht im Dialog.
+        .contextMenu {
+            Button(t("pageadmin.rename.menu")) {
+                closeAnd { toolbarUI.renamingPage = row }
+            }
+            Divider()
+            Button(t("pageadmin.delete.menu"), role: .destructive) {
+                closeAnd { toolbarUI.deletingPage = row }
+            }
+        }
+    }
+
+    /// Picker schliessen und danach die Aktion auslösen. Der Dialog hängt am
+    /// Editor-Host; stünde der Picker noch darüber, läge er über dem Sheet.
+    private func closeAnd(_ action: @escaping () -> Void) {
+        isOpen = false
+        action()
     }
 
     /// Vorlese-Text einer Zeile: Seitenname, Kapitelpfad, Zustand („geöffnet" /
@@ -355,6 +376,18 @@ extension PagePickerOverlay {
                     .foregroundStyle(BrandColor.primary)
                     .pointerLink()
                     .padding(.top, 2)
+            } else if !searching && !noBook {
+                // Buch ohne Seiten: hier ist „anlegen" der einzig sinnvolle
+                // nächste Schritt — der Weg über ⌘N wäre in genau dieser Lage
+                // der unwahrscheinlichste, den jemand findet.
+                Button(t("pageadmin.new.create")) {
+                    closeAnd { toolbarUI.newPageOpen = true }
+                }
+                .buttonStyle(.plain)
+                .font(BrandFont.sans(11, weight: .semibold))
+                .foregroundStyle(BrandColor.primary)
+                .pointerLink()
+                .padding(.top, 2)
             }
         }
         .frame(maxWidth: 280)

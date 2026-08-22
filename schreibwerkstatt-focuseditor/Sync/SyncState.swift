@@ -16,7 +16,7 @@
 import Foundation
 import OSLog
 
-private let syncStateLog = Logger(subsystem: "ch.schreibwerkstatt.focuseditor", category: "syncstate")
+private let syncStateLog = AppLog.syncState
 
 // `nonisolated`, weil der Snapshot off-main (auf der `ioQueue`) encodiert wird —
 // unter der MainActor-Default-Isolation des Targets wäre die Codable-Conformance

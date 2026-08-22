@@ -66,13 +66,70 @@ private struct EditorHostView: View {
     /// Serverseitiges Seiten-Lektorat — treibt das Ergebnis-Banner (der Start
     /// liegt in der Toolbar).
     @EnvironmentObject private var lektorat: LektoratJobStore
+    /// Buch-Export (Ablage ▸ „Buch exportieren …") — treibt das Ergebnis-Banner.
+    @EnvironmentObject private var bookExport: BookExportController
+    /// Seiten anlegen/umbenennen/löschen — treibt die drei kleinen Dialoge.
+    @EnvironmentObject private var pageAdmin: PageAdminController
+    /// Frühere Fassungen der offenen Seite — nur zum Zurücksetzen beim Schliessen
+    /// des Sheets (Laden/Netz macht der Store selbst).
+    @EnvironmentObject private var revisions: PageRevisionStore
 
-    /// Steht ein terminales Lektorats-Ergebnis (Befund oder Fehler) zur Anzeige?
-    private var isLektoratBannerVisible: Bool {
-        switch lektorat.phase {
-        case .done, .failed: return true
-        case .idle, .preparing, .running: return false
+    /// Die Banner über der Schreibfläche, von oben nach unten. Sie werden in
+    /// EINEM VStack gestapelt — dadurch gibt es weder eine Offset-Rechnung noch
+    /// eine angenommene Bannerhöhe mehr (vorher schob sich jeder Banner per
+    /// `.padding(.top, n * 64)` unter seine Vorgänger; ein zweizeiliger Text
+    /// hätte die 64 gesprengt und die Banner zum Überlappen gebracht).
+    ///
+    /// Rangfolge: der Save-Fehler wiegt am schwersten (Text NICHT gesichert),
+    /// dann das Lektorats-Ergebnis, dann der Widerrufen-Hinweis, zuletzt die
+    /// Export-Meldung (rein informativ).
+    private enum Banner {
+        case saveError, lektorat, history, export
+    }
+
+    private func isVisible(_ banner: Banner) -> Bool {
+        switch banner {
+        case .saveError: return library.saveError != nil
+        case .lektorat:
+            switch lektorat.phase {
+            case .done, .failed: return true
+            case .idle, .preparing, .running: return false
+            }
+        case .history: return library.historyNotice != nil
+        case .export:
+            switch bookExport.phase {
+            case .done, .failed: return true
+            case .idle, .collecting: return false
+            }
         }
+    }
+
+    private var isLektoratBannerVisible: Bool { isVisible(.lektorat) }
+
+    /// Der Bannerstapel in der Rangfolge oben. Jeder Eintrag rendert nur, wenn
+    /// er sichtbar ist; die Lücken schliesst der VStack selbst.
+    @ViewBuilder
+    private var bannerStack: some View {
+        VStack(spacing: 8) {
+            if let saveError = library.saveError {
+                SaveErrorBanner(message: saveError) { library.dismissSaveError() }
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+            if isVisible(.lektorat) {
+                LektoratResultBanner()
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+            if let notice = library.historyNotice {
+                HistoryNoticeBanner(notice: notice) { library.dismissHistoryNotice() }
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+            if isVisible(.export) {
+                BookExportBanner()
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+        .padding(.top, 10)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
     var body: some View {
@@ -141,26 +198,9 @@ private struct EditorHostView: View {
                     .transition(.opacity.combined(with: .scale(scale: 0.97)))
             }
 
-            // Save-Fehler-Banner: ein fehlgeschlagener lokaler Save (Platte voll /
-            // DB-Fehler) bedeutet, dass der Tippstand NICHT gesichert wurde — das
-            // muss sichtbar sein, nicht nur im Log. Liegt oben über allem, bis der
-            // nächste erfolgreiche Save ihn löst oder der Nutzer ihn schliesst.
-            if let saveError = library.saveError {
-                SaveErrorBanner(message: saveError) { library.dismissSaveError() }
-                    .transition(.move(edge: .top).combined(with: .opacity))
-                    .frame(maxHeight: .infinity, alignment: .top)
-            }
-
-            // Ergebnis des serverseitigen Lektorats (Anzahl Beanstandungen bzw.
-            // Fehlermeldung) — erscheint, sobald der Job terminal ist, und bleibt
-            // bis der Nutzer ihn schliesst. Liegt unter dem Save-Fehler-Banner,
-            // falls beide gleichzeitig stehen (der Save-Fehler wiegt schwerer).
-            if isLektoratBannerVisible {
-                LektoratResultBanner()
-                    .padding(.top, library.saveError == nil ? 0 : 64)
-                    .transition(.move(edge: .top).combined(with: .opacity))
-                    .frame(maxHeight: .infinity, alignment: .top)
-            }
+            // Meldungen über der Schreibfläche (Save-Fehler, Lektorat, Widerrufen,
+            // Export) — als Stapel, damit mehrere gleichzeitig lesbar bleiben.
+            bannerStack
 
             // Buchwechsel: zentrierter Lade-Donut über der leeren WebView, bis
             // die Seiten des neuen Buchs geladen sind und der Picker wieder öffnet.
@@ -172,6 +212,8 @@ private struct EditorHostView: View {
         .animation(.easeOut(duration: 0.18), value: library.saveError)
         .animation(.easeOut(duration: 0.18), value: library.booksLoaded)
         .animation(.easeOut(duration: 0.18), value: isLektoratBannerVisible)
+        .animation(.easeOut(duration: 0.18), value: library.historyNotice)
+        .animation(.easeOut(duration: 0.18), value: isVisible(.export))
         // Toolbar-Accessory nur zeigen, solange der Editor sichtbar ist (sonst
         // stünde im Login-/Ladezustand ein leerer Streifen in der Titelleiste).
         .onAppear { windowChrome.setToolbarVisible(true) }
@@ -181,6 +223,44 @@ private struct EditorHostView: View {
         .sheet(item: $toolbarUI.inspectingConflict) { conflict in
             ConflictResolutionView(conflict: conflict)
         }
+        // Frühere Fassungen der offenen Seite (⌘⇧R). Beim Öffnen laden, beim
+        // Schliessen zurücksetzen — die Liste soll nie veraltet wieder aufgehen.
+        .sheet(isPresented: $toolbarUI.revisionsOpen) {
+            RevisionsView(onRestored: reloadAfterRestore) {
+                toolbarUI.revisionsOpen = false
+            }
+            .onDisappear { revisions.reset() }
+        }
+        .sheet(isPresented: $toolbarUI.newPageOpen) {
+            NewPageSheet { toolbarUI.newPageOpen = false }
+        }
+        .sheet(item: $toolbarUI.renamingPage) { page in
+            RenamePageSheet(page: page) { toolbarUI.renamingPage = nil }
+        }
+        // Löschen bewusst als Alert, nicht als Sheet: es ist eine Ja/Nein-Frage
+        // mit Folgen, kein Formular.
+        .alert(t("pageadmin.delete.title"),
+               isPresented: Binding(get: { toolbarUI.deletingPage != nil },
+                                    set: { if !$0 { toolbarUI.deletingPage = nil } })) {
+            Button(t("general.cancel"), role: .cancel) { toolbarUI.deletingPage = nil }
+            Button(t("pageadmin.delete.confirm"), role: .destructive) {
+                if let page = toolbarUI.deletingPage {
+                    Task { await pageAdmin.deletePage(id: page.id) }
+                }
+                toolbarUI.deletingPage = nil
+            }
+        } message: {
+            Text(t("pageadmin.delete.message",
+                   ["name": toolbarUI.deletingPage?.name ?? ""]))
+        }
+    }
+
+    /// Nach einer wiederhergestellten Revision: den frischen Server-Stand ziehen
+    /// (der Restore schrieb serverseitig eine neue Fassung) — der Open-Page-Pull
+    /// lädt die saubere offene Seite in der WebView still neu.
+    private func reloadAfterRestore() {
+        guard let pageId = library.openPageId else { return }
+        Task { await sync.pullPage(pageId: String(pageId)) }
     }
 }
 
@@ -288,41 +368,13 @@ private struct SaveErrorBanner: View {
     let dismiss: () -> Void
 
     var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .foregroundStyle(.white)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(t("save.failedTitle"))
-                    .font(BrandFont.sans(13, weight: .semibold))
-                    .foregroundStyle(.white)
-                Text(message)
-                    .font(BrandFont.sans(11))
-                    .foregroundStyle(.white.opacity(0.85))
-                    .lineLimit(2)
-            }
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel("\(t("save.failedTitle")): \(message)")
-            Spacer(minLength: 8)
-            Button(action: dismiss) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.9))
-            }
-            .buttonStyle(.plain)
-            // Zeigehand — stiltreu zum Lektorat-Banner-Schliesser, der ebenfalls
-            // als plain-Icon-Knopf über der WebView liegt.
-            .pointerLink()
-            .accessibilityLabel(t("save.dismiss"))
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .background(BrandColor.error)
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .shadow(radius: 12, y: 4)
-        .padding(.horizontal, 16)
-        .padding(.top, 10)
-        .frame(maxWidth: 520)
+        NoticeBanner(
+            tone: .critical,
+            icon: "exclamationmark.triangle.fill",
+            title: t("save.failedTitle"),
+            message: message,
+            dismissLabel: t("save.dismiss"),
+            dismiss: dismiss)
     }
 }
 

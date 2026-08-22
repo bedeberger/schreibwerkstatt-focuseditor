@@ -404,7 +404,7 @@ final class InMemoryLocalStore: LocalStore {
             // Datenverlust-Schutz: einen fehlgeschlagenen Snapshot-Write NICHT
             // verschlucken (Platte voll/Permissions) — der local-first-Save hätte
             // sonst „Erfolg" gemeldet, ohne dass etwas persistiert wurde.
-            Logger(subsystem: "ch.schreibwerkstatt.focuseditor", category: "store")
+            AppLog.store
                 .error("Snapshot-Persistenz fehlgeschlagen: \(error.localizedDescription, privacy: .public)")
         }
     }

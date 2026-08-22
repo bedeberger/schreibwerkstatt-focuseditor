@@ -83,6 +83,22 @@ extension WebAssets {
         // mountStandaloneFocus({ autosaveMs }) durchgereicht.
         editorBehavior: () => call('editorBehavior', {}),
 
+        // Undo-Stack der WebView leeren. Der Editor rendert einen Seitenwechsel
+        // per innerHTML — WebKits Undo-Einträge der VORIGEN Seite bleiben dabei
+        // im Stack stehen und würden dort still verpuffen (Menü zeigt
+        // „Widerrufen" aktiv, der Klick tut nichts). Nach jedem setPage einmal
+        // aufrufen; dann gilt Undo immer nur für die offene Seite.
+        resetUndo: () => call('resetUndo', {}),
+
+        // Ein Widerrufen/Wiederherstellen hat gerade Text entfernt bzw. wieder
+        // eingesetzt (`input`-Event mit inputType historyUndo/historyRedo).
+        // WebKit fasst eine ganze Tippstrecke in EINEN Undo-Schritt zusammen
+        // (gemessen: alles seit dem letzten Mausklick) — ein versehentliches ⌘Z
+        // kann also viel Text auf einmal entfernen. Swift zeigt darum einen
+        // Hinweis mit dem Rückweg (⌘⇧Z), statt es still passieren zu lassen.
+        reportHistoryEdit: (kind, chars) =>
+          call('historyEdit', { kind: String(kind), chars: Number(chars) || 0 }),
+
         // Lebende Schreibstatistik (Wörter/Zeichen) der offenen Seite an Swift
         // melden (Live-Stats + Schreibziel + Tages-Delta). Die pageId hängt mit,
         // damit Swift den „heute geschrieben"-Delta korrekt PRO Seite führt

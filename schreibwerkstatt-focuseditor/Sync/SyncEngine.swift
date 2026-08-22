@@ -60,6 +60,12 @@ final class SyncEngine: ObservableObject {
     @Published private(set) var conflicts: [Conflict] = []
     /// Anzahl lokal noch nicht gepushter Seiten (Outbox) — für die Status-UI.
     @Published private(set) var pendingCount: Int = 0
+    /// Netzlage, gespiegelt aus dem `Reachability`-Monitor. Die UI hängt an der
+    /// SyncEngine (nicht am Monitor selbst) — sonst bräuchte jede Ansicht, die
+    /// nur „ist Netz da" wissen will, ein zweites ObservableObject. Bekannt
+    /// flaky bei VPN/Captive-Portal, darum nur für HINWEISE benutzen, nie um
+    /// eine Aktion zu sperren (der echte Request klärt es ohnehin).
+    @Published private(set) var isOnline: Bool = false
 
     /// Poll-Kadenz (persistiert). Änderung startet den Loop passend neu.
     @Published var pollMode: SyncPollMode {
@@ -94,7 +100,7 @@ final class SyncEngine: ObservableObject {
     weak var editor: EditorCoordinating?
     /// Liefert, ob synchronisiert werden darf (z. B. nur bei `signedIn`).
     private let shouldSync: () -> Bool
-    let log = Logger(subsystem: "ch.schreibwerkstatt.focuseditor", category: "sync")
+    let log = AppLog.sync
 
     /// Signal „Server in dieser Sitzung erreicht" — feuert am Ende JEDES
     /// erfolgreichen `syncNow`-Durchlaufs (jede HTTP-Antwort, egal welcher
@@ -166,6 +172,7 @@ final class SyncEngine: ObservableObject {
     func start() {
         reachability.onChange = { [weak self] online in
             guard let self else { return }
+            self.isOnline = online
             if online {
                 // Netz wieder da: noch NICHT blind auf `.idle` — ob der Server
                 // antwortet, klärt erst der folgende Tick (sonst „grün", obwohl
@@ -177,6 +184,7 @@ final class SyncEngine: ObservableObject {
             }
         }
         reachability.start()
+        isOnline = reachability.isOnline
         Task { await migrateLegacyAncestors() }
     }
 

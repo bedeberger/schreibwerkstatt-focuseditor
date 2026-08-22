@@ -66,7 +66,7 @@ final class EditorBridge: NSObject, WKScriptMessageHandlerWithReply, EditorCoord
     let api: APIClient?
 
     /// Diagnose-Logger (auch der Kanal für die `log`-Op der WebView).
-    let log = Logger(subsystem: "ch.schreibwerkstatt.focuseditor", category: "bridge")
+    let log = AppLog.bridge
 
     /// WebView für den Swift→JS-Kanal (`callAsyncJavaScript`). Schwach: die
     /// View besitzt die Bridge (Handler-Registrierung), nicht umgekehrt.
@@ -144,6 +144,14 @@ final class EditorBridge: NSObject, WKScriptMessageHandlerWithReply, EditorCoord
     /// Datenverlust-Pfad. Treibt einen sichtbaren Warn-Banner (gesetzt von `AppCore`
     /// → `LibraryStore`), statt den Fehler still im Log verschwinden zu lassen.
     var onSaveResult: ((String?) -> Void)?
+    /// Ein Widerrufen (`true`) bzw. Wiederherstellen (`false`) im Editor hat
+    /// gerade `chars` Zeichen entfernt bzw. wieder eingesetzt. WebKit fasst eine
+    /// ganze Tippstrecke in EINEN Undo-Schritt zusammen (alles seit dem letzten
+    /// Mausklick), ein versehentliches ⌘Z kann also viel Text auf einmal
+    /// entfernen — und der Auto-Save persistiert das still. Treibt darum einen
+    /// sichtbaren Hinweis mit dem Rückweg ⌘⇧Z (gesetzt von `AppCore` →
+    /// `LibraryStore`). Inhalte werden nie angetastet.
+    var onHistoryEdit: ((Bool, Int) -> Void)?
 
     /// Seiten mit ungespeicherten Editor-Änderungen. Der Editor hält immer genau
     /// EINE Seite offen → der Set enthält höchstens die offene Seite (s.

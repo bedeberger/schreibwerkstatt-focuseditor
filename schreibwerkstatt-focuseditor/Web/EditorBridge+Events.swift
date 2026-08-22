@@ -13,6 +13,7 @@
 //    • focusGranularity { granularity }              (Fokus-Stufe live umgeschaltet)
 //    • editorTypography { … }                        (Typografie live umgeschaltet)
 //    • format       { command }                      (⌘B/⌘I/⌘U aus dem Format-Menü)
+//    • history      { action }                       (⌘Z/⌘⇧Z aus dem Bearbeiten-Menü)
 //    • normalizeQuotes { language, region }           (Anführungszeichen auf Buch-Stil)
 //    • synonyms     { x?, y? }                       (Synonym-Hilfe öffnen)
 //
@@ -165,6 +166,30 @@ extension EditorBridge {
         await emit("format", ["command": command])
     }
 
+    /// Erlaubte History-Aktionen. Whitelist wie bei den Formatbefehlen — der
+    /// Glue reicht den Wert unbesehen an das Standalone-Handle durch.
+    static let allowedHistoryActions: Set<String> = ["undo", "redo"]
+
+    /// Widerrufen/Wiederherstellen im Editor (`history`-Event).
+    ///
+    /// Warum über die Bridge und nicht über WebKits Undo-Stack: Der gebündelte
+    /// Focus-Editor führt seit dem Hauptrepo-Commit „undo/redo" eine EIGENE
+    /// Snapshot-Historie (`shared/edit-history.js`, entprellt → satzweise
+    /// Schritte) und fängt ⌘Z in der Seite selbst ab. In diesem Client erreicht
+    /// die Taste die WebView aber nie: ein Menü-Kürzel greift app-weit VOR der
+    /// WKWebView. Der Menüpunkt muss die Aktion darum selbst auslösen — genau
+    /// wie beim Format-Menü (⌘B/⌘I/⌘U).
+    ///
+    /// WebKits eigener (grober) Undo-Stack wird damit nie mehr angesprochen; er
+    /// wird beim Seitenwechsel zusätzlich geleert (`resetUndo`).
+    func applyHistory(_ action: String) async {
+        guard Self.allowedHistoryActions.contains(action) else {
+            log.error("applyHistory: unbekannte Aktion \(action, privacy: .public)")
+            return
+        }
+        await emit("history", ["action": action])
+    }
+
     // MARK: - Text-Aktionen
 
     /// Normalisiert die typografischen Anführungszeichen der offenen Seite auf
@@ -217,12 +242,25 @@ extension EditorBridge {
     /// geloggt (der Autosave holt den Stand ohnehin nach → kein Datenverlust),
     /// aber der wartende Aufrufer (Sync, Lektorats-Vorlauf) kommt garantiert frei.
     func flushDraftSave() async {
+        await flushDraftSave(timeout: EditorBridge.jsCallTimeout)
+    }
+
+    /// Wie `flushDraftSave()`, aber mit eigener Frist. Eigene Überladung statt
+    /// eines Default-Arguments: `EditorCoordinating` verlangt die parameterlose
+    /// Signatur, und ein Default-Argument erfüllt sie nicht.
+    func flushDraftSave(timeout: Duration) async {
         await callJS("flushDraftSave", """
             const fb = window.__focusBridge;
             if (fb && typeof fb._flushSave === 'function') { return await fb._flushSave(); }
             return null;
-            """)
+            """,
+            timeout: timeout)
     }
+
+    /// Knapper bemessener Flush für den Beenden-Pfad (`applicationShouldTerminate`).
+    /// Beenden darf nicht am hängenden JS kleben — 2 s reichen für den einen
+    /// `save()`-Roundtrip (LocalStore-Write, kein Netz) und halten ⌘Q flott.
+    nonisolated static let quitFlushTimeout: Duration = .seconds(2)
 
     /// Ruft `block-merge.js` in der WebView (3-Wege-Merge). Wirft, wenn keine
     /// WebView/kein Bundle verfügbar ist oder der Merge nicht rechtzeitig

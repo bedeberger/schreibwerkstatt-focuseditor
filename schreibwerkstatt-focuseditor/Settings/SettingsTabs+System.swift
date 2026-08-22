@@ -197,6 +197,10 @@ struct AccountSettingsTab: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
+            // Diagnose-Bericht für Support-Anfragen (Zustand + eigene
+            // Log-Zeilen, ohne Token und ohne Manuskript-Text).
+            DiagnosticsSection()
+
             // Datenschutz/Datenhaltung — in-app dokumentiert (keine externe URL).
             // Teilt den Wortlaut mit dem Login-Onboarding (`login.privacyBody`),
             // damit die Aussage an beiden Stellen identisch und wartbar bleibt.

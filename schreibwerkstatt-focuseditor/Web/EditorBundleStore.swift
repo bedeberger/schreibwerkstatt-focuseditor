@@ -55,12 +55,17 @@ final class EditorBundleStore: ObservableObject {
     /// Verhindert parallele Refreshes (mehrfaches `ensureReady` aus der View).
     private var isRefreshing = false
 
-    init(api: APIClient) {
+    /// `baseDirectory` überschreibt die Application-Support-Wurzel — nur für
+    /// Tests, damit die OTA-Fehlerpfade (kaputtes ZIP, 304, abgebrochener
+    /// Download, atomarer Tausch) gegen ein temporäres Verzeichnis laufen
+    /// können, statt den echten Cache des Entwicklers anzufassen.
+    init(api: APIClient, baseDirectory: URL? = nil) {
         self.api = api
-        let base = (try? fileManager.url(for: .applicationSupportDirectory,
-                                         in: .userDomainMask,
-                                         appropriateFor: nil,
-                                         create: true))
+        let base = baseDirectory
+            ?? (try? fileManager.url(for: .applicationSupportDirectory,
+                                     in: .userDomainMask,
+                                     appropriateFor: nil,
+                                     create: true))
             ?? fileManager.temporaryDirectory
         let dir = base.appendingPathComponent("schreibwerkstatt-focuseditor", isDirectory: true)
         try? fileManager.createDirectory(at: dir, withIntermediateDirectories: true)

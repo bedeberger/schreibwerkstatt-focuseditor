@@ -56,10 +56,15 @@ Die **EditorBridge** ist die einzige Naht zwischen WebView und Swift-Kern.
 | 5 | `LibraryStore` | content, store, bridge | Buch-/Seitenauswahl-State |
 | 6 | `EditorBundleStore` | auth.api | OTA-Bundle-Download/Cache |
 | 7 | `SyncEngine` | auth.api, content, store | Poll/Push/Pull; danach `sync.editor = bridge` (Rückkopplung) |
+| 8 | `BookExportController` | store, library | Buch als Markdown sichern (aus dem lokalen Spiegel, offline-fähig) |
+| 9 | `PageAdminController` | auth.api, store, library | Seiten anlegen/umbenennen/löschen (online, `POST`/`PUT`/`DELETE /content/pages`) |
+| 10 | `PageRevisionStore` | auth.api | frühere Fassungen der offenen Seite (Liste/Vorschau/Restore) |
 
 **Schlüsselentscheidung:** `LocalStore` und `EditorBridge` sind **app-weit, nicht pro Fenster**. So sehen `SyncEngine` (schreibt Server-Deltas) und die WebView-Bridge (schreibt User-Edits) **denselben** Spiegel. `sync.editor = bridge` verdrahtet die zwei nachträglich, weil beide vorher existieren müssen.
 
 `bootstrap()` macht zwei Dinge: `await auth.bootstrap()` (Token aus Keychain validieren) und `sync.start()` (Poll-Loop).
+
+Der **Umbau im laufenden Betrieb** (Server-Namespace wechseln, lokale Daten nach Konto-Löschung verwerfen) liegt getrennt in [AppCore+ServerSwitch.swift](schreibwerkstatt-focuseditor/AppCore+ServerSwitch.swift) — eigenes Thema mit eigener Reihenfolge-Empfindlichkeit (Sync anhalten VOR dem Store-Tausch; aufräumen VOR dem Abmelden), das sich in derselben Datei wie der Aufbau wie dessen Fortsetzung las.
 
 ### App-Einstieg & Scene-Graph
 
@@ -310,6 +315,22 @@ Poll-Tick → `pullBook` → `GET …/sync` (Cursor) → pro Seite `applyServerP
 
 ---
 
+## 11b. Nebenwege ohne WebView-Beteiligung
+
+Drei Funktionen laufen bewusst **komplett an der Bridge vorbei** — sie berühren
+den Editor nicht, und ein Bridge-Op wäre nur ein Umweg mit zusätzlichem
+Kopplungspunkt:
+
+| Funktion | Weg | Warum kein Bridge-Op |
+|---|---|---|
+| Seiten anlegen/umbenennen/löschen ([PageAdminController](schreibwerkstatt-focuseditor/Library/PageAdminController.swift)) | Swift → Server → `store` → `library.refreshPages()` | Verwaltung von Datensätzen, kein Editor-Inhalt. Die offene Seite wird nur beim Löschen berührt (`library.closePage()`). |
+| Frühere Fassungen ([PageRevisionStore](schreibwerkstatt-focuseditor/Revisions/PageRevisionStore.swift)) | Swift → Server; nach Restore `sync.pullPage` | Der Server schreibt die alte Fassung zurück; die WebView erfährt es über den ganz normalen Open-Page-Pull (saubere Seite → stiller Reload). Ein eigener Weg in die WebView wäre ein zweiter Reload-Pfad neben `serverUpdate`. |
+| Buch-Export ([Export/](schreibwerkstatt-focuseditor/Export/)) | `store` → Markdown → `NSSavePanel` | Liest nur den lokalen Spiegel. Einzige Berührung: der Draft-Flush vor dem Sammeln (`bridge.flushDraftSave`), sonst fehlte der eben getippte Satz. |
+
+Gemeinsames Muster: **Server-Erfolg zuerst, lokale Wirkung danach.** Beim Löschen
+ist das der Unterschied zwischen „Text weg, Seite lebt am Server weiter" und
+einem sauberen Abbruch, bei dem nichts passiert ist.
+
 ## 12. Wo was hingehört (Entscheidungshilfe)
 
 - **Editor-Bug/-Feature (Logik, CSS, Block-Merge)** → Hauptrepo, **nicht hier**. Client zieht das Bundle beim nächsten Start.
@@ -318,5 +339,9 @@ Poll-Tick → `pullBook` → `GET …/sync` (Cursor) → pro Seite `applyServerP
 - **Neue lokale Einstellung mit Editor-Wirkung** → Controller (`bind`/`apply`-Muster) + Settings-Tab; als CSS/Wert über die Bridge.
 - **Neues Tastaturkürzel** → Code **und** [ShortcutsHelpView.swift](schreibwerkstatt-focuseditor/ShortcutsHelpView.swift) im selben Schritt.
 - **Schema-Änderung am lokalen Spiegel** → neue GRDB-Migration in `GRDBLocalStore`.
+- **Neuer Ausstiegspfad aus dem Editor** (Fenster, Szene, Beenden, Modus-Wechsel) → an einen Draft-Flush hängen, sonst kostet er bis zu 5 s Text (s. CLAUDE.md, harte Regeln).
+- **Neuer nutzersichtbarer String** → `t("key")` + **beide** Kataloge; `LocalizationCatalogTests` hält das fest.
+- **Neuer JS-Glue im Boot** → `WebAssetsSyntaxTests` parst ihn beim nächsten Testlauf mit (`node --check`); Verträge zusätzlich als `contains`-Test in `WebAssetsTests`.
+- **Neuer Netz-Store** → über `MockURLProtocol` testbar halten: Session in den `APIClient` injizierbar lassen, Timing/Verzeichnisse nicht hart verdrahten (Vorbild `LektoratJobStore(pollInterval:maxPolls:)`, `EditorBundleStore(baseDirectory:)`).
 
 Harte Regeln (kein Fork, WebView nur lokal, local-first, Token nur Keychain, Konflikte über Block-Merge, Datenverlust-Schutz) stehen verbindlich in [CLAUDE.md](CLAUDE.md).

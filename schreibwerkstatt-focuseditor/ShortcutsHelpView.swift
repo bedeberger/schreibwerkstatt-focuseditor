@@ -5,6 +5,12 @@
 //  Tastaturkürzel-Hilfe. Erreichbar über das Help-Menü (⌘?). Listet die
 //  Shortcuts des macOS-Clients und die wichtigsten des OTA-Editors (Focus).
 //
+//  Die Liste wird VOLLSTÄNDIG aus [Shortcuts.swift](Shortcuts.swift) gerendert —
+//  hier steht kein Kürzel mehr von Hand. Auch die Tasten-Capsules leitet der
+//  Katalog aus `key`/`modifiers` ab, sodass Deklaration und Anzeige nicht
+//  auseinanderlaufen können (genau das war passiert: ⌘N/⌘⇧R fehlten, und ⌘⇧E
+//  stand als Fokus-Umschalter drin, obwohl ein Menübefehl die Taste belegt hatte).
+//
 
 import SwiftUI
 
@@ -43,19 +49,23 @@ private struct ShortcutRow: View {
 }
 
 /// Eine thematische Gruppe von Kürzeln mit Überschrift.
-private struct ShortcutSection: View {
-    let title: String
-    let rows: [(keys: [String], label: String)]
+private struct ShortcutSectionView: View {
+    let section: ShortcutSection
+
+    private var specs: [ShortcutSpec] { Shortcuts.inSection(section) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(title)
+            Text(t(section.titleKey))
                 .font(BrandFont.serif(15, weight: .semibold))
                 .foregroundStyle(BrandColor.text)
                 .padding(.bottom, 2)
-            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
-                ShortcutRow(keys: row.keys, label: row.label)
-                if row.label != rows.last?.label {
+            // Trenner über den Index statt über den Label-Vergleich: zwei
+            // Einträge dürfen denselben Text tragen (⎋ schliesst den Picker bzw.
+            // verlässt den Fokus-Modus), sonst verschwände dort ein Trenner.
+            ForEach(Array(specs.enumerated()), id: \.element.id) { index, spec in
+                ShortcutRow(keys: spec.glyphs, label: spec.label)
+                if index < specs.count - 1 {
                     Divider().overlay(BrandColor.faint.opacity(0.35))
                 }
             }
@@ -70,29 +80,9 @@ struct ShortcutsHelpView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
-                ShortcutSection(title: t("shortcuts.section.app"), rows: [
-                    (["⌃", "⌘", "F"], t("shortcuts.fullscreen")),
-                    (["⌘", "S"], t("shortcuts.syncNow")),
-                    (["⌘", ","], t("shortcuts.openSettings")),
-                    (["⌘", "0"], t("shortcuts.mainWindow")),
-                    (["⌘", "?"], t("shortcuts.thisHelp")),
-                ])
-
-                ShortcutSection(title: t("shortcuts.section.pages"), rows: [
-                    (["⌘", "O"], t("shortcuts.openPage")),
-                    (["⏎"], t("shortcuts.pickerOpenFirst")),
-                    (["⎋"], t("shortcuts.pickerClose")),
-                ])
-
-                ShortcutSection(title: t("shortcuts.section.editor"), rows: [
-                    (["⌘", "⇧", "E"], t("shortcuts.focusToggle")),
-                    (["⌘", "L"], t("shortcuts.centerLine")),
-                    (["⌘", "⇧", "S"], t("shortcuts.synonyms")),
-                    (["⌘", "B"], t("shortcuts.bold")),
-                    (["⌘", "I"], t("shortcuts.italic")),
-                    (["⌘", "U"], t("shortcuts.underline")),
-                    (["⎋"], t("shortcuts.focusExit")),
-                ])
+                ForEach(ShortcutSection.allCases, id: \.self) { section in
+                    ShortcutSectionView(section: section)
+                }
 
                 Text(t("shortcuts.legend"))
                     .font(BrandFont.sans(11))

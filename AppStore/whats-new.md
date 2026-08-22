@@ -18,6 +18,40 @@ Zwei Regeln, damit der Text stimmt:
 Die Erstversion braucht keinen Text — Apple zeigt „Neue Funktionen“ erst ab dem
 ersten Update und lässt das Feld dort leer.
 
+## 3.22 · Deutsch (max. 4000)
+
+```
+Widerrufen (⌘Z) arbeitet jetzt in kleinen Schritten — Satz für Satz statt alles seit dem letzten Mausklick.
+
+• ⌘Z nimmt einzelne Sätze zurück, ⌘⇧Z setzt sie wieder ein; nach einer grösseren Rücknahme erscheint kurz ein Hinweis mit dem Rückweg
+• Neu: „Frühere Fassungen …“ (⌘⇧R) zeigt die gespeicherten Fassungen der offenen Seite samt Vorschau — Wiederherstellen legt selbst eine Fassung an, es geht also nichts verloren
+• Seiten verwalten ohne Umweg über den Browser: „Neue Seite …“ (⌘N) sowie Umbenennen und Löschen direkt im Seiten-Picker (⌘O)
+• Neu: „Buch exportieren …“ schreibt das ganze Buch als eine Markdown-Datei — offline, aus dem Stand auf deinem Mac
+• Der Seiten-Picker zeigt, wie viel auf einer Seite steht: Zeichen- und Wortzahl je Seite plus Summe, einstellbar über „Zählwert im Seiten-Picker“
+• Beim Beenden mit ⌘Q wird der zuletzt getippte Satz noch gesichert
+• Einstellungen ▸ Konto: „Diagnose kopieren“ legt einen Zustandsbericht für Support-Anfragen in die Zwischenablage — ohne Token, ohne Text aus dem Manuskript
+```
+
+## 3.22 · English (max 4000)
+
+```
+Undo (⌘Z) now works in small steps — sentence by sentence instead of everything since your last mouse click.
+
+• ⌘Z takes back single sentences, ⌘⇧Z puts them back; after a larger undo a short notice shows the way back
+• New: “Earlier Versions …” (⌘⇧R) lists the saved versions of the open page with a preview — restoring saves a version of its own, so nothing is lost
+• Manage pages without detouring to the browser: “New Page …” (⌘N) plus rename and delete right in the page picker (⌘O)
+• New: “Export Book …” writes the whole book as a single Markdown file — offline, from the copy on your Mac
+• The page picker shows how much is on a page: characters and words per page plus a total, configurable via “Count in the page picker”
+• Quitting with ⌘Q saves the sentence you just typed
+• Settings ▸ Account: “Copy diagnostics” puts a status report for support requests on the clipboard — no token, no text from your manuscript
+```
+
+## 3.21 — nie eingereicht (Inhalt steckt in 3.22)
+
+Build 43 wurde hochgeladen, die Version aber nie zur Review gegeben. Die
+Zählwerte im Seiten-Picker sind darum Teil der 3.22-Notes oben; die Texte hier
+bleiben nur als Archiv stehen.
+
 ## 3.21 · Deutsch (max. 4000)
 
 ```

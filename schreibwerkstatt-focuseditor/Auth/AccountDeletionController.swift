@@ -50,8 +50,7 @@ final class AccountDeletionController: ObservableObject {
     var onDeleted: (() async -> Void)?
 
     private let api: APIClient
-    private let logger = Logger(subsystem: "ch.schreibwerkstatt.focuseditor",
-                                category: "account")
+    private let logger = AppLog.account
 
     init(api: APIClient) {
         self.api = api

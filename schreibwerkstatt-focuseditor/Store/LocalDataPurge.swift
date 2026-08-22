@@ -22,8 +22,7 @@ import os
 
 enum LocalDataPurge {
 
-    private static let logger = Logger(subsystem: "ch.schreibwerkstatt.focuseditor",
-                                       category: "purge")
+    private static let logger = AppLog.purge
 
     /// Löscht Dateien und Defaults des angegebenen Server-Namespaces.
     ///
@@ -44,17 +43,19 @@ enum LocalDataPurge {
 
     /// Entfernt die server-skopierten UserDefaults-Schlüssel. Server-skopierte
     /// Schlüssel tragen per Konvention den Slug als Suffix (`…​.<slug>`, s.
-    /// `EditorBridge.DefaultsKeys` / `WritingTimeTracker`) — darum suffix-basiert
-    /// statt als Liste, die bei jedem neuen Schlüssel veraltet.
+    /// `ServerScopedKey`) — darum suffix-basiert statt als Liste, die bei jedem
+    /// neuen Schlüssel veraltet.
     static func purgeDefaults(slug: String) {
         let defaults = UserDefaults.standard
         let suffix = ".\(slug)"
         for key in defaults.dictionaryRepresentation().keys where key.hasSuffix(suffix) {
             defaults.removeObject(forKey: key)
         }
-        // Nicht server-skopiert, aber aus Nutzerinhalten abgeleitet: Legacy-Schlüssel
-        // (vor dem Namespacing) und die Tages-Baseline der Wortzahl.
-        for key in ["library.activeBookId", "editor.lastOpenPageId", "writing.dailyBaseline"] {
+        // Nicht server-skopiert, aber aus Nutzerinhalten abgeleitet: die
+        // Legacy-Schlüssel von vor dem Namespacing (`ServerScopedKey.legacyKeys`,
+        // damit ein neu hinzugekommener Schlüssel hier nicht vergessen wird) und
+        // die Tages-Baseline der Wortzahl.
+        for key in ServerScopedKey.legacyKeys + ["writing.dailyBaseline"] {
             defaults.removeObject(forKey: key)
         }
     }

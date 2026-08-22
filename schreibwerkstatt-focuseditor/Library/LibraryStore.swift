@@ -76,6 +76,29 @@ final class LibraryStore: ObservableObject {
     /// Wird vom nächsten erfolgreichen Save automatisch wieder gelöst. Über die
     /// Bridge (`onSaveResult`) in `AppCore` gespeist.
     @Published var saveError: String?
+    /// Zuletzt gemeldetes Widerrufen/Wiederherstellen im Editor (⌘Z / ⌘⇧Z) mit
+    /// nennenswertem Umfang — treibt einen kurzen Hinweis über der Schreibfläche.
+    /// `nil` = kein Hinweis offen. Über die Bridge (`onHistoryEdit`) in `AppCore`
+    /// gespeist. Reiner Anzeige-Zustand; Inhalte bleiben unangetastet.
+    @Published var historyNotice: HistoryNotice?
+
+    /// Ein gemeldetes Widerrufen/Wiederherstellen (⌘Z / ⌘⇧Z) für den Hinweis
+    /// über der Schreibfläche. `id` macht den Auto-Ausblender eindeutig, damit
+    /// ein neuer Hinweis den alten Timer nicht mit sich wegräumt.
+    struct HistoryNotice: Identifiable, Equatable {
+        let id = UUID()
+        /// `true` = Widerrufen (Text entfernt), `false` = Wiederherstellen.
+        let isUndo: Bool
+        /// Umfang in Zeichen (Betrag).
+        let chars: Int
+    }
+
+    /// Ab diesem Umfang lohnt der Hinweis (kleinere Korrekturen bleiben still).
+    private static let minNoticeChars = 40
+    /// So lange bleibt der Hinweis stehen, wenn ihn niemand schliesst.
+    private static let noticeSeconds = 9.0
+    /// Auto-Ausblender des offenen Hinweises.
+    private var noticeTask: Task<Void, Never>?
 
     private let content: ContentAPI
     private let store: any LocalStore
@@ -83,16 +106,16 @@ final class LibraryStore: ObservableObject {
     /// Persistenz des aktiven Buchs — injizierbar, damit die Tests eine eigene
     /// Suite verwenden (produktiv immer `.standard`).
     private let defaults: UserDefaults
-    private let log = Logger(subsystem: "ch.schreibwerkstatt.focuseditor", category: "library")
+    private let log = AppLog.library
 
     /// Aktives Buch ist server-spezifisch (eine Buch-ID gilt nur am Server, der
     /// sie vergeben hat) → Key pro Server-Namespace. Sonst wählt der Client am
-    /// neuen Server eine Buch-ID des alten (→ `NO_BOOK_ACCESS`).
-    /// EINE Quelle für den buch-skopierten Key (kein inline-Literal mehr — sonst
-    /// driftet ein Aufrufer bei einer Prefix-Änderung still ab).
-    private static func bookDefaultsKey() -> String { "library.activeBookId.\(ServerNamespace.currentSlug)" }
+    /// neuen Server eine Buch-ID des alten (→ `NO_BOOK_ACCESS`). Prefix und
+    /// Alt-Key kommen aus `ServerScopedKey`, damit sie nicht gegen die zweite
+    /// lesende Stelle (`EditorBridge.activeBookKey`) driften können.
+    private static func bookDefaultsKey() -> String { ServerScopedKey.activeBookId.key() }
     private var defaultsKey: String { Self.bookDefaultsKey() }
-    private static let legacyDefaultsKey = "library.activeBookId"
+    private static let legacyDefaultsKey = ServerScopedKey.activeBookId.rawValue
 
     init(content: ContentAPI, store: any LocalStore, bridge: EditorBridge, defaults: UserDefaults = .standard) {
         self.content = content
@@ -396,6 +419,38 @@ final class LibraryStore: ObservableObject {
         if saveError != nil { saveError = nil }
     }
 
+    // MARK: - Widerrufen / Wiederherstellen
+
+    /// Ein Widerrufen (`undo == true`) bzw. Wiederherstellen im Editor hat gerade
+    /// `chars` Zeichen entfernt bzw. wieder eingesetzt.
+    ///
+    /// Gezeigt wird nur, was ins Gewicht fällt (`minNoticeChars`): ein einzelnes
+    /// Wort zurückzunehmen braucht keinen Hinweis. Grund für den Hinweis
+    /// überhaupt: WebKit fasst eine ganze Tippstrecke in EINEN Undo-Schritt
+    /// zusammen (alles seit dem letzten Mausklick), ein versehentliches ⌘Z
+    /// entfernt also unter Umständen den ganzen Abschnitt — und der Auto-Save
+    /// persistiert das still. Der Hinweis nennt den Rückweg (⌘⇧Z), solange er
+    /// noch offen ist (WebKits Redo verfällt beim nächsten Tastendruck).
+    func reportHistoryEdit(undo: Bool, chars: Int) {
+        guard chars >= Self.minNoticeChars else { return }
+        let notice = HistoryNotice(isUndo: undo, chars: chars)
+        historyNotice = notice
+        noticeTask?.cancel()
+        noticeTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(Self.noticeSeconds * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            guard let self, self.historyNotice?.id == notice.id else { return }
+            self.historyNotice = nil
+        }
+    }
+
+    /// Verwirft den Hinweis (Schliessen durch den Nutzer oder Seitenwechsel).
+    func dismissHistoryNotice() {
+        noticeTask?.cancel()
+        noticeTask = nil
+        if historyNotice != nil { historyNotice = nil }
+    }
+
     // MARK: - Server-Wechsel
 
     /// Server-Wechsel: Buch-/Seiten-Zustand des alten Servers verwerfen, das
@@ -411,6 +466,7 @@ final class LibraryStore: ObservableObject {
         openPageDirty = false
         lastError = nil
         saveError = nil
+        dismissHistoryNotice()
         let saved = defaults.integer(forKey: defaultsKey)
         activeBookId = saved == 0 ? nil : saved
         Task { await loadBooks() }

@@ -83,6 +83,45 @@ final class WebAssetsTests: XCTestCase {
         }
     }
 
+    func testFacadeExposesUndoOps() {
+        // Widerrufen bleibt die native macOS-Funktion (WebKit-Undo). Die Facade
+        // braucht dafür nur zwei Ops: Stack leeren beim Seitenwechsel und die
+        // Meldung eines History-Ereignisses (Hinweis mit dem Rückweg ⌘⇧Z).
+        let js = WebAssets.bridgeFacadeJS
+        XCTAssertTrue(js.contains("resetUndo:"))
+        XCTAssertTrue(js.contains("reportHistoryEdit:"))
+    }
+
+    func testIndexHTMLClearsUndoStackOnPageChange() {
+        // WebKits Undo-Stack hängt an der WebView, nicht am Inhalt — nach jedem
+        // setPage muss der Glue ihn leeren, sonst stehen Einträge der vorigen
+        // Seite als wirkungslose „Widerrufen"-Schritte im Menü.
+        let html = WebAssets.indexHTML(cssFiles: [], sourceCommit: "abc")
+        XCTAssertTrue(html.contains("clearUndoSoon()"),
+                      "Seitenwechsel und Seite-schliessen müssen den Undo-Stack leeren")
+        XCTAssertTrue(html.contains("typedSincePageChange"),
+                      "das verzögerte Nachfassen darf getippten Text nicht seines Undo-Schritts berauben")
+    }
+
+    func testIndexHTMLRoutesHistoryEventToStandaloneHandle() {
+        // ⌘Z erreicht die WebView nicht (Menü-Kürzel greift vorher) → der Glue
+        // muss das `history`-Event auf die Historie des gebündelten Editors
+        // legen und für ältere Bundles auf execCommand zurückfallen.
+        let html = WebAssets.indexHTML(cssFiles: [], sourceCommit: "abc")
+        XCTAssertTrue(html.contains("fb.on('history'"))
+        XCTAssertTrue(html.contains("handle[action]()"),
+                      "muss die Handle-API des Standalone-Editors rufen (undo/redo)")
+        XCTAssertTrue(html.contains("document.execCommand(action, false, null)"),
+                      "Fallback für ein gecachtes Bundle ohne Handle-API")
+    }
+
+    func testIndexHTMLReportsHistoryEdits() {
+        let html = WebAssets.indexHTML(cssFiles: [], sourceCommit: "abc")
+        XCTAssertTrue(html.contains("historyUndo"))
+        XCTAssertTrue(html.contains("historyRedo"))
+        XCTAssertTrue(html.contains("reportHistoryEdit"))
+    }
+
     func testHandlerNameIsStable() {
         // Single Source of Truth (EditorBridge referenziert diesen Wert). Ändert
         // sich der Name, muss die JS-Facade unten mitziehen — daher hier verankert.

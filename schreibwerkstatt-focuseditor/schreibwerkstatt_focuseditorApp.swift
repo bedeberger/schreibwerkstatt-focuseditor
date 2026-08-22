@@ -7,6 +7,7 @@
 
 import SwiftUI
 import AppKit
+import WebKit
 
 @main
 struct schreibwerkstatt_focuseditorApp: App {
@@ -48,6 +49,10 @@ struct schreibwerkstatt_focuseditorApp: App {
     static let mainWindowID = "main"
     /// Szenen-ID der Tastaturkürzel-Hilfe (Help-Menü **und** Fenster-Menü).
     static let shortcutsWindowID = "shortcuts-help"
+
+    /// Fängt ⌘Q ab und sichert den offenen Draft, bevor der Prozess geht
+    /// (der Autosave läuft entprellt — s. AppTerminationGuard.swift).
+    @NSApplicationDelegateAdaptor(AppTerminationGuard.self) private var terminationGuard
 
     @StateObject private var core = AppCore()
     @StateObject private var windowChrome = WindowChromeController()
@@ -108,6 +113,9 @@ struct schreibwerkstatt_focuseditorApp: App {
                 .environmentObject(core.library)
                 .environmentObject(core.editorBundle)
                 .environmentObject(core.lektorat)
+                .environmentObject(core.bookExport)
+                .environmentObject(core.pageAdmin)
+                .environmentObject(core.revisions)
                 .environmentObject(windowChrome)
                 .environmentObject(appearance)
                 .environmentObject(focus)
@@ -125,6 +133,12 @@ struct schreibwerkstatt_focuseditorApp: App {
                     // Outbox). Der Weg zurück ist „Fenster ▸ Schreibfenster" (⌘0).
                     windowChrome.onWillClose = { [core] in
                         Task { await core.bridge.flushDraftSave() }
+                    }
+                    // ⌘Q: dasselbe local-first, aber AWAITBAR — AppKit hält das
+                    // Beenden dafür an (`.terminateLater`), sonst verlöre der
+                    // letzte Tastenanschlag gegen den entprellten Autosave.
+                    terminationGuard.flushBeforeQuit = { [core] in
+                        await core.bridge.flushDraftSave(timeout: EditorBridge.quitFlushTimeout)
                     }
                     // Fokus- + Typografie-Controller an die app-weite Bridge
                     // koppeln (Push der Live-Umschaltung), Stats-Kanal anhängen,
@@ -195,11 +209,27 @@ struct schreibwerkstatt_focuseditorApp: App {
             // View, weil die Buchliste/„Seite schliessen"-Aktivierung mitlaufen
             // muss (`AppCore.library` ist ein `let` und republiziert nicht selbst).
             CommandGroup(replacing: .newItem) {
-                PageMenuCommands(library: core.library, sync: core.sync)
+                PageMenuCommands(library: core.library,
+                                 sync: core.sync,
+                                 toolbarUI: toolbarUI,
+                                 bookExport: core.bookExport,
+                                 bridge: core.bridge,
+                                 revisions: core.revisions)
             }
             CommandGroup(replacing: .saveItem) {}       // Sichern / Sichern unter…
             CommandGroup(replacing: .importExport) {}   // Import / Export
             CommandGroup(replacing: .sidebar) {}        // Seitenleiste ein-/ausblenden
+
+            // Widerrufen/Wiederherstellen (Bearbeiten-Menü): MUSS ersetzt werden.
+            // Die Standardeinträge von AppKit fahren WebKits eigenen Undo-Stack —
+            // und der ist im contenteditable unbrauchbar grob (gemessen: alles
+            // seit dem letzten Mausklick ist EIN Schritt). Der gebündelte Editor
+            // führt stattdessen seine eigene, entprellte Snapshot-Historie
+            // (SSoT `shared/edit-history.js`); erreichbar ist sie hier nur über
+            // die Bridge, weil das Menü-Kürzel app-weit VOR der WebView greift.
+            CommandGroup(replacing: .undoRedo) {
+                HistoryMenuCommands(bridge: core.bridge)
+            }
 
             // Format-Menü (Edit-Menü, nach Ausschneiden/Kopieren/Einfügen): die
             // Inline-Formatierung des Editors (Fett/Kursiv/Unterstrichen) auch über
@@ -249,7 +279,7 @@ struct schreibwerkstatt_focuseditorApp: App {
                        : t("menu.enterFullscreen")) {
                     windowChrome.toggleFullscreen()
                 }
-                .keyboardShortcut("f", modifiers: [.control, .command])
+                .keyboardShortcut(Shortcuts.fullscreen)
             }
 
             // Fenster-Menü: expliziter Eintrag, der das Hauptfenster öffnet —
@@ -265,7 +295,7 @@ struct schreibwerkstatt_focuseditorApp: App {
                 Button(t("menu.mainWindow")) {
                     openWindow(id: Self.mainWindowID)
                 }
-                .keyboardShortcut("0", modifiers: .command)
+                .keyboardShortcut(Shortcuts.mainWindow)
             }
 
             // Help-Menü: die Standard-„App-Hilfe" (toter Help-Book-Eintrag)
@@ -274,7 +304,7 @@ struct schreibwerkstatt_focuseditorApp: App {
                 Button(t("menu.shortcuts")) {
                     openWindow(id: Self.shortcutsWindowID)
                 }
-                .keyboardShortcut("?", modifiers: .command)
+                .keyboardShortcut(Shortcuts.thisHelp)
             }
         }
 
@@ -314,17 +344,55 @@ struct schreibwerkstatt_focuseditorApp: App {
 private struct PageMenuCommands: View {
     @ObservedObject var library: LibraryStore
     let sync: SyncEngine
+    /// Geteilter UI-Zustand — das Menü schaltet nur Sheets frei, die Arbeit
+    /// machen die Dialoge im Editor-Host.
+    @ObservedObject var toolbarUI: ToolbarUIState
+    @ObservedObject var bookExport: BookExportController
+    let bridge: EditorBridge
+    let revisions: PageRevisionStore
 
     var body: some View {
+        // Neue Seite (⌘N) — braucht ein aktives Buch; das Anlegen selbst geht
+        // an den Server (POST), s. PageAdminController.
+        Button(t("menu.newPage")) {
+            toolbarUI.newPageOpen = true
+        }
+        .keyboardShortcut(Shortcuts.newPage)
+        .disabled(library.activeBookId == nil)
+
         Button(t("menu.openPage")) {
             library.requestPicker()
         }
-        .keyboardShortcut("o", modifiers: .command)
+        .keyboardShortcut(Shortcuts.openPage)
 
         Button(t("menu.closePage")) {
             library.closePage()
         }
         .disabled(library.openPageId == nil)
+
+        Divider()
+
+        // Frühere Fassungen der offenen Seite (⌘⇧R) — der Weg zurück, wenn
+        // ⌘⇧Z nicht mehr greift (WebKit verwirft den Redo-Stack beim nächsten
+        // Zeichen).
+        Button(t("menu.revisions")) {
+            guard let pageId = library.openPageId else { return }
+            toolbarUI.revisionsOpen = true
+            Task { await revisions.load(pageId: pageId) }
+        }
+        .keyboardShortcut(Shortcuts.revisions)
+        .disabled(library.openPageId == nil)
+
+        Divider()
+
+        // Buch als Markdown sichern — aus dem lokalen Spiegel, geht also auch
+        // offline. BEWUSST OHNE Tastenkürzel: das naheliegende ⌘⇧E gehört der
+        // Fokus-Umschaltung im Editor, und ein Menü-Kürzel würde ihr die Taste
+        // vor der WebView wegnehmen. Ein seltener Befehl ist das nicht wert.
+        Button(t("menu.exportBook")) {
+            bookExport.exportActiveBook { await bridge.flushDraftSave() }
+        }
+        .disabled(!bookExport.canExport)
 
         Divider()
 
@@ -336,7 +404,7 @@ private struct PageMenuCommands: View {
         Button(t("menu.syncNow")) {
             sync.syncManually()
         }
-        .keyboardShortcut("s", modifiers: .command)
+        .keyboardShortcut(Shortcuts.syncNow)
 
         Divider()
 
@@ -361,6 +429,51 @@ private struct PageMenuCommands: View {
     }
 }
 
+/// Widerrufen/Wiederherstellen im Bearbeiten-Menü.
+///
+/// Routet bewusst nach dem First Responder, statt stur in den Editor zu
+/// schiessen: das Kürzel ⌘Z gilt app-weit, es muss also auch im Suchfeld des
+/// Seiten-Pickers und in den Einstellungen-Feldern funktionieren. Liegt der
+/// Fokus in der Schreibfläche (WKWebView), geht die Aktion über die Bridge an
+/// die Historie des gebündelten Editors; sonst an AppKit — genau dorthin, wo die
+/// ersetzten Standardeinträge sie hingeschickt hätten (`undo:`/`redo:` über die
+/// Responder-Kette, also der NSUndoManager des Feld-Editors).
+///
+/// Bewusst immer aktiv: ob etwas zu widerrufen ist, weiss erst die Historie in
+/// der WebView (asynchron) bzw. der Feld-Editor. Ein deaktivierter Menüpunkt
+/// würde das Kürzel dagegen NICHT verbrauchen — dann liefe ⌘Z wieder auf
+/// WebKits groben Stack, also genau in den Datenverlust-Fall zurück.
+private struct HistoryMenuCommands: View {
+    let bridge: EditorBridge
+
+    var body: some View {
+        Button(t("menu.undo")) { route("undo", fallback: "undo:") }
+            .keyboardShortcut(Shortcuts.undo)
+        Button(t("menu.redo")) { route("redo", fallback: "redo:") }
+            .keyboardShortcut(Shortcuts.redo)
+    }
+
+    private func route(_ action: String, fallback selector: String) {
+        if editorHasFocus {
+            Task { await bridge.applyHistory(action) }
+        } else {
+            NSApp.sendAction(Selector((selector)), to: nil, from: nil)
+        }
+    }
+
+    /// Hat die Schreibfläche den Tastaturfokus? Der First Responder ist beim
+    /// Tippen im Editor die `WKWebView` selbst (nachgemessen); ein Textfeld
+    /// meldet dagegen seinen Feld-Editor (`NSText`).
+    private var editorHasFocus: Bool {
+        var responder = NSApp.keyWindow?.firstResponder
+        while let current = responder {
+            if current is WKWebView { return true }
+            responder = current.nextResponder
+        }
+        return false
+    }
+}
+
 /// Format-Menü-Befehle: die Inline-Formatierung des Editors (Fett/Kursiv/
 /// Unterstrichen) über die Menüleiste, mit ⌘B/⌘I/⌘U. Die Aktion routet über die
 /// Bridge in die WebView (`document.execCommand`) — dieselbe Wirkung wie die
@@ -373,13 +486,13 @@ private struct FormatMenuCommands: View {
 
     var body: some View {
         Button(t("menu.bold")) { apply("bold") }
-            .keyboardShortcut("b", modifiers: .command)
+            .keyboardShortcut(Shortcuts.bold)
             .disabled(library.openPageId == nil)
         Button(t("menu.italic")) { apply("italic") }
-            .keyboardShortcut("i", modifiers: .command)
+            .keyboardShortcut(Shortcuts.italic)
             .disabled(library.openPageId == nil)
         Button(t("menu.underline")) { apply("underline") }
-            .keyboardShortcut("u", modifiers: .command)
+            .keyboardShortcut(Shortcuts.underline)
             .disabled(library.openPageId == nil)
     }
 

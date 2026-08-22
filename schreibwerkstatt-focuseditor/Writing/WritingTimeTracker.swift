@@ -57,7 +57,7 @@ final class WritingTimeTracker: ObservableObject {
     private let defaults: UserDefaults
     /// Beobachter für `willTerminate` (im `deinit` wieder abgemeldet).
     private var terminateObserver: NSObjectProtocol?
-    private let log = Logger(subsystem: "ch.schreibwerkstatt.focuseditor", category: "writing-time")
+    private let log = AppLog.writingTime
 
     /// Heartbeat-Kadenz — wie die Web-Seite (15 s).
     private let heartbeatInterval: Duration = .seconds(15)
@@ -375,7 +375,7 @@ final class WritingTimeTracker: ObservableObject {
 
     // MARK: - Persistenz (server-skopiert, überlebt App-Neustart)
 
-    private static let pendingKeyPrefix = "writingtime.pending."
+    private static let pendingKeyPrefix = ServerScopedKey.writingTimePending.rawValue + "."
 
     /// Schreibt `pending` in die UserDefaults — unter dem Slug des Servers, zu dem
     /// die Buch-IDs gehören. Leerer Puffer → Eintrag entfernen (kein Müll-Key).
@@ -404,7 +404,7 @@ final class WritingTimeTracker: ObservableObject {
 
     // MARK: - Tages-Summe (server-skopiert, überlebt App-Neustart)
 
-    private static let todayKeyPrefix = "writingtime.today."
+    private static let todayKeyPrefix = ServerScopedKey.writingTimeToday.rawValue + "."
 
     /// Lokaler Kalendertag als stabiler Schlüssel (locale-unabhängig, ISO-Datum).
     private static let dayFormatter: DateFormatter = {

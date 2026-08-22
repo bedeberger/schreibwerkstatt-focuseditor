@@ -25,13 +25,13 @@ extension EditorBridge {
 
     /// Zuletzt geöffnete Seite — global pro Server-Namespace. Legacy/Fallback:
     /// der buch-skopierte Restore läuft über `lastOpenByBookKey`.
-    static var lastOpenPageKey: String { "editor.lastOpenPageId.\(ServerNamespace.currentSlug)" }
+    static var lastOpenPageKey: String { ServerScopedKey.lastOpenPageId.key() }
 
     /// Zuletzt geöffnete Seite PRO Buch — Wert ist ein `[String(bookId): String(pageId)]`-
     /// Dict. Der Boot-Restore (`lastOpenPage(bookId)`) liest hier, damit nie eine
     /// Seite eines anderen Buchs geöffnet wird (der globale Key oben gilt server-,
     /// nicht buchweit und wurde bei jedem Seitenwechsel über alle Bücher überschrieben).
-    static var lastOpenByBookKey: String { "editor.lastOpenByBook.\(ServerNamespace.currentSlug)" }
+    static var lastOpenByBookKey: String { ServerScopedKey.lastOpenByBook.key() }
 
     /// Zuletzt geöffnete Seite des Buchs (gerätelokal), oder `nil`.
     static func lastOpenPageId(forBook bookId: Int,
@@ -56,7 +56,7 @@ extension EditorBridge {
     /// `[String(bookId): [String(pageId)]]`-Dict in MRU-Reihenfolge (Index 0 =
     /// zuletzt geöffnet). Bewusst GETRENNT von `lastOpenByBookKey`: der Ein-Wert-Key
     /// treibt den Boot-Restore und soll seine Bedeutung behalten.
-    static var recentPagesByBookKey: String { "editor.recentPagesByBook.\(ServerNamespace.currentSlug)" }
+    static var recentPagesByBookKey: String { ServerScopedKey.recentPagesByBook.key() }
 
     /// Länge der Historie pro Buch = Grösse der Picker-Gruppe.
     /// `nonisolated`, damit der Wert als Default-Argument (LibraryStore) auch aus
@@ -96,11 +96,11 @@ extension EditorBridge {
 
     // MARK: - Aktives Buch (Lese-Seite)
 
-    /// UserDefaults-Key des in der Toolbar gewählten Buchs — pro Server-Namespace,
-    /// exakt wie in `LibraryStore` (dort die SSoT). Die Bridge liest ihn beim Boot,
-    /// um die initiale Seitenauswahl auf dieses Buch zu beschränken (sonst lüde der
-    /// Client eine global gemerkte Seite aus einem anderen Buch).
-    static var activeBookKey: String { "library.activeBookId.\(ServerNamespace.currentSlug)" }
+    /// UserDefaults-Key des in der Toolbar gewählten Buchs. Die Bridge liest ihn
+    /// beim Boot, um die initiale Seitenauswahl auf dieses Buch zu beschränken
+    /// (sonst lüde der Client eine global gemerkte Seite aus einem anderen Buch).
+    /// Dasselbe Prefix schreibt `LibraryStore` — beide über `ServerScopedKey`.
+    static var activeBookKey: String { ServerScopedKey.activeBookId.key() }
 
     /// Aktives Buch oder `nil` (0/negativ = keins). Von der `activeBook`-Op und
     /// der Anführungszeichen-Normalisierung genutzt.

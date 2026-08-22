@@ -34,6 +34,14 @@ final class ToolbarUIState: ObservableObject {
     @Published var pickerOpen = false
     /// Aktuell im Auflösungs-Sheet geprüfter Konflikt (`nil` = zu).
     @Published var inspectingConflict: SyncEngine.Conflict?
+    /// Sichtbarkeit des Revisions-Sheets („Frühere Fassungen …", ⌘⇧R).
+    @Published var revisionsOpen = false
+    /// Sichtbarkeit des „Neue Seite"-Dialogs (⌘N).
+    @Published var newPageOpen = false
+    /// Seite, die gerade umbenannt wird (`nil` = kein Dialog offen).
+    @Published var renamingPage: PagePickerRow?
+    /// Seite, deren Löschung bestätigt werden soll.
+    @Published var deletingPage: PagePickerRow?
 }
 
 struct AppToolbar: View {

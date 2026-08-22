@@ -23,22 +23,14 @@ final class LocalizationController: ObservableObject {
 
     private weak var bridge: EditorBridge?
 
-    /// Hat der Nutzer lokal gewählt? Genau dann liegt ein UserDefaults-Eintrag
-    /// vor — Server-Seeding ist dann gesperrt (lokale Wahl gewinnt dauerhaft).
-    private var hasLocalOverride: Bool {
-        UserDefaults.standard.object(forKey: Self.storageKey) != nil
-    }
-
-    /// Unterdrückt die Persistenz, während ein Server-Default eingespielt wird:
-    /// Seeding soll NICHT als lokale Wahl zählen (sonst friert der erste Server-
-    /// Wert die „folgt dem Server"-Semantik ein).
-    private var isSeeding = false
+    /// „Lokale Wahl gewinnt, sonst folgt der Server" — inklusive der Regel, dass
+    /// ein eingespielter Server-Wert NICHT als lokale Wahl zählen darf
+    /// ([ServerSeededChoice](../Theme/ServerSeededChoice.swift)).
+    private let choice = ServerSeededChoice(storageKey: LocalizationController.storageKey)
 
     @Published var language: AppLanguage {
         didSet {
-            if !isSeeding {
-                UserDefaults.standard.set(language.rawValue, forKey: Self.storageKey)
-            }
+            choice.persist(language.rawValue)
             apply()
         }
     }
@@ -65,16 +57,16 @@ final class LocalizationController: ObservableObject {
     /// Eine zwischenzeitliche lokale Wahl gewinnt. Der Seed-Wert wird NICHT
     /// persistiert, damit die „folgt dem Server"-Semantik erhalten bleibt.
     func seedFromServerIfNeeded() async {
-        guard !hasLocalOverride, let bridge else { return }
+        guard !choice.hasLocalOverride, let bridge else { return }
         guard let raw = await bridge.serverLocale() else { return }
         // Server liefert ggf. eine regionale Locale (z. B. "de-CH", s. CLAUDE.md
         // getBookLocale) — exakte `rawValue`-Zuordnung würde daran scheitern. Auf
         // de/en normalisieren (gleiche Regel wie `resolveLocale`).
         let server: AppLanguage = raw.lowercased().hasPrefix("de") ? .de : .en
-        guard !hasLocalOverride, server != language else { return }
-        isSeeding = true
-        language = server      // aktualisiert UI + Locale, ohne zu persistieren
-        isSeeding = false
+        // Erneut prüfen: der `await` oben gibt dem Nutzer Zeit, inzwischen selbst
+        // zu wählen — die lokale Wahl darf der Seed nicht überschreiben.
+        guard !choice.hasLocalOverride, server != language else { return }
+        choice.seed { language = server }      // UI + Locale, ohne zu persistieren
     }
 
     private func apply() {

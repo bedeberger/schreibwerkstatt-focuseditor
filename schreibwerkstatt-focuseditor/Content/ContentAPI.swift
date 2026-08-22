@@ -92,6 +92,11 @@ struct PagePickerRow: Identifiable, Equatable {
     /// `nil`, wenn kein Zeitstempel vorliegt. Default-Wert hält bestehende
     /// Initializer (ohne Zeitstempel) gültig.
     var updatedAt: Date? = nil
+    /// ID des direkt umschliessenden Kapitels — `nil` für Top-Level-Seiten.
+    /// Braucht der „Neue Seite"-Dialog (`POST /content/pages` will `chapter_id`);
+    /// der Anzeigepfad `chapterPath` trägt nur Namen. Default-Wert hält
+    /// bestehende Initializer (Tests, lokaler Fallback) gültig.
+    var chapterId: Int? = nil
 
     /// Direkt umschließendes Kapitel (Leaf des Pfads) — `nil` für Top-Level-Seiten.
     var chapterName: String? { chapterPath.last }
@@ -170,7 +175,8 @@ final class ContentAPI {
                     rows.append(PagePickerRow(id: p.id,
                                               name: p.name ?? "Ohne Titel",
                                               chapterPath: childPath,
-                                              updatedAt: date(from: p.updated_at)))
+                                              updatedAt: date(from: p.updated_at),
+                                              chapterId: ch.id))
                 }
                 walk(ch.subchapters, path: childPath)
             }

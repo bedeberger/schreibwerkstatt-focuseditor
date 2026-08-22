@@ -23,16 +23,17 @@ Altersfreigabe 4+, Inhalte Dritter deklariert (`USES_THIRD_PARTY_CONTENT`).
 | Version | Build | Zustand |
 |---|---|---|
 | **3.20** | 42 (hochgeladen 2026-08-16) | `READY_FOR_SALE`, ladbar — die Erstveröffentlichung, nach drei Review-Runden |
-| **3.21** | — | `PREPARE_FOR_SUBMISSION`, angelegt 2026-08-17 |
+| **3.21** | 43 (hochgeladen 2026-08-17) | angelegt, aber **nie eingereicht** — Inhalt steckt in 3.22 |
+| **3.22** | 44 (hochgeladen 2026-08-22) | Version im Browser anzulegen, Build zuzuordnen, „Neue Funktionen“ aus [whats-new.md](whats-new.md) |
 
-Was am 3.21-Record noch fehlt (alles nur im Browser zu erledigen, s. u.):
+Was am offenen Version-Record noch fehlt (alles nur im Browser zu erledigen, s. u.):
 
 | | Stand |
 |---|---|
 | Texte de + en | **drin** — Beschreibung, Keywords, Support-URL sind aus 3.20 übernommen und stimmen mit den Listing-Dateien überein |
 | Screenshots de + en | **drin** — je vier im Set `APP_DESKTOP` |
-| „Neue Funktionen“ de + en | **fehlt** — Text steht kopierfertig in [whats-new.md](whats-new.md) |
-| Build 43 | **hochgeladen** (2026-08-17, `VALID`), aber **nicht zugeordnet** |
+| „Neue Funktionen“ de + en | **fehlt** — Text steht kopierfertig in [whats-new.md](whats-new.md) (Abschnitt 3.22) |
+| Build 44 | mit `/release` hochgeladen (2026-08-22), Zuordnung im Browser offen |
 | Promotional Text | leer in beiden Sprachen (optional; Wortlaut in den Listing-Dateien) |
 | Marketing-URL `en` | leer (in `de` gesetzt) |
 

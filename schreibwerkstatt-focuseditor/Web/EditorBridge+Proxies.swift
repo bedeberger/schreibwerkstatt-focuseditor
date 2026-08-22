@@ -19,6 +19,14 @@ import WebKit
 
 extension EditorBridge {
 
+    // MARK: - Poll-Deckel der KI-Synonyme
+    //
+    // ~25 s: KI-Synonyme sind kurz, ein Cache-Treffer kommt sofort. Läuft der
+    // Job länger, meldet der Proxy `jobUnavailable` — der Job selbst läuft
+    // serverseitig weiter und füllt den Cache für den nächsten Versuch.
+    static let synonymPollInterval: Duration = .milliseconds(500)
+    static let synonymMaxPolls = 50
+
     // MARK: LanguageTool-Proxy
     //
     // Alle LT-Settings (enabled/url/picky/rules) liegen serverseitig in
@@ -245,25 +253,22 @@ extension EditorBridge {
         let created = try await api.send("/jobs/synonym", method: .POST, body: req,
                                          decode: JobCreateResponse.self)
         guard let jobId = created.jobId else { return ["error": created.error ?? "synonym.kiFailed"] }
-        let encodedJob = jobId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? jobId
-        for _ in 0..<50 {
-            try await Task.sleep(for: .milliseconds(500))
-            // 404 (Job weg) / transienter Lesefehler → werfen; einmal überspringen
-            // und weiter pollen, bis der Deckel greift (= jobUnavailable).
-            guard let job = try? await api.send("/jobs/\(encodedJob)", decode: JobStatusResponse.self) else {
-                continue
-            }
-            switch job.status {
-            case "running", "queued", .none:
-                continue
-            case "done":
-                let list = (job.result?.synonyme ?? []).map { ["wort": $0.wort, "hinweis": $0.hinweis ?? ""] }
-                return ["synonyme": list]
-            default:   // error / cancelled
-                return ["error": job.error ?? "synonym.kiFailed"]
-            }
+        // Die Poll-Schleife (Deckel, transiente Lesefehler, Status-Deutung) teilt
+        // sich der Client mit dem Lektorat — s. Jobs/JobPolling.swift.
+        let outcome = try await JobPolling.awaitCompletion(
+            jobId: jobId, api: api,
+            interval: Self.synonymPollInterval, maxPolls: Self.synonymMaxPolls,
+            resultType: SynonymJobResult.self)
+
+        switch outcome {
+        case .done(let result):
+            let list = (result?.synonyme ?? []).map { ["wort": $0.wort, "hinweis": $0.hinweis ?? ""] }
+            return ["synonyme": list]
+        case .failed(let code):
+            return ["error": code ?? "synonym.kiFailed"]
+        case .timedOut:
+            return ["error": "synonym.jobUnavailable"]
         }
-        return ["error": "synonym.jobUnavailable"]
     }
 }
 
@@ -314,7 +319,7 @@ private struct DictionaryAddRequest: Encodable {
 // MARK: - Synonyme-DTOs
 
 /// Ein einzelner Synonym-Vorschlag (geteilt von OpenThesaurus + KI-Job).
-private struct SynonymEntry: Decodable {
+private nonisolated struct SynonymEntry: Decodable, Sendable {
     let wort: String
     let hinweis: String?
 }
@@ -342,15 +347,10 @@ private struct JobCreateResponse: Decodable {
     let error: String?
 }
 
-/// Antwort von `GET /jobs/:id` — Status + (bei `done`) das Synonym-Ergebnis.
-/// Status: `queued`/`running` (weiterpollen) bzw. `done`/`error`/`cancelled`.
-private struct JobStatusResponse: Decodable {
-    struct Result: Decodable {
-        let synonyme: [SynonymEntry]?
-    }
-    let status: String?
-    let result: Result?
-    let error: String?
+/// `result`-Teil von `GET /jobs/:id` für den KI-Synonym-Job. Den Rahmen
+/// (status/progress/error) liefert `JobStatusEnvelope`.
+private nonisolated struct SynonymJobResult: Decodable, Sendable {
+    let synonyme: [SynonymEntry]?
 }
 
 // MARK: - Lokale Rechtschreib-Vorlieben (UserDefaults)

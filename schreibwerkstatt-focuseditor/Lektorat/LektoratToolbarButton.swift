@@ -84,26 +84,14 @@ struct LektoratResultBanner: View {
     @Environment(\.openURL) private var openURL
 
     var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: isFailure ? "exclamationmark.triangle" : "checkmark.seal")
-                .font(.system(size: 14))
-                .foregroundStyle(isFailure ? BrandColor.error : BrandColor.accent)
-                .accessibilityHidden(true)
-
-            VStack(alignment: .leading, spacing: 1) {
-                Text(title)
-                    .font(BrandFont.sans(13, weight: .semibold))
-                    .foregroundStyle(BrandColor.text)
-                Text(message)
-                    .font(BrandFont.sans(11))
-                    .foregroundStyle(BrandColor.muted)
-                    .lineLimit(2)
-            }
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel("\(title): \(message)")
-
-            Spacer(minLength: 8)
-
+        NoticeBanner(
+            tone: isFailure ? .failure : .info,
+            icon: isFailure ? "exclamationmark.triangle" : "checkmark.seal",
+            title: title,
+            message: message,
+            dismissLabel: t("lektorat.dismiss"),
+            dismiss: { lektorat.dismiss() }
+        ) {
             // Nur im Erfolgsfall: die Beanstandungen selbst leben serverseitig
             // (Lektorats-Karte der Web-App) — dieser Client ist die reine
             // Schreib-Hülle und zeigt sie nicht.
@@ -113,28 +101,7 @@ struct LektoratResultBanner: View {
                     .font(BrandFont.sans(12))
                     .pointerLink()
             }
-
-            Button(action: { lektorat.dismiss() }) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(BrandColor.muted)
-            }
-            .buttonStyle(.plain)
-            .pointerLink()
-            .accessibilityLabel(t("lektorat.dismiss"))
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .background(BrandColor.surface)
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(BrandColor.faint.opacity(0.9), lineWidth: 1)
-        )
-        .shadow(radius: 12, y: 4)
-        .padding(.horizontal, 16)
-        .padding(.top, 10)
-        .frame(maxWidth: 520)
     }
 
     private var isFailure: Bool {

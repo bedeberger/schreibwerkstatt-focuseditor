@@ -43,6 +43,10 @@ struct PagePickerOverlay: View {
     }
 
     @EnvironmentObject var library: LibraryStore
+    /// Geteilter UI-Zustand — der Picker beschwört von hier aus die Dialoge
+    /// „Neue Seite" / „Umbenennen" / „Löschen" (die Arbeit macht der
+    /// PageAdminController, die Dialoge hängen am Editor-Host).
+    @EnvironmentObject var toolbarUI: ToolbarUIState
     @Binding var isOpen: Bool
 
     @State var query = ""
